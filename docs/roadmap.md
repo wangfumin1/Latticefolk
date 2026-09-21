@@ -33,7 +33,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Dynamic chunk streaming and real travel beyond the original fixed world window.
 - ✅ First semantic procedural settlement/environment generation with roads, functional sites, archetypes, and collision-aware resource placement.
 - ✅ Shared deterministic multi-step production chains for food and tools, integrated with NPC/player workstations.
-- ⏭ Plants, animals, wildlife populations, habitat pressure, and first ecological interactions.
+- ✅ First wildlife ecology layer: coarse populations/carrying capacity, conserved migration, fine animal entities, needs, predator/prey behavior, Jev-batched behavior choice, reproduction/inheritance, and persistence.
+- ⏭ Plant biomass/carrying-capacity layer, explicit food-web energy flow, disease, seasonal pressure, and deeper lifecycle/genetic lineage.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.
