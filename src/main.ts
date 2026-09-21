@@ -7,6 +7,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
+import { craftAtWorkstation } from './world/production';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -157,7 +158,7 @@ class TownGame {
   objects = new Map<string,RuntimeObject>();
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
-  playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,water:0,stone:0,tool:0};
+  playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
   minuteOfDay = 8*60 + 15;
   day = 1;
   weather = 'clear';
@@ -469,7 +470,7 @@ class TownGame {
         id,name,role,position:{x,z},home:{x:x<0?x-3:x+3,z:z<0?z-6:z+6},workAt,mood,
         hunger:25+Math.random()*25,energy:65+Math.random()*25,social:45+Math.random()*30,money:8+Math.floor(Math.random()*12),
         inventory:
-          role==='baker'?[{kind:'bread',count:2},{kind:'grain',count:2}]:
+          role==='baker'?[{kind:'bread',count:2},{kind:'flour',count:1},{kind:'water',count:1}]:
           role==='farmer'?[{kind:'apple',count:1},{kind:'grain',count:2}]:
           role==='maker'?[{kind:'wood',count:2},{kind:'stone',count:1}]:
           role==='shopkeeper'?[{kind:'bread',count:2},{kind:'apple',count:2}]:
@@ -1028,8 +1029,8 @@ class TownGame {
       if(o.item==='wood'||o.tags.includes('wood'))wood+=amount;
       if(['tree','bush','flower'].includes(o.kind))ecology+=amount;
       for(const slot of o.storage||[]){
-        if(['apple','grain','bread'].includes(slot.kind))food+=slot.count;
-        if(slot.kind==='wood')wood+=slot.count;
+        if(['apple','grain','flour','bread'].includes(slot.kind))food+=slot.count;
+        if(slot.kind==='wood'||slot.kind==='plank')wood+=slot.count;
         prosperity+=slot.kind==='tool'?slot.count*2:slot.count*.25;
       }
     }
@@ -1322,24 +1323,15 @@ class TownGame {
   }
 
   npcCraft(agent:NpcRuntime,obj:RuntimeObject) {
-    const n=agent.state;
-    const take=(kind:ItemKind,count:number)=>{const slot=n.inventory.find(i=>i.kind===kind);if(!slot||slot.count<count)return false;slot.count-=count;return true;};
-    if(obj.state.tags.includes('baker')||obj.state.id==='oven'){
-      if(take('grain',1)){this.addInventory(n.inventory,'bread',2);this.say(agent,'这炉面包应该不错。');this.event(`${n.name} 烤好了两份面包。`);}
-      else this.say(agent,'缺少谷物，暂时没法烤面包。');
-    } else if(obj.state.tags.includes('maker')||obj.state.id==='maker_table'){
-      const wood=n.inventory.find(i=>i.kind==='wood');
-      const stone=n.inventory.find(i=>i.kind==='stone');
-      if((wood?.count||0)>=1&&(stone?.count||0)>=1){wood!.count--;stone!.count--;this.addInventory(n.inventory,'tool',1);this.say(agent,'新工具做好了。');this.event(`${n.name} 制作了一件工具。`);}
-      else this.say(agent,'还缺木料或石料。');
-    } else if(obj.state.tags.includes('mill')){
-      if(take('grain',2)){this.addInventory(n.inventory,'bread',1);n.money+=1;this.say(agent,'谷物已经处理好了。');}
-      else this.say(agent,'磨坊需要更多谷物。');
-    } else {
-      n.money+=1;
-      this.say(agent,`在${obj.state.name}忙活了一阵。`);
+    const result=craftAtWorkstation(obj.state.tags,agent.state.inventory,agent.state.role);
+    if(result.ok&&result.recipe){
+      agent.state.energy=clamp(agent.state.energy-5,0,100);
+      this.say(agent,`${result.recipe.name}完成了。`);
+      this.event(`${agent.state.name} 在${obj.state.name}${result.recipe.name}。`);
+      return;
     }
-    n.energy=clamp(n.energy-5,0,100);
+    const missing=(result.missing||[]).map(kind=>this.itemName(kind)).join('、');
+    this.say(agent,result.recipe?`${result.recipe.name}还缺：${missing||'材料'}。`:`这里暂时没有适合的制作配方。`);
   }
 
   npcFetchWater(agent:NpcRuntime,obj:RuntimeObject) {
@@ -1351,7 +1343,7 @@ class TownGame {
   }
 
   npcTradeAtMarket(agent:NpcRuntime,_obj:RuntimeObject) {
-    const sell=agent.state.inventory.find(i=>['grain','wood','stone','flower','tool'].includes(i.kind)&&i.count>0);
+    const sell=agent.state.inventory.find(i=>['grain','flour','wood','plank','stone','flower','tool'].includes(i.kind)&&i.count>0);
     if(sell){sell.count--;agent.state.money+=sell.kind==='tool'?4:2;this.say(agent,`卖掉了一份${this.itemName(sell.kind)}。`);return;}
     if(agent.state.money>=2){agent.state.money-=2;this.addInventory(agent.state.inventory,'bread',1);this.say(agent,'买了一份面包。');}
   }
@@ -1374,7 +1366,7 @@ class TownGame {
   }
 
   npcDeliver(a:NpcRuntime,b:NpcRuntime) {
-    const priorities:Record<NpcRole,ItemKind[]>={farmer:['tool','water','bread'],baker:['grain','water','wood'],shopkeeper:['bread','apple','tool'],guard:['bread','water','tool'],maker:['wood','stone','water'],resident:['bread','apple','water']};
+    const priorities:Record<NpcRole,ItemKind[]>={farmer:['tool','water','bread'],baker:['flour','grain','water','wood'],shopkeeper:['bread','apple','tool','plank'],guard:['bread','water','tool'],maker:['wood','plank','stone','water'],resident:['bread','apple','water']};
     const wanted=priorities[b.state.role];
     const slot=wanted.map(k=>a.state.inventory.find(i=>i.kind===k&&i.count>0)).find(Boolean);
     if(!slot){this.say(a,`手头没有${b.state.name}正需要的东西。`);return;}
@@ -1482,7 +1474,7 @@ class TownGame {
   executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
     const s=o.state;
     const takeFirst=()=>{
-      const order:ItemKind[]=['flower','apple','grain','wood','stone','water','tool','bread'];
+      const order:ItemKind[]=['flower','apple','grain','flour','wood','plank','stone','water','tool','bread'];
       return order.find(k=>this.playerInventory[k]>0);
     };
     switch(action){
@@ -1508,11 +1500,18 @@ class TownGame {
       case 'mine':
         if((s.resourceAmount??4)<=0){this.toast('这里暂时没有可采的石料');break;}
         this.playerInventory.stone+=2;s.resourceAmount=Math.max(0,(s.resourceAmount??6)-1);this.toast('获得：石料 ×2');this.event(`玩家在${s.name}采矿。`);break;
-      case 'craft':
-        if(this.playerInventory.wood>=1&&this.playerInventory.stone>=1){this.playerInventory.wood--;this.playerInventory.stone--;this.playerInventory.tool++;this.toast('制作：工具 ×1');this.event(`玩家在${s.name}制作了工具。`);}
-        else if(this.playerInventory.grain>=1){this.playerInventory.grain--;this.playerInventory.bread+=2;this.toast('制作：面包 ×2');}
-        else this.toast('缺少可用于制作的材料');
+      case 'craft': {
+        const inv=(Object.entries(this.playerInventory) as Array<[ItemKind,number]>).map(([kind,count])=>({kind,count}));
+        const result=craftAtWorkstation(s.tags,inv);
+        if(result.ok&&result.recipe){
+          for(const slot of inv)this.playerInventory[slot.kind]=slot.count;
+          this.toast(`制作：${result.recipe.name}`);this.event(`玩家在${s.name}${result.recipe.name}。`);
+        }else{
+          const missing=(result.missing||[]).map(kind=>this.itemName(kind)).join('、');
+          this.toast(result.recipe?`缺少：${missing||'材料'}`:'这里没有可用配方');
+        }
         break;
+      }
       case 'work':
         this.playerInventory.coin+=2;this.minuteOfDay+=12;this.toast('完成一轮工作：+2 硬币');this.event(`玩家在${s.name}工作。`);break;
       case 'buy':
@@ -1570,7 +1569,7 @@ class TownGame {
     const world=this.coarseWorld.status();
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`weather.${this.weather}`)}`;
-    ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 💧${this.playerInventory.water} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
+    ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
     if(entity?.type==='npc'){
       const a=this.npcs.get(entity.id)!;const n=a.state;const d=a.lastDecision;

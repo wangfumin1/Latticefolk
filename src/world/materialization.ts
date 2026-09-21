@@ -108,7 +108,7 @@ function roleFor(index:number,level:number,biome:CoarseChunkState['biome'],arche
 
 function inventoryFor(role:NpcRole):InventoryItem[] {
   if(role==='farmer')return [{kind:'grain',count:2},{kind:'apple',count:1}];
-  if(role==='baker')return [{kind:'bread',count:2},{kind:'grain',count:1}];
+  if(role==='baker')return [{kind:'bread',count:2},{kind:'flour',count:1},{kind:'water',count:1}];
   if(role==='maker')return [{kind:'wood',count:2},{kind:'stone',count:1}];
   if(role==='shopkeeper')return [{kind:'bread',count:2},{kind:'apple',count:2}];
   if(role==='guard')return [{kind:'bread',count:1},{kind:'water',count:1}];
@@ -216,6 +216,9 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     if(['market_hamlet','wetland_hamlet','farmstead'].includes(archetype)){
       add('market','food_stall','乡间摊位',centerX+7.2,centerZ-1.8,['food','trade','market'],['inspect','buy','sell','trade'],{item:'bread'});
     }
+    if(archetype==='farmstead') add('mill','workstation','谷物磨坊',centerX-7.4,centerZ-1.7,['work','farm','grain','mill'],['inspect','work','craft']);
+    if(archetype==='market_hamlet'||archetype==='wetland_hamlet') add('bakery','workstation','公共烤炉',centerX-7.4,centerZ-1.7,['work','baker','oven'],['inspect','work','craft']);
+    if(archetype==='timber_camp') add('sawmill','workstation','木材加工台',centerX-7.4,centerZ-1.7,['work','maker','sawmill'],['inspect','work','craft']);
     if(['timber_camp','quarry_outpost','refuge'].includes(archetype)||chunk.settlementLevel>=2){
       add('workshop','workstation','公共工坊',centerX+2.6,centerZ-7.8,['work','maker','craft'],['inspect','work','craft']);
       add('guard','workstation','巡逻岗',centerX-2.6,centerZ-7.8,['work','guard','safety'],['inspect','work']);
@@ -268,10 +271,10 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   const activeResidents=Math.min(Math.round(chunk.population),6+chunk.settlementLevel*3,12);
   const workIds:Record<NpcRole,string|undefined>={
     farmer:`${chunk.id}_farm`,
-    baker:`${chunk.id}_market`,
+    baker:(archetype==='market_hamlet'||archetype==='wetland_hamlet')?`${chunk.id}_bakery`:`${chunk.id}_market`,
     shopkeeper:`${chunk.id}_market`,
     guard:`${chunk.id}_guard`,
-    maker:archetype==='quarry_outpost'?`${chunk.id}_quarry`:`${chunk.id}_workshop`,
+    maker:archetype==='quarry_outpost'?`${chunk.id}_quarry`:archetype==='timber_camp'?`${chunk.id}_sawmill`:`${chunk.id}_workshop`,
     resident:undefined
   };
 
