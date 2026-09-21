@@ -61,3 +61,10 @@ This is the foundation for larger procedural biomes, settlements, roads, ruins, 
 Materialized chunks now choose deterministic settlement archetypes from coarse biome and strategic state. Roads, functional buildings, work sites, storage, transport props, resource sites, residents, and surrounding nature are generated together as one semantic plan. Generated content exposes gameplay capabilities instead of becoming decorative-only scenery.
 
 The next milestone deepens production and logistics so generated farms, markets, storage, workshops, carts, and resource sites form connected multi-step systems rather than isolated interactions.
+
+
+## Implemented milestone: persistent wildlife ecology
+
+The first living non-human ecology now spans both simulation scales. Rabbit, deer, boar, and fox populations live in coarse chunks with habitat-derived carrying capacity and conserved migration. Entering a chunk materializes persistent individuals with age, sex, physiological needs, inherited traits, predator/prey behavior, mate choice, reproduction, deterministic mutation, and death. Jev participates only in bounded behavioral choice; physiology, genetics, and population accounting stay in simulation code.
+
+The next ecology milestone introduces explicit plant biomass and trophic energy flow, then disease, seasonality, lineage records, lifespan, and stronger evolutionary selection across many generations.
