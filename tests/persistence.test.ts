@@ -14,7 +14,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
     version:1,
     meta:{
       day:4,minuteOfDay:777,weather:'rain',playerPosition:{x:51,z:-22},
-      playerInventory:{apple:2,bread:1,wood:3,coin:9,flower:0,grain:4,water:1,stone:2,tool:1}
+      playerInventory:{apple:2,bread:1,wood:3,coin:9,flower:0,grain:4,flour:0,water:1,stone:2,plank:0,tool:1}
     },
     coarseChunks:[{
       id:'chunk_2_-1',cx:2,cz:-1,biome:'plains',settlementLevel:2,population:18,
