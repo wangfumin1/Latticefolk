@@ -1,4 +1,5 @@
 export type Vec2 = { x: number; z: number };
+export type LocaleCode = 'zh-CN' | 'en' | 'ja' | 'es';
 
 export type NpcRole = 'farmer' | 'baker' | 'shopkeeper' | 'guard' | 'maker' | 'resident';
 export type Mood = 'happy' | 'calm' | 'neutral' | 'sad' | 'annoyed' | 'curious' | 'tired';
@@ -188,6 +189,7 @@ export interface DialogueActor {
 }
 
 export interface DialogueRequest {
+  locale?: LocaleCode | string;
   speaker: DialogueActor;
   listener: DialogueActor;
   situation: string;
@@ -214,6 +216,7 @@ export type FragmentSlot = 'opener' | 'body' | 'closer';
 
 export interface DialogueEntry {
   id: string;
+  locale?: LocaleCode | string;
   kind: DialogueKind;
   slot?: FragmentSlot;
   text: string;
@@ -226,6 +229,7 @@ export interface DialogueEntry {
 
 export interface ImportDialogueRequest {
   format: 'plain' | 'jsonl' | 'json';
+  locale?: LocaleCode | string;
   text: string;
 }
 

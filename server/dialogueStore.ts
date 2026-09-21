@@ -18,6 +18,7 @@ function normalize(entry: Partial<DialogueEntry> & { text: string }): DialogueEn
   const intents = (entry.intents ?? []).filter((x): x is SocialIntent => VALID_INTENTS.has(x as SocialIntent));
   return {
     id: entry.id || crypto.randomUUID(),
+    locale: String(entry.locale || 'zh-CN'),
     kind,
     slot,
     text: String(entry.text ?? '').trim(),
@@ -88,8 +89,19 @@ export class DialogueStore {
 
   private load() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    const supplementalFile=path.join(path.dirname(this.file),'dialogue-seed.multilingual.jsonl');
+    const supplemental:DialogueEntry[]=[];
+    if(fs.existsSync(supplementalFile)){
+      for(const row of fs.readFileSync(supplementalFile,'utf8').split(/\r?\n/).filter(Boolean)){
+        try{
+          const parsed=JSON.parse(row) as DialogueEntry;
+          if(parsed.text?.trim())supplemental.push(normalize(parsed));
+        }catch{}
+      }
+    }
+
     if (!fs.existsSync(this.file) || fs.statSync(this.file).size === 0) {
-      fs.writeFileSync(this.file, SEED.map(x => JSON.stringify(x)).join('\n') + '\n', 'utf8');
+      fs.writeFileSync(this.file, [...SEED,...supplemental].map(x => JSON.stringify(x)).join('\n') + '\n', 'utf8');
     }
     const rows = fs.readFileSync(this.file, 'utf8').split(/\r?\n/).filter(Boolean);
     this.entries = [];
@@ -101,6 +113,13 @@ export class DialogueStore {
         // Ignore malformed historical rows; imports validate before append.
       }
     }
+
+    const ids=new Set(this.entries.map(x=>x.id));
+    const missing=supplemental.filter(x=>!ids.has(x.id));
+    if(missing.length){
+      fs.appendFileSync(this.file,missing.map(x=>JSON.stringify(x)).join('\n')+'\n','utf8');
+      this.entries.push(...missing);
+    }
     this.reindex();
   }
 
@@ -110,7 +129,7 @@ export class DialogueStore {
       const kindKey = e.kind === 'fragment' ? `fragment:${e.slot ?? 'body'}` : 'line';
       const arr = this.byKind.get(kindKey) ?? [];
       arr.push(e); this.byKind.set(kindKey, arr);
-      for (const tag of [...e.tags, ...e.intents, ...e.moods, ...e.roles]) {
+      for (const tag of [...e.tags, ...e.intents, ...e.moods, ...e.roles, `locale:${e.locale||'zh-CN'}`]) {
         const key = tag.toLowerCase();
         const tagged = this.byTag.get(key) ?? [];
         tagged.push(e); this.byTag.set(key, tagged);
@@ -124,19 +143,25 @@ export class DialogueStore {
       lines: this.byKind.get('line')?.length ?? 0,
       fragments: this.entries.filter(e => e.kind === 'fragment').length,
       tags: this.byTag.size,
+      locales: Object.fromEntries([...new Set(this.entries.map(x=>x.locale||'zh-CN'))].sort().map(locale=>[locale,this.entries.filter(x=>(x.locale||'zh-CN')===locale).length])),
     };
   }
 
-  retrieve(opts: { kind: 'line' | 'fragment'; slot?: FragmentSlot; tags: string[]; intent?: SocialIntent; mood?: string; role?: string; limit?: number; excludeText?: string[] }) {
+  retrieve(opts: { kind: 'line' | 'fragment'; slot?: FragmentSlot; tags: string[]; intent?: SocialIntent; mood?: string; role?: string; locale?: string; limit?: number; excludeText?: string[] }) {
     const key = opts.kind === 'fragment' ? `fragment:${opts.slot ?? 'body'}` : 'line';
-    const base = this.byKind.get(key) ?? [];
-    if (!base.length) return [];
+    const all = this.byKind.get(key) ?? [];
+    if (!all.length) return [];
+    const requestedLocale=opts.locale||'zh-CN';
+    const localized=all.filter(e=>(e.locale||'zh-CN')===requestedLocale);
+    const english=all.filter(e=>(e.locale||'zh-CN')==='en');
+    const base=localized.length?localized:(english.length?english:all);
+    if(!base.length)return [];
     const wanted = uniq([...opts.tags, opts.intent ?? '', opts.mood ?? '', opts.role ?? '']).map(x => x.toLowerCase());
     const excluded = new Set(opts.excludeText ?? []);
     // Large-corpus path: retrieve from tag indexes first instead of scoring the whole file.
     // Untagged imports are sampled as backfill so they can still surface.
     const pool = new Set<DialogueEntry>();
-    for (const tag of wanted) for (const e of this.byTag.get(tag) ?? []) if ((e.kind === opts.kind) && (opts.kind !== 'fragment' || e.slot === (opts.slot ?? 'body'))) pool.add(e);
+    for (const tag of wanted) for (const e of this.byTag.get(tag) ?? []) if (base.includes(e) && (e.kind === opts.kind) && (opts.kind !== 'fragment' || e.slot === (opts.slot ?? 'body'))) pool.add(e);
     const desiredPool = Math.max((opts.limit ?? 32) * 8, 128);
     if (pool.size < desiredPool) {
       const stride = Math.max(1, Math.floor(base.length / Math.max(1, desiredPool - pool.size)));
@@ -170,24 +195,24 @@ export class DialogueStore {
           if (!text) continue;
           if (kindToken.startsWith('fragment:')) {
             const slot = kindToken.split(':')[1] as FragmentSlot;
-            parsed.push(normalize({ kind:'fragment', slot: VALID_SLOTS.has(slot) ? slot : 'body', text, tags: tagToken.split(','), intents:[], moods:[], roles:[], weight:1 }));
+            parsed.push(normalize({ kind:'fragment', locale:payload.locale||'zh-CN', slot: VALID_SLOTS.has(slot) ? slot : 'body', text, tags: tagToken.split(','), intents:[], moods:[], roles:[], weight:1 }));
           } else {
-            parsed.push(normalize({ kind:'line', text, tags: tagToken.split(','), intents:[], moods:[], roles:[], weight:1 }));
+            parsed.push(normalize({ kind:'line', locale:payload.locale||'zh-CN', text, tags: tagToken.split(','), intents:[], moods:[], roles:[], weight:1 }));
           }
         } else {
-          parsed.push(normalize({ kind:'line', text: line, tags:[], intents:[], moods:[], roles:[], weight:1 }));
+          parsed.push(normalize({ kind:'line', locale:payload.locale||'zh-CN', text: line, tags:[], intents:[], moods:[], roles:[], weight:1 }));
         }
       }
     } else if (payload.format === 'json') {
       const data = JSON.parse(payload.text) as unknown;
       if (!Array.isArray(data)) throw new Error('JSON 必须是 DialogueEntry 数组');
       for (const row of data) {
-        if (row && typeof row === 'object' && typeof (row as any).text === 'string') parsed.push(normalize(row as any));
+        if (row && typeof row === 'object' && typeof (row as any).text === 'string') parsed.push(normalize({...(row as any),locale:(row as any).locale||payload.locale||'zh-CN'}));
       }
     } else {
       for (const row of payload.text.split(/\r?\n/).filter(Boolean)) {
         const data = JSON.parse(row) as any;
-        if (data && typeof data.text === 'string') parsed.push(normalize(data));
+        if (data && typeof data.text === 'string') parsed.push(normalize({...data,locale:data.locale||payload.locale||'zh-CN'}));
       }
     }
 

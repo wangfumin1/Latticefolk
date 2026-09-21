@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
+import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
   InteractionCapability, ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
@@ -17,14 +18,15 @@ const keyOf = (x:number,z:number) => `${x},${z}`;
 const clamp = (v:number,min:number,max:number) => Math.max(min,Math.min(max,v));
 const dist = (a:Vec2,b:Vec2) => Math.hypot(a.x-b.x,a.z-b.z);
 const now = () => performance.now();
+const i18n = new I18n(localStorage.getItem('latticefolk.locale') || navigator.language);
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <div id="game"></div>
 <div id="crosshair">+</div>
-<div id="modeBar"><button id="modeBtn">G · 上帝视角</button><span id="modeHint">第一人称</span></div>
+<div id="modeBar"><button id="modeBtn">${i18n.t('mode.god')}</button><span id="modeHint">${i18n.t('mode.first')}</span><select id="localeSelect" aria-label="Language">${SUPPORTED_LOCALES.map(x=>`<option value="${x.code}" ${x.code===i18n.locale?'selected':''}>${x.label}</option>`).join('')}</select></div>
 <div id="hud">
-  <div class="brand">LATTICEFOLK // LIVING TOWN</div>
+  <div class="brand">${i18n.t('brand')}</div>
   <div id="clock"></div>
   <div id="decisionStatus"></div>
   <div id="worldStatus"></div>
@@ -34,10 +36,10 @@ app.innerHTML = `
 <div id="npcPanel" class="panel compact"></div>
 <div id="log" class="panel log"></div>
 <div id="admin" class="panel admin hidden">
-  <div class="panel-title">Town Console <span>Tab 关闭</span></div>
+  <div class="panel-title">${i18n.t('console.title')} <span>${i18n.t('console.close')}</span></div>
   <div id="adminStatus"></div>
   <div class="admin-section" id="jevBudgetPanel">
-    <div class="admin-section-title">Jev Budget / 调用策略</div>
+    <div class="admin-section-title">${i18n.t('budget.title')}</div>
     <div class="budget-grid">
       <label>calls/min <input id="budgetCallsMin" type="number" min="0" step="1" /></label>
       <label>tokens/min <input id="budgetTokensMin" type="number" min="0" step="1000" /></label>
@@ -48,27 +50,27 @@ app.innerHTML = `
       <label>cache ms <input id="budgetCacheTtl" type="number" min="0" step="250" /></label>
     </div>
     <div class="row budget-presets">
-      <button data-budget-preset="economy">省流</button>
-      <button data-budget-preset="balanced">平衡</button>
-      <button data-budget-preset="quality">高质量</button>
-      <button id="budgetApplyBtn">应用预算</button>
+      <button data-budget-preset="economy">${i18n.t('budget.economy')}</button>
+      <button data-budget-preset="balanced">${i18n.t('budget.balanced')}</button>
+      <button data-budget-preset="quality">${i18n.t('budget.quality')}</button>
+      <button id="budgetApplyBtn">${i18n.t('budget.apply')}</button>
     </div>
     <div id="budgetLive" class="small"></div>
   </div>
-  <label>批量导入格式
-    <select id="importFormat"><option value="plain">纯文本 / TSV</option><option value="jsonl">JSONL</option><option value="json">JSON 数组</option></select>
+  <label>${i18n.t('console.importFormat')}
+    <select id="importFormat"><option value="plain">${i18n.t('console.plain')}</option><option value="jsonl">${i18n.t('console.jsonl')}</option><option value="json">${i18n.t('console.json')}</option></select>
   </label>
   <input id="importFile" type="file" accept=".txt,.json,.jsonl,.csv" />
   <textarea id="importText" placeholder="每行一条完整台词；或：\nline<TAB>greet,happy<TAB>你好。\nfragment:opener<TAB>greet<TAB>嘿，"></textarea>
-  <div class="row"><button id="importBtn">导入语料</button><button id="pauseBtn">暂停 NPC AI</button></div>
-  <div class="small">第一人称：WASD 移动 · Shift 奔跑 · 鼠标视角 · E 交互<br>上帝视角：G 切换 · 鼠标左键旋转 · 右键平移 · 滚轮缩放 · WASD 平移 · Q/E 旋转 · F 聚焦</div>
+  <div class="row"><button id="importBtn">${i18n.t('console.import')}</button><button id="pauseBtn">${i18n.t('console.pause')}</button></div>
+  <div class="small">${i18n.t('controls.first')}<br>${i18n.t('controls.god')}</div>
 </div>
 <div id="startOverlay">
   <div class="start-card">
-    <h1>Latticefolk</h1>
-    <p>自主 NPC 的行为、社交、环境交互、状态倾向与台词选择由可插拔决策引擎驱动；移动、碰撞与数值由确定性游戏规则执行。</p>
-    <button id="startBtn">进入小镇</button>
-    <div>WASD + 鼠标 · E 交互 · G 上帝视角 · Tab 控制台</div>
+    <h1>${i18n.t('start.title')}</h1>
+    <p>${i18n.t('start.desc')}</p>
+    <button id="startBtn">${i18n.t('start.enter')}</button>
+    <div>${i18n.t('start.controls')}</div>
   </div>
 </div>
 <div id="speechLayer"></div>
@@ -100,6 +102,7 @@ const ui = {
   interactionTitle: document.querySelector<HTMLDivElement>('#interactionTitle')!,
   interactionActions: document.querySelector<HTMLDivElement>('#interactionActions')!,
   interactionMeta: document.querySelector<HTMLDivElement>('#interactionMeta')!,
+  localeSelect: document.querySelector<HTMLSelectElement>('#localeSelect')!,
 };
 
 interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
@@ -179,6 +182,7 @@ class TownGame {
   coarseWorld!: CoarseWorldRuntime;
   interactionOpen = false;
   interactionObjectId?: string;
+  locale = i18n.locale;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -589,6 +593,7 @@ class TownGame {
     this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
     this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
     document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
+    ui.localeSelect.addEventListener('change',()=>{localStorage.setItem('latticefolk.locale',ui.localeSelect.value);location.reload();});
     document.querySelector('#budgetApplyBtn')!.addEventListener('click',()=>this.applyBudgetFromUi());
     document.querySelectorAll<HTMLButtonElement>('[data-budget-preset]').forEach(btn=>btn.addEventListener('click',()=>this.applyBudgetPreset(btn.dataset.budgetPreset||'balanced')));
 
@@ -606,7 +611,7 @@ class TownGame {
     this.renderer.domElement.addEventListener('dblclick',(e)=>{if(this.cameraMode==='god'&&e.button===0){this.selectGodEntity();this.focusSelected();}});
 
     document.querySelector('#pauseBtn')!.addEventListener('click',()=>{
-      this.aiPaused=!this.aiPaused; (document.querySelector('#pauseBtn') as HTMLButtonElement).textContent=this.aiPaused?'恢复 NPC AI':'暂停 NPC AI';
+      this.aiPaused=!this.aiPaused; (document.querySelector('#pauseBtn') as HTMLButtonElement).textContent=this.aiPaused?i18n.t('console.resume'):i18n.t('console.pause');
       this.toast(this.aiPaused?'NPC AI 已暂停':'NPC AI 已恢复');
     });
     const file=document.querySelector<HTMLInputElement>('#importFile')!;
@@ -635,7 +640,7 @@ class TownGame {
     this.playerMarker.visible=false;
     this.cancelPlayerTargeting();
     ui.crosshair.classList.add('hidden');
-    ui.modeBtn.textContent='G · 第一人称';ui.modeHint.textContent='上帝视角 · 观察者';
+    ui.modeBtn.textContent=i18n.t('mode.first');ui.modeHint.textContent=i18n.t('mode.observer');
     this.toast('上帝视角：玩家已从 NPC 感知中移除 · 点击查看 · 双击/F 聚焦');
   }
 
@@ -648,7 +653,7 @@ class TownGame {
     this.camera.position.set(this.playerPosition.x,1.7,this.playerPosition.z);
     this.camera.rotation.copy(this.firstPersonRotation);
     ui.crosshair.classList.remove('hidden');
-    ui.modeBtn.textContent='G · 上帝视角';ui.modeHint.textContent='第一人称';
+    ui.modeBtn.textContent=i18n.t('mode.god');ui.modeHint.textContent=i18n.t('mode.first');
     this.controls.lock();
   }
 
@@ -695,12 +700,12 @@ class TownGame {
   async importDialogue() {
     const format=(document.querySelector<HTMLSelectElement>('#importFormat')!).value;
     const text=(document.querySelector<HTMLTextAreaElement>('#importText')!).value;
-    if(!text.trim()){this.toast('没有可导入内容');return;}
+    if(!text.trim()){this.toast(i18n.t('dialogue.import.empty'));return;}
     try{
-      const r=await fetch('/api/dialogue/import',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format,text})});
+      const r=await fetch('/api/dialogue/import',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format,text,locale:this.locale})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'import failed');
-      this.toast(`已导入 ${j.imported} 条；语料总数 ${j.total}`); this.refreshHealth();
-    }catch(e){this.toast(`导入失败：${e instanceof Error?e.message:String(e)}`);}
+      this.toast(i18n.t('dialogue.import.done',{count:j.imported,total:j.total})); this.refreshHealth();
+    }catch(e){this.toast(i18n.t('dialogue.import.failed',{error:e instanceof Error?e.message:String(e)}));}
   }
 
   animate = () => {
@@ -1061,7 +1066,7 @@ class TownGame {
 
   async npcConversation(a:NpcRuntime,b:NpcRuntime,intent:SocialIntent) {
     a.state.social=clamp(a.state.social+15,0,100);b.state.social=clamp(b.state.social+9,0,100);
-    const req:DialogueRequest={speaker:this.actor(a,b),listener:this.actor(b,a),situation:`${a.state.name} 主动与 ${b.state.name} 在小镇中交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(a.state.position)},recentLines:[a.state.lastDialogue,b.state.lastDialogue].filter(Boolean) as string[]};
+    const req:DialogueRequest={locale:this.locale,speaker:this.actor(a,b),listener:this.actor(b,a),situation:`${a.state.name} 主动与 ${b.state.name} 在小镇中交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(a.state.position)},recentLines:[a.state.lastDialogue,b.state.lastDialogue].filter(Boolean) as string[]};
     try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;this.say(a,d.text);a.state.lastDialogue=d.text;this.applyRelation(a,b,d.relationEffect);this.remember(a,`与${b.state.name}交谈：${d.text}`,2);this.log(`${a.state.name} 对 ${b.state.name}：${d.text} [${d.source}]`);}catch{this.say(a,'嗨。');}
   }
 
@@ -1081,14 +1086,14 @@ class TownGame {
   async npcTalkPlayerAuto(n:NpcRuntime,intent:SocialIntent) {
     if(this.cameraMode!=='firstPerson')return;
     const dialogueEpoch=this.perceptionEpoch;
-    const req:DialogueRequest={speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood,relationship:n.state.relationships.player},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:`${n.state.name} 主动走到玩家附近并开始交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
+    const req:DialogueRequest={locale:this.locale,speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood,relationship:n.state.relationships.player},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:`${n.state.name} 主动走到玩家附近并开始交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
     try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+12,0,100);const rel=n.state.relationships.player??{affinity:50,trust:50,familiarity:5};const delta=d.relationEffect==='positive'?3:d.relationEffect==='negative'?-3:0;rel.affinity=clamp(rel.affinity+delta,0,100);rel.familiarity=clamp(rel.familiarity+2,0,100);n.state.relationships.player=rel;this.remember(n,`我主动和玩家交谈：${d.text}`,2);this.log(`${n.state.name} 主动对玩家：${d.text} [${d.source}]`);}catch{if(dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'嗨。');}
   }
 
   async playerTalk(n:NpcRuntime) {
     if(this.cameraMode!=='firstPerson')return;
     const dialogueEpoch=this.perceptionEpoch;
-    const req:DialogueRequest={speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:'玩家主动走近 NPC 并开始交谈。',intent:'greet',world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
+    const req:DialogueRequest={locale:this.locale,speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:'玩家主动走近 NPC 并开始交谈。',intent:'greet',world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
     try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+8,0,100);this.remember(n,`玩家来和我说话：${d.text}`,2);this.log(`${n.state.name} 对玩家：${d.text} [${d.source}]`);}catch{if(dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'你好。');}
   }
 
@@ -1128,12 +1133,7 @@ class TownGame {
   }
 
   interactionLabel(action:InteractionCapability) {
-    const labels:Record<InteractionCapability,string>={
-      inspect:'查看',rest:'休息',sit:'坐下',sleep:'睡觉',draw_water:'打水',drink:'喝水',wash:'清洗',
-      harvest:'收获',forage:'采集',chop:'砍伐',mine:'采矿',craft:'制作',work:'工作',buy:'购买',
-      sell:'出售',trade:'交易',store:'存入物品',take:'取出物品',load:'装载',unload:'卸货',pickup:'拾取',visit:'拜访'
-    };
-    return labels[action];
+    return i18n.t(`interaction.${action}`);
   }
 
   executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
@@ -1216,18 +1216,18 @@ class TownGame {
     if(this.cameraMode==='god'){
       if(!this.hoverEntity){ui.prompt.textContent='';return;}
       const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.objects.get(this.hoverEntity.id)?.state.name;
-      ui.prompt.textContent=`点击查看 ${name||''} · 双击/F 聚焦`;return;
+      ui.prompt.textContent=i18n.t('prompt.god',{name:name||''});return;
     }
     if(!this.hoverEntity){ui.prompt.textContent='';return;}
-    if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=`[E] 与 ${n.state.name} 交谈`;}
-    else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=`[E] ${o.state.name} · ${count} 项交互`;}
+    if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.talk',{name:n.state.name});}
+    else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:o.state.name,count});}
   }
 
   updateUi() {
     const world=this.coarseWorld.status();
     ui.world.textContent=`远区 ${world.chunks} chunks · 已决策 ${world.decidedChunks}/${world.chunks} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)}`;
-    ui.clock.textContent=`第 ${this.day} 天 · ${this.gameTimeText()} · ${this.weather==='clear'?'晴':this.weather==='cloudy'?'多云':'雨'}`;
-    ui.inv.textContent=this.cameraMode==='god'?'观察者模式 · 玩家实体未进入 NPC 世界':`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 💧${this.playerInventory.water} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
+    ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`weather.${this.weather}`)}`;
+    ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 💧${this.playerInventory.water} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
     if(entity?.type==='npc'){
       const a=this.npcs.get(entity.id)!;const n=a.state;const d=a.lastDecision;
@@ -1289,8 +1289,8 @@ class TownGame {
     try{
       const r=await fetch('/api/decision/budget',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
       const out=await r.json();if(!r.ok)throw new Error(out.error||'budget update failed');
-      this.renderBudget(out,true);this.toast('Jev 预算已更新');
-    }catch(e){this.toast(`预算更新失败：${e instanceof Error?e.message:String(e)}`);}
+      this.renderBudget(out,true);this.toast(i18n.t('budget.updated'));
+    }catch(e){this.toast(i18n.t('budget.failed',{error:e instanceof Error?e.message:String(e)}));}
   }
 
   renderBudget(budget:any,syncInputs=false) {
@@ -1304,7 +1304,7 @@ class TownGame {
     }
   }
 
-  async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true);}catch{ui.decision.textContent='后端离线';}}
+  async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true);}catch{ui.decision.textContent=i18n.t('backend.offline');}}
 
   gameTimeText(){const h=Math.floor(this.minuteOfDay/60)%24,m=Math.floor(this.minuteOfDay%60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
   say(a:NpcRuntime,text:string){a.speech={text,until:now()+Math.max(3500,Math.min(9000,text.length*220))};}
@@ -1312,7 +1312,7 @@ class TownGame {
   log(text:string){this.logs.push(text);if(this.logs.length>80)this.logs.shift();}
   toast(text:string){ui.toast.textContent=text;ui.toast.classList.add('show');setTimeout(()=>ui.toast.classList.remove('show'),2200);}
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
-  itemName(k:ItemKind){return ({apple:'苹果',bread:'面包',wood:'木料',coin:'硬币',flower:'花',grain:'谷物',water:'水',stone:'石料',tool:'工具'} as Record<ItemKind,string>)[k];}
+  itemName(k:ItemKind){return i18n.t(`item.${k}`);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 
   randomPassableNear(p:Vec2,radius:number):Vec2 {for(let i=0;i<60;i++){const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,-HALF+1,HALF-1)),z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,-HALF+1,HALF-1));if(!this.blocked.has(keyOf(x,z)))return{x,z};}return{x:p.x,z:p.z};}
