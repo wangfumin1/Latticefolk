@@ -39,6 +39,7 @@ export type ObjectKind =
   | 'well'
   | 'farm_plot'
   | 'building'
+  | 'road'
   | 'bush'
   | 'rock'
   | 'flower'

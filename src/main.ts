@@ -417,6 +417,7 @@ class TownGame {
       case 'cart': return ['inspect','load','unload'];
       case 'tool_prop': return ['inspect','pickup'];
       case 'building': return ['inspect','visit'];
+      case 'road': return ['inspect'];
       case 'dropped_item': return ['inspect','pickup'];
       default: return ['inspect'];
     }
@@ -940,6 +941,24 @@ class TownGame {
     const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
     const cachedNpcs=new Map((cached?.npcStates||[]).map(state=>[state.id,state]));
 
+    for(const road of plan.roads){
+      const saved=cachedObjects.get(road.id);
+      const state:WorldObjectState=structuredClone(saved||{
+        id:road.id,chunkId:chunk.id,kind:'road',name:road.name,position:{x:road.x,z:road.z},
+        tags:road.tags,usable:true,pickupable:false,capabilities:['inspect']
+      });
+      state.chunkId=chunk.id;
+      const mesh=new THREE.Mesh(
+        new THREE.BoxGeometry(road.w,.045,road.d),
+        new THREE.MeshStandardMaterial({color:road.tags.includes('trail')?0xa68d67:0xc3aa7d,roughness:1})
+      );
+      mesh.position.set(road.x,.025,road.z);mesh.receiveShadow=true;
+      mesh.userData={entityType:'object',entityId:road.id};
+      this.scene.add(mesh);
+      this.objects.set(road.id,{state,mesh});
+      runtime.objectIds.push(road.id);runtime.groups.push(mesh);
+    }
+
     for(const b of plan.buildings){
       this.addBuilding(b.name,b.x,b.z,b.w,b.d,b.color,b.asset,b.height,b.rotationY,{id:b.id,chunkId:chunk.id});
       runtime.objectIds.push(b.id);
@@ -972,7 +991,7 @@ class TownGame {
     runtime.initialMetrics=this.fineMetrics(runtime);
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
-    this.log(`Materialized ${chunk.id}: ${runtime.npcIds.length} NPCs / ${runtime.objectIds.length} objects`);
+    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`);
   }
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
