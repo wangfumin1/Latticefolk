@@ -22,6 +22,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 - decisiones jerárquicas Region / World: a mayor escala, menor frecuencia; el modelo solo elige políticas acotadas.
 - streaming dinámico de chunks: la exploración en primera persona expande el mundo, la ventana activa permanece acotada y los chunks descubiertos persisten; God View no genera terreno.
 - asentamientos procedurales semánticos: bioma, política, peligro y prosperidad generan caminos, edificios funcionales, zonas de trabajo, recursos y residentes; el contenido generado sigue siendo interactivo.
+- ecología de fauna persistente: conejos, ciervos, jabalíes y zorros existen como poblaciones coarse e individuos fine, con capacidad del hábitat, migración, necesidades, depredación/huida, decisiones Jev por lotes, reproducción, herencia y persistencia.
 - Presupuesto de tokens/coste de Jev administrable desde God View.
 - Diálogo escrito previamente con recuperación local y selección de líneas o fragmentos.
 - UI y corpus en chino simplificado, inglés, japonés y español.
