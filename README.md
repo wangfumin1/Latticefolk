@@ -47,6 +47,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Conserved regional exchange**: migration and coarse resource trade move explicitly from one chunk to another instead of appearing/disappearing independently.
 - **Hierarchical strategic decisions**: Chunk → Region → World policies run at slower cadences as scope increases, while deterministic systems remain authoritative.
 - **Streamed persistent exploration**: first-person travel can push beyond the original map edge while only a bounded active chunk window is rendered; explored chunk history persists.
+- **Semantic procedural settlements**: biome, strategy, danger and prosperity shape settlement archetypes, roads, building functions, work sites and resource layout; generated content remains interactive.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.
