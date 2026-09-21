@@ -20,6 +20,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Hierarchical Region and World policy decisions with slower provider cadence, separate Jev budget weights, and deterministic policy interpretation.
 - Unbounded first-person coarse-world streaming with a fixed active window, persistent discovered chunks, observer-safe God View, and O(n) neighbor flow planning.
 - Semantic procedural fine-chunk settlements with deterministic archetypes, roads, functional buildings/sites, role-aware residents, and resource placement that avoids roads/buildings.
+- Shared deterministic production recipes for NPCs and players, including flour/bread and plank/tool multi-step chains with localized new item types.
 
 ### Changed
 
