@@ -1,4 +1,4 @@
-import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy } from '../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy, RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy, WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy } from '../../src/types.js';
 
 function pick<T>(arr: T[], fallback: T): T {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : fallback;
@@ -110,4 +110,69 @@ export function fallbackChunkDecisions(req: ChunkDecisionRequest): ChunkDecision
     };
   });
   return { source: 'fallback', decisions };
+}
+
+
+export function fallbackRegionDecisions(req: RegionDecisionRequest): RegionDecisionResponse {
+  const decisions:RegionDecision[]=req.regions.map(region=>{
+    let priority:RegionPriority='balanced';
+    let movementPolicy:RegionMovementPolicy='stabilize';
+    let ecologyPolicy:RegionEcologyPolicy='balanced_use';
+    let reasonCode='region_balanced';
+
+    if(region.danger>=62){
+      priority='security_coordination';
+      movementPolicy=region.danger>=78?'restrict':'redistribute';
+      ecologyPolicy='protected_network';
+      reasonCode='region_danger';
+    }else if(region.food<34||region.water<32){
+      priority='food_security';
+      movementPolicy='stabilize';
+      ecologyPolicy='productive_landscape';
+      reasonCode='region_scarcity';
+    }else if(region.ecology<42){
+      priority='ecology_recovery';
+      movementPolicy='restrict';
+      ecologyPolicy='restore_corridors';
+      reasonCode='region_ecology';
+    }else if(region.prosperity>=64&&region.settlements>=2){
+      priority='trade_network';
+      movementPolicy='open';
+      ecologyPolicy=region.ecology>=58?'balanced_use':'protected_network';
+      reasonCode='region_trade';
+    }else if(region.food>58&&region.water>55&&region.prosperity>52){
+      priority='settlement_growth';
+      movementPolicy='open';
+      ecologyPolicy='balanced_use';
+      reasonCode='region_growth';
+    }
+
+    return {regionId:region.id,priority,movementPolicy,ecologyPolicy,confidence:.46,reasonCode,source:'fallback'};
+  });
+  return {source:'fallback',decisions};
+}
+
+export function fallbackWorldDecision(req: WorldDecisionRequest): WorldDecisionResponse {
+  const s=req.summary;
+  let priority:WorldPriority='resilience';
+  let connectivity:WorldConnectivityPolicy='balanced_networks';
+  let growth:WorldGrowthPolicy='steady';
+  let reasonCode='world_resilience';
+
+  if(s.danger>=62){
+    priority='security';connectivity='localism';growth='compact';reasonCode='world_danger';
+  }else if(s.ecology<42){
+    priority='ecology';connectivity='balanced_networks';growth='conserve';reasonCode='world_ecology';
+  }else if(s.food<38||s.water<36){
+    priority='resilience';connectivity='balanced_networks';growth='conserve';reasonCode='world_scarcity';
+  }else if(s.prosperity>62&&s.settlements>=8){
+    priority='prosperity';connectivity='trade_corridors';growth='steady';reasonCode='world_prosperity';
+  }else if(s.prosperity>52&&s.food>58&&s.water>55){
+    priority='expansion';connectivity='migration_corridors';growth='frontier';reasonCode='world_expansion';
+  }else if(s.ecology>72&&s.danger<30){
+    priority='exploration';connectivity='migration_corridors';growth='steady';reasonCode='world_exploration';
+  }
+
+  const decision:WorldDecision={priority,connectivity,growth,confidence:.45,reasonCode,source:'fallback'};
+  return {source:'fallback',decision};
 }

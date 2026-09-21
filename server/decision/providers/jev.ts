@@ -2,9 +2,11 @@ import type {
   DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse,
   DecisionAction, SocialIntent, StateShift, RelationEffect,
   ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision,
-  ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy
+  ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy,
+  RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy,
+  WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy
 } from '../../../src/types.js';
-import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision } from '../rules.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
@@ -340,6 +342,152 @@ export class JevDecisionProvider implements DecisionProvider {
       this.failures++;
       this.lastError = error instanceof Error ? error.message : String(error);
       return fallbackChunkDecisions(req);
+    }
+  }
+
+
+  async decideRegions(req: RegionDecisionRequest): Promise<RegionDecisionResponse> {
+    if(!this.key||!req.regions.length)return fallbackRegionDecisions(req);
+
+    const priorities:Record<RegionPriority,string>={
+      balanced:'Keep food, safety, ecology, movement, and prosperity in rough balance without a dominant intervention.',
+      food_security:'Coordinate production, reserves, and trade so shortages and water/food fragility are reduced.',
+      trade_network:'Strengthen exchange and specialization among settlements and neighboring chunks.',
+      settlement_growth:'Coordinate capacity for controlled settlement and population growth where resources support it.',
+      ecology_recovery:'Prioritize ecological restoration and lower regional extraction pressure.',
+      security_coordination:'Coordinate safety, defensive capacity, and risk reduction across the region.'
+    };
+    const movement:Record<RegionMovementPolicy,string>={
+      open:'Allow movement toward regional opportunity and capacity.',
+      stabilize:'Keep movement modest and preserve current population distribution.',
+      redistribute:'Encourage movement from stressed chunks toward safer/capable chunks inside the region.',
+      restrict:'Reduce discretionary movement because scarcity, danger, or ecological pressure is high.'
+    };
+    const ecology:Record<RegionEcologyPolicy,string>={
+      restore_corridors:'Reconnect and recover ecological capacity across neighboring chunks.',
+      balanced_use:'Permit bounded use while maintaining regional ecological stability.',
+      protected_network:'Coordinate stronger habitat protection across the region.',
+      productive_landscape:'Favor sustainable food/resource landscapes while avoiding destructive extraction.'
+    };
+
+    const regions=req.regions.slice(0,8);
+    const questions:Record<string,unknown>={};
+    regions.forEach((region,index)=>{
+      questions[`r${index}_priority`]={
+        type:'choice',
+        instructions:'Choose one medium-term regional coordination priority. Use only aggregate supplied state; do not invent events or numeric mutations.',
+        criteria:priorities
+      };
+      questions[`r${index}_movement`]={
+        type:'choice',
+        instructions:'Choose the bounded regional movement policy. This guides deterministic migration flows rather than directly moving population.',
+        criteria:movement
+      };
+      questions[`r${index}_ecology`]={
+        type:'choice',
+        instructions:'Choose the bounded regional ecology coordination policy. Deterministic simulation will implement any effects.',
+        criteria:ecology
+      };
+    });
+
+    const state={
+      simulationLayer:'region',
+      day:req.day,gameTime:req.gameTime,weather:req.weather,
+      regions:regions.map(r=>({
+        id:r.id,coordinates:[r.rx,r.rz],chunks:r.chunkIds.length,population:Number(r.population.toFixed(2)),settlements:r.settlements,
+        food:Number(r.food.toFixed(1)),wood:Number(r.wood.toFixed(1)),water:Number(r.water.toFixed(1)),
+        ecology:Number(r.ecology.toFixed(1)),danger:Number(r.danger.toFixed(1)),prosperity:Number(r.prosperity.toFixed(1))
+      })),
+      authority:'Select bounded coordination policies only. Never create entities or exact numeric state changes.'
+    };
+
+    try{
+      const out=await this.call('region',state,questions);
+      const answers=out.answers||{};
+      const validPriority=Object.keys(priorities) as RegionPriority[];
+      const validMovement=Object.keys(movement) as RegionMovementPolicy[];
+      const validEcology=Object.keys(ecology) as RegionEcologyPolicy[];
+      const decisions:RegionDecision[]=regions.map((region,index)=>{
+        const p=answers[`r${index}_priority`],m=answers[`r${index}_movement`],e=answers[`r${index}_ecology`];
+        const priority=validPriority.includes(p?.choice as RegionPriority)?p!.choice as RegionPriority:'balanced';
+        const movementPolicy=validMovement.includes(m?.choice as RegionMovementPolicy)?m!.choice as RegionMovementPolicy:'stabilize';
+        const ecologyPolicy=validEcology.includes(e?.choice as RegionEcologyPolicy)?e!.choice as RegionEcologyPolicy:'balanced_use';
+        const cs=[p?.confidence,m?.confidence,e?.confidence].filter((x):x is number=>typeof x==='number');
+        const confidence=Math.min(1,Math.max(0,cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:.5));
+        if(confidence<this.budget.getConfig().minConfidence){
+          this.budget.recordLowConfidence();
+          const fallback=fallbackRegionDecisions({ ...req, regions:[region] }).decisions[0]!;
+          return {...fallback,confidence,source:'fallback-low-confidence'};
+        }
+        return {regionId:region.id,priority,movementPolicy,ecologyPolicy,confidence,reasonCode:`jev_region_${priority}`,source:'jev'};
+      });
+      return {source:'jev',decisions};
+    }catch(error){
+      this.failures++;
+      this.lastError=error instanceof Error?error.message:String(error);
+      return fallbackRegionDecisions(req);
+    }
+  }
+
+  async decideWorld(req: WorldDecisionRequest): Promise<WorldDecisionResponse> {
+    if(!this.key)return fallbackWorldDecision(req);
+
+    const priorities:Record<WorldPriority,string>={
+      resilience:'Favor system-wide robustness against scarcity, shocks, and local failures.',
+      prosperity:'Favor stable exchange, specialization, and broad material prosperity.',
+      expansion:'Favor controlled growth into underused capacity where resources support it.',
+      ecology:'Favor long-term ecological capacity and recovery over short-term expansion.',
+      security:'Favor coordinated risk reduction and safer population/resource distribution.',
+      exploration:'Favor discovery, mobility, and gradual use of new frontier capacity.'
+    };
+    const connectivity:Record<WorldConnectivityPolicy,string>={
+      localism:'Reduce long-distance dependence and favor local resilience.',
+      balanced_networks:'Maintain moderate trade and migration links without strong specialization.',
+      trade_corridors:'Strengthen durable exchange corridors among prosperous/specialized regions.',
+      migration_corridors:'Keep safe movement routes open between stressed and high-capacity regions.'
+    };
+    const growth:Record<WorldGrowthPolicy,string>={
+      steady:'Allow gradual growth where local conditions support it.',
+      compact:'Prefer strengthening existing settlements over frontier expansion.',
+      frontier:'Allow more settlement growth in underused safe regions.',
+      conserve:'Suppress broad expansion until resources/ecology recover.'
+    };
+
+    const questions:Record<string,unknown>={
+      priority:{type:'choice',instructions:'Choose the single long-horizon world priority from aggregate state and regional decisions. Do not invent events.',criteria:priorities},
+      connectivity:{type:'choice',instructions:'Choose the bounded world connectivity policy. Deterministic systems will interpret it through migration/trade flow multipliers.',criteria:connectivity},
+      growth:{type:'choice',instructions:'Choose the bounded world growth posture. Deterministic settlement simulation remains authoritative.',criteria:growth}
+    };
+    const state={
+      simulationLayer:'world',
+      day:req.day,gameTime:req.gameTime,weather:req.weather,
+      summary:req.summary,
+      regions:req.regions.map(r=>({id:r.regionId,priority:r.priority,movement:r.movementPolicy,ecology:r.ecologyPolicy,confidence:Number(r.confidence.toFixed(2))})),
+      authority:'Choose strategic posture only; never directly mutate population, resources, settlements, or entities.'
+    };
+
+    try{
+      const out=await this.call('world',state,questions);
+      const a=out.answers||{};
+      const validP=Object.keys(priorities) as WorldPriority[];
+      const validC=Object.keys(connectivity) as WorldConnectivityPolicy[];
+      const validG=Object.keys(growth) as WorldGrowthPolicy[];
+      const priority=validP.includes(a.priority?.choice as WorldPriority)?a.priority!.choice as WorldPriority:'resilience';
+      const connectivityChoice=validC.includes(a.connectivity?.choice as WorldConnectivityPolicy)?a.connectivity!.choice as WorldConnectivityPolicy:'balanced_networks';
+      const growth=validG.includes(a.growth?.choice as WorldGrowthPolicy)?a.growth!.choice as WorldGrowthPolicy:'steady';
+      const cs=[a.priority?.confidence,a.connectivity?.confidence,a.growth?.confidence].filter((x):x is number=>typeof x==='number');
+      const confidence=Math.min(1,Math.max(0,cs.length?cs.reduce((x,y)=>x+y,0)/cs.length:.5));
+      if(confidence<this.budget.getConfig().minConfidence){
+        this.budget.recordLowConfidence();
+        const fallback=fallbackWorldDecision(req).decision;
+        return {source:'fallback-low-confidence',decision:{...fallback,confidence,source:'fallback-low-confidence'}};
+      }
+      const decision:WorldDecision={priority,connectivity:connectivityChoice,growth,confidence,reasonCode:`jev_world_${priority}`,source:'jev'};
+      return {source:'jev',decision};
+    }catch(error){
+      this.failures++;
+      this.lastError=error instanceof Error?error.message:String(error);
+      return fallbackWorldDecision(req);
     }
   }
 

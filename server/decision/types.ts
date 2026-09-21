@@ -1,4 +1,4 @@
-import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse } from '../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse, RegionDecisionRequest, RegionDecisionResponse, WorldDecisionRequest, WorldDecisionResponse } from '../../src/types.js';
 import type { JevBudgetConfig, JevBudgetSnapshot } from './budget.js';
 
 export interface DecisionProviderStatus {
@@ -23,5 +23,7 @@ export interface DecisionProvider {
   decide(request: DecisionRequest): Promise<DecisionResponse>;
   dialogueDecision(request: DialogueRequest): Promise<DialogueResponse>;
   decideChunks(request: ChunkDecisionRequest): Promise<ChunkDecisionResponse>;
+  decideRegions(request: RegionDecisionRequest): Promise<RegionDecisionResponse>;
+  decideWorld(request: WorldDecisionRequest): Promise<WorldDecisionResponse>;
   updateBudget?(patch: Partial<JevBudgetConfig>): JevBudgetSnapshot;
 }

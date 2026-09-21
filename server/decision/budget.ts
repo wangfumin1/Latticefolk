@@ -1,4 +1,4 @@
-export type JevCallKind = 'npc' | 'dialogue' | 'chunk';
+export type JevCallKind = 'npc' | 'dialogue' | 'chunk' | 'region' | 'world';
 
 export interface JevBudgetConfig {
   enabled: boolean;
@@ -12,13 +12,15 @@ export interface JevBudgetConfig {
   npcWeight: number;
   dialogueWeight: number;
   chunkWeight: number;
+  regionWeight: number;
+  worldWeight: number;
 }
 
 export interface JevBudgetSnapshot {
   config: JevBudgetConfig;
   inputTokens: { minute: number; hour: number; day: number; lifetime: number };
   estimatedUsd: { day: number; lifetime: number };
-  calls: { minute: number; hour: number; day: number; lifetime: number; npc: number; dialogue: number; chunk: number };
+  calls: { minute: number; hour: number; day: number; lifetime: number; npc: number; dialogue: number; chunk: number; region: number; world: number };
   blocked: number;
   cacheHits: number;
   lowConfidenceFallbacks: number;
@@ -46,11 +48,13 @@ export class JevBudgetController {
     npcWeight:n('JEV_NPC_WEIGHT',1),
     dialogueWeight:n('JEV_DIALOGUE_WEIGHT',1),
     chunkWeight:n('JEV_CHUNK_WEIGHT',0.65),
+    regionWeight:n('JEV_REGION_WEIGHT',0.5),
+    worldWeight:n('JEV_WORLD_WEIGHT',0.35),
   };
   private usage: Usage[]=[];
   private lifetimeTokens=0;
   private lifetimeCalls=0;
-  private byKind:Record<JevCallKind,number>={npc:0,dialogue:0,chunk:0};
+  private byKind:Record<JevCallKind,number>={npc:0,dialogue:0,chunk:0,region:0,world:0};
   private blocked=0;
   private cacheHits=0;
   private lowConfidenceFallbacks=0;
@@ -60,7 +64,7 @@ export class JevBudgetController {
   update(patch:Partial<JevBudgetConfig>){
     const numeric:(keyof JevBudgetConfig)[]=[
       'maxCallsPerMinute','maxInputTokensPerMinute','maxInputTokensPerHour','maxInputTokensPerDay',
-      'maxUsdPerDay','minConfidence','cacheTtlMs','npcWeight','dialogueWeight','chunkWeight'
+      'maxUsdPerDay','minConfidence','cacheTtlMs','npcWeight','dialogueWeight','chunkWeight','regionWeight','worldWeight'
     ];
     if(typeof patch.enabled==='boolean')this.config.enabled=patch.enabled;
     for(const key of numeric){
@@ -96,7 +100,7 @@ export class JevBudgetController {
   }
 
   private weight(kind:JevCallKind){
-    return kind==='npc'?this.config.npcWeight:kind==='dialogue'?this.config.dialogueWeight:this.config.chunkWeight;
+    return kind==='npc'?this.config.npcWeight:kind==='dialogue'?this.config.dialogueWeight:kind==='chunk'?this.config.chunkWeight:kind==='region'?this.config.regionWeight:this.config.worldWeight;
   }
 
   canCall(kind:JevCallKind,estimatedTokens:number){

@@ -1,7 +1,7 @@
-import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse } from '../../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse, RegionDecisionRequest, RegionDecisionResponse, WorldDecisionRequest, WorldDecisionResponse } from '../../../src/types.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
-import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision } from '../rules.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
 
 export class FallbackDecisionProvider implements DecisionProvider {
@@ -28,5 +28,15 @@ export class FallbackDecisionProvider implements DecisionProvider {
   async decideChunks(request: ChunkDecisionRequest): Promise<ChunkDecisionResponse> {
     this.calls++;
     return fallbackChunkDecisions(request);
+  }
+
+  async decideRegions(request: RegionDecisionRequest): Promise<RegionDecisionResponse> {
+    this.calls++;
+    return fallbackRegionDecisions(request);
+  }
+
+  async decideWorld(request: WorldDecisionRequest): Promise<WorldDecisionResponse> {
+    this.calls++;
+    return fallbackWorldDecision(request);
   }
 }

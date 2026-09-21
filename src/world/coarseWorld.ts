@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
-  ChunkMigrationPolicy, ChunkEcologyPolicy, CoarseChunkState
+  ChunkMigrationPolicy, ChunkEcologyPolicy, CoarseChunkState,
+  RegionState, RegionDecision, RegionDecisionRequest, RegionDecisionResponse,
+  WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 
@@ -16,6 +18,10 @@ export interface CoarseWorldStatus {
   materializedChunks: number;
   recentFlowCount: number;
   lastFlowSummary: string;
+  regionDecisions: number;
+  worldPriority: string;
+  worldConnectivity: string;
+  worldGrowth: string;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -45,6 +51,15 @@ export class CoarseWorldRuntime {
   private simulationAccumulator=0;
   private flowAccumulator=0;
   private recentFlowLog:WorldFlowRecord[]=[];
+  private regionPolicies = new Map<string,RegionDecision>();
+  private worldPolicy:WorldDecision={
+    priority:'resilience',connectivity:'balanced_networks',growth:'steady',
+    confidence:.4,reasonCode:'world_initial',source:'seeded'
+  };
+  private nextRegionDecisionAt=performance.now()+9000;
+  private nextWorldDecisionAt=performance.now()+18000;
+  private regionPending=false;
+  private worldPending=false;
 
   constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
     this.root.name='coarse-world';
@@ -152,7 +167,10 @@ export class CoarseWorldRuntime {
       this.flowAccumulator%=5;
       this.runConservedFlows(ctx);
     }
-    if(!this.pending&&performance.now()>=this.nextDecisionAt)void this.requestBatch(ctx);
+    const tick=performance.now();
+    if(!this.pending&&tick>=this.nextDecisionAt)void this.requestBatch(ctx);
+    if(!this.regionPending&&tick>=this.nextRegionDecisionAt)void this.requestRegions(ctx);
+    if(!this.worldPending&&tick>=this.nextWorldDecisionAt)void this.requestWorld(ctx);
   }
 
   private simulate(chunk:CoarseChunkState,seconds:number,weather:string) {
@@ -163,6 +181,14 @@ export class CoarseWorldRuntime {
     chunk.water=clamp(chunk.water+((weather==='rain'?1.5:chunk.biome==='wetlands' ? .75 : -.28)-chunk.population*.003)*scale);
     chunk.wood=clamp(chunk.wood+((chunk.biome==='forest'?1.15:.45)-chunk.population*.004)*scale);
     chunk.ecology=clamp(chunk.ecology+(.18-chunk.population*.002)*scale);
+
+    const region=this.regionPolicies.get(this.regionId(chunk.cx,chunk.cz));
+    const world=this.worldPolicy;
+    if(region?.priority==='food_security')chunk.food=clamp(chunk.food+.12*scale);
+    if(region?.priority==='ecology_recovery')chunk.ecology=clamp(chunk.ecology+.12*scale);
+    if(region?.priority==='security_coordination')chunk.danger=clamp(chunk.danger-.10*scale);
+    if(world.priority==='ecology')chunk.ecology=clamp(chunk.ecology+.07*scale);
+    if(world.priority==='security')chunk.danger=clamp(chunk.danger-.06*scale);
 
     const strategyEffect:Record<ChunkStrategy,()=>void>={
       sustain:()=>{chunk.prosperity=clamp(chunk.prosperity+.05*scale);},
@@ -183,7 +209,8 @@ export class CoarseWorldRuntime {
     if(chunk.migrationPolicy==='release')chunk.population=Math.max(0,chunk.population-.035*scale);
     if(chunk.migrationPolicy==='evacuate')chunk.population=Math.max(0,chunk.population-.11*scale);
 
-    if(chunk.strategy==='grow_settlement'&&chunk.population>12&&chunk.prosperity>58&&chunk.settlementLevel<3&&this.hash(chunk.cx,chunk.cz,chunk.decisionVersion+100)>.7){
+    const growthThreshold=world.growth==='frontier' ? .60 : world.growth==='compact' ? .78 : world.growth==='conserve' ? .9 : .7;
+    if(chunk.strategy==='grow_settlement'&&chunk.population>12&&chunk.prosperity>58&&chunk.settlementLevel<3&&this.hash(chunk.cx,chunk.cz,chunk.decisionVersion+100)>growthThreshold){
       chunk.settlementLevel++;
       this.refreshMarker(chunk);
     }
@@ -195,7 +222,23 @@ export class CoarseWorldRuntime {
       minuteOfDay:this.parseGameTime(ctx.gameTime),
       materialized:this.materialized
     });
-    const applied=applyConservedFlows(this.chunks,planned);
+    const adjusted=planned.map(flow=>{
+      const source=this.chunks.get(flow.fromChunkId);
+      const target=this.chunks.get(flow.toChunkId);
+      const sourceRegion=source?this.regionPolicies.get(this.regionId(source.cx,source.cz)):undefined;
+      const targetRegion=target?this.regionPolicies.get(this.regionId(target.cx,target.cz)):undefined;
+      let factor=1;
+      if(flow.kind.endsWith('_trade')&&this.worldPolicy.connectivity==='trade_corridors')factor*=1.18;
+      if(flow.kind==='migration'&&this.worldPolicy.connectivity==='migration_corridors')factor*=1.18;
+      if(flow.kind==='ecology_spread'&&this.worldPolicy.priority==='ecology')factor*=1.2;
+      if(sourceRegion?.priority==='trade_network'&&flow.kind.endsWith('_trade'))factor*=1.12;
+      if(targetRegion?.priority==='food_security'&&flow.kind==='food_trade')factor*=1.12;
+      if(targetRegion?.priority==='ecology_recovery'&&flow.kind==='ecology_spread')factor*=1.15;
+      if(sourceRegion?.movementPolicy==='restrict'&&flow.kind==='migration')factor*=.55;
+      if(targetRegion?.movementPolicy==='open'&&flow.kind==='migration')factor*=1.08;
+      return {...flow,amount:flow.amount*factor};
+    });
+    const applied=applyConservedFlows(this.chunks,adjusted);
     if(applied.length){
       this.recentFlowLog.push(...applied);
       if(this.recentFlowLog.length>120)this.recentFlowLog.splice(0,this.recentFlowLog.length-120);
@@ -209,6 +252,81 @@ export class CoarseWorldRuntime {
 
   flowHistory(limit=20) {
     return this.recentFlowLog.slice(-Math.max(0,limit));
+  }
+
+  private regionId(cx:number,cz:number) {
+    const rx=Math.floor((cx+this.radius)/3);
+    const rz=Math.floor((cz+this.radius)/3);
+    return `region_${rx}_${rz}`;
+  }
+
+  private aggregateRegions():RegionState[] {
+    const groups=new Map<string,CoarseChunkState[]>();
+    for(const chunk of this.chunks.values()){
+      const id=this.regionId(chunk.cx,chunk.cz);
+      const list=groups.get(id)||[];
+      list.push(chunk);groups.set(id,list);
+    }
+    const avg=(list:CoarseChunkState[],pick:(c:CoarseChunkState)=>number)=>list.reduce((s,c)=>s+pick(c),0)/Math.max(1,list.length);
+    return [...groups.entries()].map(([id,list])=>{
+      const [rx,rz]=id.replace('region_','').split('_').map(Number);
+      return {
+        id,rx,rz,chunkIds:list.map(c=>c.id),
+        population:list.reduce((s,c)=>s+c.population,0),
+        settlements:list.reduce((s,c)=>s+(c.settlementLevel>0?1:0),0),
+        food:avg(list,c=>c.food),wood:avg(list,c=>c.wood),water:avg(list,c=>c.water),
+        ecology:avg(list,c=>c.ecology),danger:avg(list,c=>c.danger),prosperity:avg(list,c=>c.prosperity)
+      };
+    });
+  }
+
+  private worldSummary(regions:RegionState[]):WorldStrategicSummary {
+    const chunks=[...this.chunks.values()];
+    const avg=(pick:(c:CoarseChunkState)=>number)=>chunks.reduce((s,c)=>s+pick(c),0)/Math.max(1,chunks.length);
+    return {
+      population:chunks.reduce((s,c)=>s+c.population,0),
+      settlements:chunks.reduce((s,c)=>s+(c.settlementLevel>0?1:0),0),
+      food:avg(c=>c.food),wood:avg(c=>c.wood),water:avg(c=>c.water),ecology:avg(c=>c.ecology),
+      danger:avg(c=>c.danger),prosperity:avg(c=>c.prosperity),activeRegions:regions.length
+    };
+  }
+
+  private async requestRegions(ctx:UpdateContext) {
+    this.regionPending=true;
+    const regions=this.aggregateRegions().slice(0,8);
+    const body:RegionDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,regions};
+    try{
+      const response=await fetch('/api/world/regions/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const result=await response.json() as RegionDecisionResponse;
+      if(!response.ok)throw new Error('region decision failed');
+      for(const decision of result.decisions)this.regionPolicies.set(decision.regionId,decision);
+    }catch{
+      // Existing regional policies remain authoritative until the next successful refresh.
+    }finally{
+      this.regionPending=false;
+      this.nextRegionDecisionAt=performance.now()+45_000;
+    }
+  }
+
+  private async requestWorld(ctx:UpdateContext) {
+    this.worldPending=true;
+    const regions=this.aggregateRegions();
+    const regionDecisions=regions.map(region=>this.regionPolicies.get(region.id)).filter((x):x is RegionDecision=>Boolean(x));
+    const body:WorldDecisionRequest={
+      day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,
+      summary:this.worldSummary(regions),regions:regionDecisions
+    };
+    try{
+      const response=await fetch('/api/world/strategy/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const result=await response.json() as WorldDecisionResponse;
+      if(!response.ok)throw new Error('world decision failed');
+      this.worldPolicy=result.decision;
+    }catch{
+      // Keep the previous bounded world policy if the provider is temporarily unavailable.
+    }finally{
+      this.worldPending=false;
+      this.nextWorldDecisionAt=performance.now()+120_000;
+    }
   }
 
   private pressure(chunk:CoarseChunkState) {
@@ -288,6 +406,10 @@ export class CoarseWorldRuntime {
       materializedChunks:this.materialized.size,
       recentFlowCount:this.recentFlowLog.length,
       lastFlowSummary:this.recentFlowLog.length?this.describeFlow(this.recentFlowLog[this.recentFlowLog.length-1]!):'—',
+      regionDecisions:this.regionPolicies.size,
+      worldPriority:this.worldPolicy.priority,
+      worldConnectivity:this.worldPolicy.connectivity,
+      worldGrowth:this.worldPolicy.growth,
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)

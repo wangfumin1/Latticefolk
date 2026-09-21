@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
 import { WorldPersistence } from './worldPersistence.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, WorldPersistenceSnapshot } from '../src/types.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WorldPersistenceSnapshot } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -102,6 +102,28 @@ app.post('/api/decision', async (req, res) => {
     return;
   }
   res.json(await decision.decide(body));
+});
+
+app.post('/api/world/regions/decide', async (req, res) => {
+  const body=req.body as RegionDecisionRequest;
+  if(!body||!Array.isArray(body.regions)||typeof body.day!=='number'||typeof body.gameTime!=='string'){
+    res.status(400).json({error:'Invalid region decision payload'});
+    return;
+  }
+  if(body.regions.length>8){
+    res.status(400).json({error:'Region decision batch exceeds 8 regions'});
+    return;
+  }
+  res.json(await decision.decideRegions(body));
+});
+
+app.post('/api/world/strategy/decide', async (req, res) => {
+  const body=req.body as WorldDecisionRequest;
+  if(!body||!body.summary||!Array.isArray(body.regions)||typeof body.day!=='number'||typeof body.gameTime!=='string'){
+    res.status(400).json({error:'Invalid world decision payload'});
+    return;
+  }
+  res.json(await decision.decideWorld(body));
 });
 
 app.post('/api/world/chunks/decide', async (req, res) => {

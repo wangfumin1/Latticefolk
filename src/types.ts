@@ -283,6 +283,92 @@ export interface ChunkDecisionResponse {
   decisions: ChunkDecision[];
 }
 
+export type RegionPriority =
+  | 'balanced'
+  | 'food_security'
+  | 'trade_network'
+  | 'settlement_growth'
+  | 'ecology_recovery'
+  | 'security_coordination';
+
+export type RegionMovementPolicy = 'open' | 'stabilize' | 'redistribute' | 'restrict';
+export type RegionEcologyPolicy = 'restore_corridors' | 'balanced_use' | 'protected_network' | 'productive_landscape';
+
+export interface RegionState {
+  id: string;
+  rx: number;
+  rz: number;
+  chunkIds: string[];
+  population: number;
+  settlements: number;
+  food: number;
+  wood: number;
+  water: number;
+  ecology: number;
+  danger: number;
+  prosperity: number;
+}
+
+export interface RegionDecisionRequest {
+  day: number;
+  gameTime: string;
+  weather: string;
+  regions: RegionState[];
+}
+
+export interface RegionDecision {
+  regionId: string;
+  priority: RegionPriority;
+  movementPolicy: RegionMovementPolicy;
+  ecologyPolicy: RegionEcologyPolicy;
+  confidence: number;
+  reasonCode: string;
+  source: string;
+}
+
+export interface RegionDecisionResponse {
+  source: string;
+  decisions: RegionDecision[];
+}
+
+export type WorldPriority = 'resilience' | 'prosperity' | 'expansion' | 'ecology' | 'security' | 'exploration';
+export type WorldConnectivityPolicy = 'localism' | 'balanced_networks' | 'trade_corridors' | 'migration_corridors';
+export type WorldGrowthPolicy = 'steady' | 'compact' | 'frontier' | 'conserve';
+
+export interface WorldStrategicSummary {
+  population: number;
+  settlements: number;
+  food: number;
+  wood: number;
+  water: number;
+  ecology: number;
+  danger: number;
+  prosperity: number;
+  activeRegions: number;
+}
+
+export interface WorldDecisionRequest {
+  day: number;
+  gameTime: string;
+  weather: string;
+  summary: WorldStrategicSummary;
+  regions: RegionDecision[];
+}
+
+export interface WorldDecision {
+  priority: WorldPriority;
+  connectivity: WorldConnectivityPolicy;
+  growth: WorldGrowthPolicy;
+  confidence: number;
+  reasonCode: string;
+  source: string;
+}
+
+export interface WorldDecisionResponse {
+  source: string;
+  decision: WorldDecision;
+}
+
 
 export interface PersistedFineChunk {
   chunkId: string;
