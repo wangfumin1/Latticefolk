@@ -1,8 +1,10 @@
 import type {
   DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse,
-  DecisionAction, SocialIntent, StateShift, RelationEffect
+  DecisionAction, SocialIntent, StateShift, RelationEffect,
+  ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision,
+  ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy
 } from '../../../src/types.js';
-import { fallbackDecision, fallbackDialogue } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions } from '../rules.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
@@ -204,7 +206,100 @@ export class JevDecisionProvider implements DecisionProvider {
     }
   }
 
-  async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
+
+  async decideChunks(req: ChunkDecisionRequest): Promise<ChunkDecisionResponse> {
+    if (!this.key || !req.chunks.length) return fallbackChunkDecisions(req);
+
+    const strategies: Record<ChunkStrategy,string> = {
+      sustain:'Maintain current population and resource use without major expansion.',
+      grow_settlement:'Invest surplus resources into settlement growth and population capacity.',
+      conserve:'Reduce extraction and growth to survive scarcity or restore reserves.',
+      extract_resources:'Increase controlled harvesting of locally abundant resources.',
+      fortify:'Prioritize safety, resilience, and defensive capacity against danger.',
+      trade_route:'Prioritize exchange, movement corridors, specialization, and regional trade.'
+    };
+    const migrations: Record<ChunkMigrationPolicy,string> = {
+      attract:'Encourage net migration into this chunk because capacity and opportunity justify it.',
+      retain:'Keep population broadly stable and avoid strong migration pressure.',
+      release:'Allow or encourage some population to leave for better opportunities elsewhere.',
+      evacuate:'Strongly reduce local population because present conditions are unsafe or unsustainable.'
+    };
+    const ecology: Record<ChunkEcologyPolicy,string> = {
+      recover:'Reduce pressure and actively favor ecological recovery.',
+      balance:'Keep extraction and ecological capacity in rough balance.',
+      harvest:'Use ecological surplus more aggressively while remaining within simulation constraints.',
+      protect:'Strongly protect habitat because danger, scarcity, or degradation makes further pressure risky.'
+    };
+
+    const chunks = req.chunks.slice(0, 8);
+    const questions: Record<string, unknown> = {};
+    chunks.forEach((chunk, index) => {
+      questions[`c${index}_strategy`] = {
+        type:'choice',
+        instructions:'Choose the best medium-term regional strategy for this distant simulated chunk. Use only supplied state. This is policy selection; deterministic simulation will apply consequences.',
+        criteria:strategies
+      };
+      questions[`c${index}_migration`] = {
+        type:'choice',
+        instructions:'Choose net migration policy for this distant chunk from current population, prosperity, danger, food, water and ecology.',
+        criteria:migrations
+      };
+      questions[`c${index}_ecology`] = {
+        type:'choice',
+        instructions:'Choose the bounded ecology policy for this chunk. Consider resource stocks, biome condition, settlement pressure and danger.',
+        criteria:ecology
+      };
+    });
+
+    const state = {
+      simulationLayer:'coarse_distant_chunks',
+      day:req.day,
+      gameTime:req.gameTime,
+      weather:req.weather,
+      chunks:chunks.map(c => ({
+        id:c.id, coordinates:[c.cx,c.cz], biome:c.biome,
+        settlementLevel:c.settlementLevel, population:c.population,
+        food:c.food, wood:c.wood, water:c.water, ecology:c.ecology,
+        danger:c.danger, prosperity:c.prosperity,
+        currentPolicy:{ strategy:c.strategy, migration:c.migrationPolicy, ecology:c.ecologyPolicy }
+      })),
+      semantics:{
+        resources:'food, wood, water, ecology, danger, prosperity are bounded 0-100 coarse simulation indices',
+        authority:'choose policy only; never invent exact mutations, entities, resources, or events'
+      }
+    };
+
+    try {
+      const out = await this.call(state, questions);
+      const answers = out.answers || {};
+      const validStrategy = Object.keys(strategies) as ChunkStrategy[];
+      const validMigration = Object.keys(migrations) as ChunkMigrationPolicy[];
+      const validEcology = Object.keys(ecology) as ChunkEcologyPolicy[];
+      const decisions: ChunkDecision[] = chunks.map((chunk,index) => {
+        const s = answers[`c${index}_strategy`];
+        const m = answers[`c${index}_migration`];
+        const e = answers[`c${index}_ecology`];
+        const strategy = validStrategy.includes(s?.choice as ChunkStrategy) ? s!.choice as ChunkStrategy : chunk.strategy;
+        const migrationPolicy = validMigration.includes(m?.choice as ChunkMigrationPolicy) ? m!.choice as ChunkMigrationPolicy : chunk.migrationPolicy;
+        const ecologyPolicy = validEcology.includes(e?.choice as ChunkEcologyPolicy) ? e!.choice as ChunkEcologyPolicy : chunk.ecologyPolicy;
+        const confidences=[s?.confidence,m?.confidence,e?.confidence].filter((x):x is number=>typeof x==='number');
+        const confidence=confidences.length?confidences.reduce((a,b)=>a+b,0)/confidences.length:.5;
+        return {
+          chunkId:chunk.id, strategy, migrationPolicy, ecologyPolicy,
+          confidence:Math.min(1,Math.max(0,confidence)),
+          reasonCode:`jev_chunk_${strategy}`,
+          source:'jev'
+        };
+      });
+      return { source:'jev', decisions };
+    } catch (error) {
+      this.failures++;
+      this.lastError = error instanceof Error ? error.message : String(error);
+      return fallbackChunkDecisions(req);
+    }
+  }
+
+async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
     const { lines, fragments } = retrieveDialogueCandidates(this.dialogue, req);
     if (!this.key) return fallbackDialogue(req, lines, fragments);
 
