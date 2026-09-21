@@ -37,7 +37,37 @@ export type ObjectKind =
   | 'crate'
   | 'well'
   | 'farm_plot'
+  | 'building'
+  | 'bush'
+  | 'rock'
+  | 'flower'
+  | 'cart'
+  | 'tool_prop'
   | 'dropped_item';
+
+export type InteractionCapability =
+  | 'inspect'
+  | 'rest'
+  | 'sit'
+  | 'sleep'
+  | 'draw_water'
+  | 'drink'
+  | 'wash'
+  | 'harvest'
+  | 'forage'
+  | 'chop'
+  | 'mine'
+  | 'craft'
+  | 'work'
+  | 'buy'
+  | 'sell'
+  | 'trade'
+  | 'store'
+  | 'take'
+  | 'load'
+  | 'unload'
+  | 'pickup'
+  | 'visit';
 
 export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower' | 'grain' | 'water' | 'stone' | 'tool';
 
@@ -91,6 +121,9 @@ export interface WorldObjectState {
   usable: boolean;
   pickupable: boolean;
   item?: ItemKind;
+  capabilities?: InteractionCapability[];
+  storage?: InventoryItem[];
+  resourceAmount?: number;
   respawnAt?: number;
   occupiedBy?: string;
 }
@@ -115,6 +148,7 @@ export interface NearbyObject {
   usable: boolean;
   pickupable: boolean;
   item?: ItemKind;
+  capabilities?: InteractionCapability[];
 }
 
 export interface DecisionWorldSnapshot {

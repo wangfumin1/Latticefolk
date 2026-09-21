@@ -180,7 +180,7 @@ export class JevDecisionProvider implements DecisionProvider {
       questions.target_object = {
         type:'choice',
         instructions:'Choose the most relevant nearby world object for the NPC current practical needs or curiosity.',
-        criteria:Object.fromEntries(req.world.nearbyObjects.slice(0, 128).map(o => [o.id, `${o.name}; kind=${o.kind}; tags=${o.tags.join(',')}; distance=${o.distance.toFixed(1)}; usable=${o.usable}; pickupable=${o.pickupable}`]))
+        criteria:Object.fromEntries(req.world.nearbyObjects.slice(0, 128).map(o => [o.id, `${o.name}; kind=${o.kind}; tags=${o.tags.join(',')}; capabilities=${(o.capabilities||[]).join(',')}; distance=${o.distance.toFixed(1)}; usable=${o.usable}; pickupable=${o.pickupable}`]))
       };
     }
 

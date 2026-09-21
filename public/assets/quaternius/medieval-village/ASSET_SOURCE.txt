@@ -1,0 +1,6 @@
+Quaternius Medieval Village Pack
+Source: https://quaternius.com/packs/medievalvillage.html
+Original public download: https://drive.google.com/drive/folders/18T92VcNldHG0ugWo1u0hSJGDLua-n7o5
+Asset used: Props/FBX/Well.fbx
+License: CC0 / public domain dedication as distributed with the pack
+Author: Quaternius

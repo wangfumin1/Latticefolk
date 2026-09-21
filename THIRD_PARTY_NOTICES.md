@@ -27,3 +27,15 @@ These assets are used for the expanded demo town while the rendering layer remai
 ## Runtime dependencies
 
 The npm dependencies declared in `package.json` are not vendored into this repository. Their upstream licenses apply independently. Run your package manager's license audit before redistributing a bundled product if your distribution process requires it.
+
+
+## Quaternius Medieval Village Pack
+
+Latticefolk includes the `Well.fbx` prop from Quaternius' Medieval Village Pack.
+
+- Source: https://quaternius.com/packs/medievalvillage.html
+- Author: Quaternius
+- License: CC0 / public domain dedication as distributed with the pack
+- Use in Latticefolk: interactive town well visual asset
+
+The asset is redistributed with this repository under its original CC0 terms.

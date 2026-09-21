@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
+  InteractionCapability, ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -52,7 +53,12 @@ app.innerHTML = `
   </div>
 </div>
 <div id="speechLayer"></div>
-<div id="toast"></div>`;
+<div id="toast"></div>
+<div id="interactionMenu" class="panel interaction-menu hidden">
+  <div class="interaction-head"><b id="interactionTitle"></b><button id="interactionClose">×</button></div>
+  <div id="interactionActions" class="interaction-actions"></div>
+  <div id="interactionMeta" class="interaction-meta"></div>
+</div>`;
 
 const ui = {
   clock: document.querySelector<HTMLDivElement>('#clock')!,
@@ -70,6 +76,10 @@ const ui = {
   modeHint: document.querySelector<HTMLSpanElement>('#modeHint')!,
   crosshair: document.querySelector<HTMLDivElement>('#crosshair')!,
   overlay: document.querySelector<HTMLDivElement>('#startOverlay')!,
+  interaction: document.querySelector<HTMLDivElement>('#interactionMenu')!,
+  interactionTitle: document.querySelector<HTMLDivElement>('#interactionTitle')!,
+  interactionActions: document.querySelector<HTMLDivElement>('#interactionActions')!,
+  interactionMeta: document.querySelector<HTMLDivElement>('#interactionMeta')!,
 };
 
 interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
@@ -141,11 +151,14 @@ class TownGame {
   decisionProvider = 'fallback';
   decisionCalls = 0;
   gltfLoader = new GLTFLoader();
+  fbxLoader = new FBXLoader();
   assets = new Map<string,AssetTemplate>();
   visualTargets: VisualTarget[] = [];
   assetRoot = '/assets/quaternius';
   assetsReady = false;
   coarseWorld!: CoarseWorldRuntime;
+  interactionOpen = false;
+  interactionObjectId?: string;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -239,7 +252,7 @@ class TownGame {
     ] as Array<[number,number]>) this.addTreeDecoration(x,z);
   }
 
-  addBuilding(_name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0) {
+  addBuilding(name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0) {
     const g = new THREE.Group();
     const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9});
     const trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
@@ -257,8 +270,31 @@ class TownGame {
     foundation.position.y=.12;foundation.receiveShadow=true;g.add(foundation);
     g.position.set(x,0,z); this.scene.add(g);
     if(asset)this.visualTargets.push({group:g,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
+
+    const profile=this.buildingInteractionProfile(name);
+    const object:WorldObjectState={
+      id:`building_${name}`,kind:'building',name,position:{x,z},tags:profile.tags,
+      usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined
+    };
+    g.userData={entityType:'object',entityId:object.id};
+    this.objects.set(object.id,{state:object,mesh:g});
+
     const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
     for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++) this.blocked.add(keyOf(gx,gz));
+  }
+
+  buildingInteractionProfile(name:string):{tags:string[];capabilities:InteractionCapability[];storage?:boolean} {
+    const base:InteractionCapability[]=['inspect','visit'];
+    if(name.includes('面包'))return {tags:['building','baker','food','work','trade'],capabilities:[...base,'work','craft','buy','sell','trade']};
+    if(name.includes('市场'))return {tags:['building','shopkeeper','market','trade'],capabilities:[...base,'buy','sell','trade']};
+    if(name.includes('工坊'))return {tags:['building','maker','work','storage'],capabilities:[...base,'work','craft','store','take'],storage:true};
+    if(name.includes('守卫'))return {tags:['building','guard','work','safety'],capabilities:[...base,'work']};
+    if(name.includes('仓库'))return {tags:['building','storage','trade'],capabilities:[...base,'store','take','work'],storage:true};
+    if(name.includes('风车'))return {tags:['building','mill','farm','work'],capabilities:[...base,'work','craft']};
+    if(name.includes('农舍')||name.includes('农场'))return {tags:['building','home','farmer','farm','storage'],capabilities:[...base,'work','store','take'],storage:true};
+    if(name.includes('旅店'))return {tags:['building','inn','rest','food'],capabilities:[...base,'rest','sleep','buy']};
+    if(name.includes('议事'))return {tags:['building','civic','social'],capabilities:[...base]};
+    return {tags:['building','home','social'],capabilities:base};
   }
 
   addTreeDecoration(x:number,z:number) {
@@ -299,10 +335,47 @@ class TownGame {
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'object',entityId:state.id};
     this.scene.add(g);
+    state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
+    if(state.kind==='well') this.visualTargets.push({group:g,asset:'wellAsset',height:3.4,targetWidth:3.6,targetDepth:3.6});
     if(state.kind==='tree') this.visualTargets.push({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
     if(state.kind==='crate') this.visualTargets.push({group:g,asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2});
     if(state.id==='mine') this.visualTargets.push({group:g,asset:'mineAsset',height:4.5,rotationY:Math.PI});
+  }
+
+
+  defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
+    switch(state.kind){
+      case 'well': return ['inspect','draw_water','drink','wash'];
+      case 'bench': return ['inspect','sit','rest'];
+      case 'bed': return ['inspect','rest','sleep'];
+      case 'food_stall': return ['inspect','buy','sell','trade'];
+      case 'farm_plot': return ['inspect','harvest','work'];
+      case 'workstation': return ['inspect','work','craft'];
+      case 'tree': return ['inspect','harvest','chop'];
+      case 'crate': return ['inspect','store','take',...(state.pickupable?['pickup' as InteractionCapability]:[])];
+      case 'bush': return ['inspect','forage'];
+      case 'rock': return ['inspect','mine'];
+      case 'flower': return ['inspect','harvest'];
+      case 'cart': return ['inspect','load','unload'];
+      case 'tool_prop': return ['inspect','pickup'];
+      case 'building': return ['inspect','visit'];
+      case 'dropped_item': return ['inspect','pickup'];
+      default: return ['inspect'];
+    }
+  }
+
+  decorationState(asset:string,x:number,z:number):WorldObjectState {
+    const id=`prop_${asset}_${String(x).replace('.','_')}_${String(z).replace('.','_')}`;
+    if(asset==='bush')return {id,kind:'bush',name:'灌木丛',position:{x,z},tags:['nature','forage'],usable:true,pickupable:false,item:'flower',resourceAmount:3,capabilities:['inspect','forage']};
+    if(asset==='rock')return {id,kind:'rock',name:'岩石',position:{x,z},tags:['nature','resource','stone'],usable:true,pickupable:false,item:'stone',resourceAmount:6,capabilities:['inspect','mine']};
+    if(asset==='flowers')return {id,kind:'flower',name:'野花',position:{x,z},tags:['nature','flower'],usable:true,pickupable:false,item:'flower',resourceAmount:3,capabilities:['inspect','harvest']};
+    if(asset==='cart')return {id,kind:'cart',name:'货运推车',position:{x,z},tags:['transport','storage','trade'],usable:true,pickupable:false,storage:[],capabilities:['inspect','load','unload']};
+    if(asset==='axe')return {id,kind:'tool_prop',name:'木柄斧',position:{x,z},tags:['tool','wood'],usable:true,pickupable:true,item:'tool',capabilities:['inspect','pickup']};
+    if(asset==='shovel')return {id,kind:'tool_prop',name:'木柄铲',position:{x,z},tags:['tool','farm'],usable:true,pickupable:true,item:'tool',capabilities:['inspect','pickup']};
+    if(asset==='crate_rts')return {id,kind:'crate',name:'储物箱',position:{x,z},tags:['storage'],usable:true,pickupable:false,storage:[],capabilities:['inspect','store','take']};
+    if(asset==='barrel')return {id,kind:'crate',name:'木桶',position:{x,z},tags:['storage','water'],usable:true,pickupable:false,storage:[],capabilities:['inspect','store','take']};
+    return {id,kind:'dropped_item',name:asset,position:{x,z},tags:['prop'],usable:true,pickupable:false,capabilities:['inspect']};
   }
 
 
@@ -392,11 +465,17 @@ class TownGame {
       farmBuilding:'ultimate-fantasy-rts/Farm_SecondAge_Level3.gltf',
       crate_rts:'ultimate-fantasy-rts/Crate.gltf',
       barrel:'ultimate-fantasy-rts/Barrel.gltf',
-      mineAsset:'ultimate-fantasy-rts/Mine.gltf'
+      mineAsset:'ultimate-fantasy-rts/Mine.gltf',
+      wellAsset:'medieval-village/Well.fbx'
     };
     const loaded = await Promise.allSettled(Object.entries(defs).map(async ([key,file])=>{
-      const gltf=await this.gltfLoader.loadAsync(`${this.assetRoot}/${file}`);
-      this.assets.set(key,{scene:gltf.scene,animations:gltf.animations});
+      if(file.toLowerCase().endsWith('.fbx')){
+        const scene=await this.fbxLoader.loadAsync(`${this.assetRoot}/${file}`);
+        this.assets.set(key,{scene,animations:scene.animations||[]});
+      }else{
+        const gltf=await this.gltfLoader.loadAsync(`${this.assetRoot}/${file}`);
+        this.assets.set(key,{scene:gltf.scene,animations:gltf.animations});
+      }
     }));
     const failures=loaded.filter(x=>x.status==='rejected').length;
     for(const target of this.visualTargets)this.applyVisualTarget(target);
@@ -458,7 +537,10 @@ class TownGame {
   spawnAssetDecoration(asset:string,x:number,z:number,height:number,rotationY=0) {
     const tpl=this.assets.get(asset);if(!tpl)return;
     const model=tpl.scene.clone(true);this.normalizeModel(model,height);model.rotation.y=rotationY;model.position.x=x;model.position.z=z;
-    model.traverse(o=>{o.userData.decorativeAsset=true;});this.scene.add(model);
+    const state=this.decorationState(asset,x,z);
+    model.userData={entityType:'object',entityId:state.id};
+    this.scene.add(model);
+    this.objects.set(state.id,{state,mesh:model});
   }
 
   setNpcAnimation(agent:NpcRuntime,name:string) {
@@ -473,6 +555,7 @@ class TownGame {
     addEventListener('keydown',(e)=>{
       const tag=(e.target as HTMLElement | null)?.tagName;
       if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+      if(e.code==='Escape'&&this.interactionOpen){e.preventDefault();this.closeInteractionMenu(true);return;}
       if (e.code==='Tab') { e.preventDefault(); ui.admin.classList.toggle('hidden'); return; }
       if (e.code==='KeyG') { e.preventDefault(); this.toggleCameraMode(); return; }
       if (e.code==='KeyF' && this.cameraMode==='god') { this.focusSelected(); return; }
@@ -484,7 +567,8 @@ class TownGame {
     document.querySelector('#startBtn')!.addEventListener('click',()=>{this.cameraMode='firstPerson';this.controls.lock();});
     ui.modeBtn.addEventListener('click',()=>this.toggleCameraMode());
     this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
-    this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson')ui.overlay.classList.remove('hidden');});
+    this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
+    document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
 
     this.renderer.domElement.addEventListener('pointermove',(e)=>{
       const rect=this.renderer.domElement.getBoundingClientRect();
@@ -607,7 +691,7 @@ class TownGame {
   };
 
   updatePlayer(dt:number) {
-    if(!this.controls.isLocked)return;
+    if(this.interactionOpen||!this.controls.isLocked)return;
     let f=0,r=0;if(this.keys.has('KeyW'))f+=1;if(this.keys.has('KeyS'))f-=1;if(this.keys.has('KeyD'))r+=1;if(this.keys.has('KeyA'))r-=1;
     if(f||r){
       const speed=(this.keys.has('ShiftLeft')?7.2:4.5)*dt;
@@ -711,7 +795,7 @@ class TownGame {
     }
     nearNpcs.sort((a,b)=>a.distance-b.distance); nearNpcs.splice(8);
     const nearObjects=[...this.objects.values()].filter(x=>x.mesh.visible).map(x=>({
-      id:x.state.id,kind:x.state.kind,name:x.state.name,tags:x.state.tags,distance:dist(agent.state.position,x.state.position),usable:x.state.usable,pickupable:x.state.pickupable,item:x.state.item
+      id:x.state.id,kind:x.state.kind,name:x.state.name,tags:x.state.tags,distance:dist(agent.state.position,x.state.position),usable:x.state.usable,pickupable:x.state.pickupable,item:x.state.item,capabilities:x.state.capabilities
     })).filter(x=>x.distance<=14).sort((a,b)=>a.distance-b.distance).slice(0,18);
     return {gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,nearbyNpcs:nearNpcs,nearbyObjects:nearObjects,recentEvents:this.recentEvents.slice(-8)};
   }
@@ -719,25 +803,23 @@ class TownGame {
   allowedActions(agent:NpcRuntime,world:DecisionRequest['world']):DecisionAction[] {
     const a:DecisionAction[]=['idle','wander','inspect','explore'];
     const hasInventory=agent.state.inventory.some(i=>i.count>0);
-    const hasObject=(pred:(o:RuntimeObject)=>boolean)=>[...this.objects.values()].some(o=>o.mesh.visible&&pred(o));
+    const nearHas=(...caps:InteractionCapability[])=>world.nearbyObjects.some(o=>caps.some(cap=>o.capabilities?.includes(cap)));
     if(world.nearbyNpcs.length)a.push('talk','visit','trade');
-    if(agent.state.workAt||world.nearbyObjects.some(o=>o.tags.includes('work')))a.push('work');
-    if(world.nearbyObjects.some(o=>['bench','bed'].includes(o.kind)))a.push('rest');
-    if(hasObject(o=>o.state.kind==='bed'))a.push('sleep');
-    if(agent.state.inventory.some(i=>['apple','bread'].includes(i.kind)&&i.count>0)||world.nearbyObjects.some(o=>o.kind==='food_stall'))a.push('eat');
-    if(world.nearbyObjects.some(o=>o.pickupable))a.push('pickup');
+    if(agent.state.workAt||nearHas('work'))a.push('work');
+    if(nearHas('rest','sit'))a.push('rest');
+    if(nearHas('sleep'))a.push('sleep');
+    if(agent.state.inventory.some(i=>['apple','bread'].includes(i.kind)&&i.count>0)||nearHas('buy'))a.push('eat');
+    if(world.nearbyObjects.some(o=>o.pickupable||o.capabilities?.includes('pickup')))a.push('pickup');
     if(world.nearbyObjects.some(o=>o.usable))a.push('use_object');
-    if(agent.state.role==='farmer'&&hasObject(o=>o.state.kind==='farm_plot'||o.state.kind==='tree'))a.push('harvest');
-    if(agent.state.role==='maker'&&hasObject(o=>o.state.kind==='tree'||o.state.tags.includes('mine')||o.state.tags.includes('resource')))a.push('harvest');
-    if(agent.state.role==='resident'&&hasObject(o=>o.state.kind==='tree'))a.push('harvest');
-    if(['baker','maker','farmer'].includes(agent.state.role)&&hasObject(o=>o.state.kind==='workstation'&&(o.state.tags.includes(agent.state.role)||(agent.state.role==='farmer'&&o.state.tags.includes('mill')))))a.push('craft');
-    if(hasObject(o=>o.state.kind==='well'))a.push('fetch_water');
+    if(nearHas('harvest','forage','chop','mine'))a.push('harvest');
+    if(nearHas('craft'))a.push('craft');
+    if(nearHas('draw_water'))a.push('fetch_water');
+    if(nearHas('buy','sell','trade'))a.push('trade');
     if(agent.state.role==='guard')a.push('patrol');
     if(hasInventory){
       a.push('drop_item');
       if(world.nearbyNpcs.length)a.push('gift','deliver');
     }
-    if(!world.nearbyNpcs.length&&hasObject(o=>o.state.kind==='food_stall'))a.push('trade');
     return [...new Set(a)];
   }
 
@@ -787,22 +869,19 @@ class TownGame {
 
   objectForAction(agent:NpcRuntime,action:DecisionAction,id?:string) {
     const chosen=id?this.objects.get(id):undefined;
+    const has=(o:RuntimeObject,...caps:InteractionCapability[])=>caps.some(cap=>o.state.capabilities?.includes(cap));
     const valid=(o:RuntimeObject)=>o.mesh.visible&&(
-      action==='work'? (o.state.id===agent.state.workAt || o.state.tags.includes(agent.state.role) || (!agent.state.workAt && o.state.tags.includes('work'))):
-      action==='rest'? ['bed','bench'].includes(o.state.kind):
-      action==='sleep'? o.state.kind==='bed':
-      action==='eat'? o.state.kind==='food_stall':
-      action==='pickup'? o.state.pickupable:
-      action==='harvest'? (
-        agent.state.role==='farmer'?(o.state.kind==='farm_plot'||o.state.kind==='tree'):
-        agent.state.role==='maker'?(o.state.kind==='tree'||o.state.tags.includes('mine')||o.state.tags.includes('resource')):
-        agent.state.role==='resident'?o.state.kind==='tree':false
-      ):
-      action==='craft'? (o.state.kind==='workstation'&&(o.state.tags.includes(agent.state.role)||(agent.state.role==='farmer'&&o.state.tags.includes('mill')))):
-      action==='fetch_water'? o.state.kind==='well':
-      action==='trade'? o.state.kind==='food_stall':
+      action==='work'? (o.state.id===agent.state.workAt||has(o,'work')):
+      action==='rest'? has(o,'rest','sit'):
+      action==='sleep'? has(o,'sleep'):
+      action==='eat'? has(o,'buy'):
+      action==='pickup'? (o.state.pickupable||has(o,'pickup')):
+      action==='harvest'? has(o,'harvest','forage','chop','mine'):
+      action==='craft'? has(o,'craft'):
+      action==='fetch_water'? has(o,'draw_water'):
+      action==='trade'? has(o,'buy','sell','trade'):
       action==='use_object'? o.state.usable:
-      action==='inspect'? true:false);
+      action==='inspect'? has(o,'inspect'):false);
     if(chosen&&valid(chosen))return chosen;
     return [...this.objects.values()].filter(valid).sort((a,b)=>dist(agent.state.position,a.state.position)-dist(agent.state.position,b.state.position))[0];
   }
@@ -993,9 +1072,112 @@ class TownGame {
 
   playerUse(o:RuntimeObject) {
     if(this.cameraMode!=='firstPerson')return;
-    if(o.state.pickupable&&o.state.item){this.playerInventory[o.state.item]++;o.state.pickupable=false;o.state.respawnAt=Date.now()+45_000;o.mesh.visible=false;this.toast(`获得：${this.itemName(o.state.item)}`);this.event(`玩家拾取了 ${o.state.name}。`);return;}
-    if(o.state.kind==='food_stall'&&this.playerInventory.coin>=2){this.playerInventory.coin-=2;this.playerInventory.bread++;this.toast('购买：面包 -2 coin');return;}
-    this.toast(`${o.state.name}：${o.state.tags.join(' / ')}`);
+    const actions=o.state.capabilities?.length?o.state.capabilities:this.defaultCapabilities(o.state);
+    if(actions.length===1){this.executePlayerInteraction(o,actions[0]);return;}
+    this.openInteractionMenu(o,actions);
+  }
+
+  openInteractionMenu(o:RuntimeObject,actions:InteractionCapability[]) {
+    this.interactionOpen=true;
+    this.interactionObjectId=o.state.id;
+    ui.overlay.classList.add('hidden');
+    if(this.controls.isLocked)this.controls.unlock();
+    ui.interactionTitle.textContent=o.state.name;
+    ui.interactionMeta.textContent=`${o.state.kind} · ${o.state.tags.join(' / ')}`;
+    ui.interactionActions.innerHTML='';
+    for(const action of actions){
+      const button=document.createElement('button');
+      button.textContent=this.interactionLabel(action);
+      button.addEventListener('click',()=>{
+        const current=this.objects.get(this.interactionObjectId||'');
+        if(current)this.executePlayerInteraction(current,action);
+        this.closeInteractionMenu(true);
+      });
+      ui.interactionActions.appendChild(button);
+    }
+    ui.interaction.classList.remove('hidden');
+  }
+
+  closeInteractionMenu(relock=false) {
+    ui.interaction.classList.add('hidden');
+    this.interactionOpen=false;
+    this.interactionObjectId=undefined;
+    if(relock&&this.cameraMode==='firstPerson')this.controls.lock();
+  }
+
+  interactionLabel(action:InteractionCapability) {
+    const labels:Record<InteractionCapability,string>={
+      inspect:'查看',rest:'休息',sit:'坐下',sleep:'睡觉',draw_water:'打水',drink:'喝水',wash:'清洗',
+      harvest:'收获',forage:'采集',chop:'砍伐',mine:'采矿',craft:'制作',work:'工作',buy:'购买',
+      sell:'出售',trade:'交易',store:'存入物品',take:'取出物品',load:'装载',unload:'卸货',pickup:'拾取',visit:'拜访'
+    };
+    return labels[action];
+  }
+
+  executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
+    const s=o.state;
+    const takeFirst=()=>{
+      const order:ItemKind[]=['flower','apple','grain','wood','stone','water','tool','bread'];
+      return order.find(k=>this.playerInventory[k]>0);
+    };
+    switch(action){
+      case 'inspect':
+        this.toast(`${s.name} · ${s.tags.join(' / ')}`);break;
+      case 'pickup':
+        if(s.item){this.playerInventory[s.item]++;s.pickupable=false;s.respawnAt=Date.now()+45_000;o.mesh.visible=false;this.toast(`获得：${this.itemName(s.item)}`);this.event(`玩家拾取了 ${s.name}。`);}break;
+      case 'draw_water':
+        this.playerInventory.water++;this.toast('打了一份井水');this.event('玩家从水井取水。');break;
+      case 'drink':
+        this.toast('喝了些清凉的井水');this.event('玩家在水井边喝水。');break;
+      case 'wash':
+        this.toast('简单清洗了一下');this.event('玩家使用水井清洗。');break;
+      case 'harvest':
+      case 'forage': {
+        const kind=s.item||(s.kind==='farm_plot'?'grain':'flower');
+        if((s.resourceAmount??1)<=0){this.toast(`${s.name}暂时没有可采集资源`);break;}
+        this.playerInventory[kind]++;s.resourceAmount=Math.max(0,(s.resourceAmount??3)-1);this.toast(`获得：${this.itemName(kind)}`);this.event(`玩家从${s.name}采集了资源。`);break;
+      }
+      case 'chop':
+        if((s.resourceAmount??3)<=0){this.toast('这棵树暂时没有可砍取的木料');break;}
+        this.playerInventory.wood+=2;s.resourceAmount=Math.max(0,(s.resourceAmount??4)-1);this.toast('获得：木料 ×2');this.event(`玩家砍取了${s.name}的木料。`);break;
+      case 'mine':
+        if((s.resourceAmount??4)<=0){this.toast('这里暂时没有可采的石料');break;}
+        this.playerInventory.stone+=2;s.resourceAmount=Math.max(0,(s.resourceAmount??6)-1);this.toast('获得：石料 ×2');this.event(`玩家在${s.name}采矿。`);break;
+      case 'craft':
+        if(this.playerInventory.wood>=1&&this.playerInventory.stone>=1){this.playerInventory.wood--;this.playerInventory.stone--;this.playerInventory.tool++;this.toast('制作：工具 ×1');this.event(`玩家在${s.name}制作了工具。`);}
+        else if(this.playerInventory.grain>=1){this.playerInventory.grain--;this.playerInventory.bread+=2;this.toast('制作：面包 ×2');}
+        else this.toast('缺少可用于制作的材料');
+        break;
+      case 'work':
+        this.playerInventory.coin+=2;this.minuteOfDay+=12;this.toast('完成一轮工作：+2 硬币');this.event(`玩家在${s.name}工作。`);break;
+      case 'buy':
+        if(this.playerInventory.coin>=2){this.playerInventory.coin-=2;this.playerInventory.bread++;this.toast('购买：面包 -2 硬币');}
+        else this.toast('硬币不足');
+        break;
+      case 'sell': {
+        const kind=takeFirst();if(!kind){this.toast('没有可出售物品');break;}
+        this.playerInventory[kind]--;this.playerInventory.coin+=kind==='tool'?4:2;this.toast(`出售：${this.itemName(kind)}`);break;
+      }
+      case 'trade':
+        this.toast('这里支持买卖；可分别选择购买或出售');break;
+      case 'store':
+      case 'load': {
+        const kind=takeFirst();if(!kind){this.toast('背包里没有可存入的物品');break;}
+        this.playerInventory[kind]--;s.storage??=[];const slot=s.storage.find(i=>i.kind===kind);if(slot)slot.count++;else s.storage.push({kind,count:1});this.toast(`存入：${this.itemName(kind)}`);break;
+      }
+      case 'take':
+      case 'unload': {
+        const slot=s.storage?.find(i=>i.count>0);if(!slot){this.toast('里面是空的');break;}
+        slot.count--;this.playerInventory[slot.kind]++;this.toast(`取出：${this.itemName(slot.kind)}`);break;
+      }
+      case 'sit':
+      case 'rest':
+        this.minuteOfDay+=15;this.toast('休息了一会儿');break;
+      case 'sleep':
+        this.minuteOfDay+=60;this.toast('睡了一小时');this.event(`玩家在${s.name}休息。`);break;
+      case 'visit':
+        this.toast(`拜访：${s.name}`);this.event(`玩家拜访了${s.name}。`);break;
+    }
   }
 
   pickEntity(pointer:THREE.Vector2,maxDistance:number) {
@@ -1016,7 +1198,7 @@ class TownGame {
     }
     if(!this.hoverEntity){ui.prompt.textContent='';return;}
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=`[E] 与 ${n.state.name} 交谈`;}
-    else {const o=this.objects.get(this.hoverEntity.id)!;ui.prompt.textContent=o.state.pickupable?`[E] 拾取 ${o.state.name}`:`[E] 互动 ${o.state.name}`;}
+    else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=`[E] ${o.state.name} · ${count} 项交互`;}
   }
 
   updateUi() {
@@ -1032,7 +1214,7 @@ class TownGame {
       const memories=n.memories.slice(-3).reverse().map(m=>`<div class="memory">• ${this.escape(m.summary)}</div>`).join('')||'<span>暂无显著记忆</span>';
       ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(n.name)}</b><span>${n.role}</span></div><div>心情 ${n.mood} · 饥饿 ${n.hunger.toFixed(0)} · 精力 ${n.energy.toFixed(0)} · 社交 ${n.social.toFixed(0)}</div><div>当前行为 <b>${n.currentAction}</b> · 金钱 ${n.money}</div><div>背包 ${inv}</div><div class="npc-goal">${this.escape(n.goal)}</div>${d?`<div class="decision"><b>最近决策</b> ${d.action} → ${this.escape(String(target))}<br>${d.source.toUpperCase()} · confidence ${(d.confidence*100).toFixed(0)}% · ${d.stateShift}${d.socialIntent?` · ${d.socialIntent}`:''}<br><span>${this.escape(d.reasonCode)}</span></div>`:'<div class="decision"><span>等待首次决策…</span></div>'}<div class="memories"><b>短期记忆</b>${memories}</div>`;
     } else if(entity?.type==='object'){
-      const o=this.objects.get(entity.id)!.state;ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>可使用 ${o.usable?'是':'否'} · 可拾取 ${o.pickupable?'是':'否'}</div>${o.item?`<div>物品 ${this.itemName(o.item)}</div>`:''}`;
+      const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
     } else ui.npc.classList.add('hidden');
     ui.log.innerHTML=this.logs.slice(-7).map(x=>`<div>${this.escape(x)}</div>`).join('');
   }
