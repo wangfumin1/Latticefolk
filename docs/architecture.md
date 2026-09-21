@@ -129,3 +129,18 @@ Region aggregation summarizes neighboring chunks into population, settlements, f
 World aggregation summarizes all known regions and selects a long-horizon priority, connectivity posture, and growth posture. Region and World decisions never directly write population or resources. Deterministic simulation interprets them as bounded modifiers on settlement growth, conserved flows, ecology recovery, and danger reduction.
 
 Jev calls use lower Region/World budget weights because those layers run less often and should consume a smaller share of paid input tokens.
+
+
+## Dynamic coarse-world streaming
+
+The coarse world is no longer bounded to the original 9×9 chunk square.
+
+- First-person travel owns world discovery. Crossing chunk boundaries shifts a fixed active window around the player's chunk.
+- New coarse chunks are generated deterministically from world seed and absolute chunk coordinates.
+- Chunks leaving the active window unload only their coarse visuals; their authoritative state remains discovered and persists to SQLite.
+- Returning to explored space restores existing history instead of regenerating it.
+- The always-fine center-town 3×3 footprint stays reserved.
+- God View never expands discovery or materialization.
+- Conserved-flow planning now scans coordinate neighbors instead of all chunk pairs, keeping it approximately O(n) in discovered chunks.
+
+The active render window and the discovered persistent world are separate concepts, so travel has no fixed map edge while scene complexity stays bounded.
