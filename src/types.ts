@@ -71,7 +71,7 @@ export type InteractionCapability =
   | 'pickup'
   | 'visit';
 
-export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower' | 'grain' | 'water' | 'stone' | 'tool';
+export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower' | 'grain' | 'flour' | 'water' | 'stone' | 'plank' | 'tool';
 
 export interface InventoryItem {
   kind: ItemKind;
