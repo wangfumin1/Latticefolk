@@ -184,3 +184,51 @@ export interface ImportDialogueRequest {
   format: 'plain' | 'jsonl' | 'json';
   text: string;
 }
+
+
+export type ChunkBiome = 'plains' | 'forest' | 'hills' | 'wetlands' | 'dryland';
+export type ChunkStrategy = 'sustain' | 'grow_settlement' | 'conserve' | 'extract_resources' | 'fortify' | 'trade_route';
+export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate';
+export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
+
+export interface CoarseChunkState {
+  id: string;
+  cx: number;
+  cz: number;
+  biome: ChunkBiome;
+  settlementLevel: number;
+  population: number;
+  food: number;
+  wood: number;
+  water: number;
+  ecology: number;
+  danger: number;
+  prosperity: number;
+  strategy: ChunkStrategy;
+  migrationPolicy: ChunkMigrationPolicy;
+  ecologyPolicy: ChunkEcologyPolicy;
+  lastDecisionAt: number;
+  decisionVersion: number;
+}
+
+export interface ChunkDecisionRequest {
+  day: number;
+  gameTime: string;
+  weather: string;
+  chunks: CoarseChunkState[];
+}
+
+export interface ChunkDecision {
+  chunkId: string;
+  strategy: ChunkStrategy;
+  migrationPolicy: ChunkMigrationPolicy;
+  ecologyPolicy: ChunkEcologyPolicy;
+  confidence: number;
+  reasonCode: string;
+  source: string;
+}
+
+export interface ChunkDecisionResponse {
+  source: string;
+  decisions: ChunkDecision[];
+}
