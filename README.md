@@ -44,6 +44,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Jev-aware distant chunks**: far regions keep population/resource/ecology/prosperity state and receive batched strategy, migration, and ecology decisions.
 - **First coarse↔fine streaming pass**: entering a distant chunk in first person materializes representative residents, settlement sites, and resources; leaving folds fine consequences back into coarse state.
 - **SQLite-backed world persistence**: coarse policies/resources, visited fine entities, center-town state, player progress, time, and weather survive restarts.
+- **Conserved regional exchange**: migration and coarse resource trade move explicitly from one chunk to another instead of appearing/disappearing independently.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.
@@ -173,8 +174,8 @@ The current development order is intentionally architecture-first:
 
 1. ✅ first-pass coarse ↔ fine chunk materialization;
 2. ✅ world persistence / SQLite;
-3. **conserved migration, resource, trade, and ecology flows across chunks**;
-4. Region / World level decision layers;
+3. ✅ conserved migration, resource, trade, and ecology flows across chunks;
+4. **Region / World level decision layers**;
 5. dynamic chunk streaming and real travel;
 6. procedural settlements, buildings, environments, and content;
 7. richer production chains and interactions;

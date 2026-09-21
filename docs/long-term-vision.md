@@ -40,3 +40,10 @@ The next milestone is durable persistence, followed by conserved cross-chunk flo
 The world now survives process and browser restarts. Coarse chunk policies/resources, detailed visited-chunk residents and objects, center-town state, player inventory/location, time, and weather are stored in SQLite. This moves the project from session-only LOD experiments toward a persistent world.
 
 The next milestone is conserved exchange between chunks: migration and goods must move from an explicit source to an explicit destination instead of independently increasing/decreasing aggregate counters.
+
+
+## Implemented milestone: conserved chunk exchange
+
+Neighboring coarse chunks now exchange population and transferable resources through explicit source/destination transactions. Migration and trade therefore have provenance and conservation instead of being independent local increments/decrements. Chunk policies selected by Jev/fallback influence flow pressure, while deterministic code owns the amounts and balance checks.
+
+The next milestone adds Region and World decision layers with much slower cadences than individual chunk decisions.

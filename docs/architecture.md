@@ -89,3 +89,22 @@ SQLite runs in WAL mode. Saves are transactional, so coarse/fine/home tables mov
 Persistence does **not** make the browser authoritative. The browser submits a validated snapshot to the server; the server owns the durable database. The current schema is snapshot version 1 and is intentionally simple while simulation data structures are still changing rapidly.
 
 See [Persistence](persistence.md).
+
+
+## Conserved cross-chunk flows
+
+Coarse chunks now exchange population and resources through explicit transactions rather than independent counter edits.
+
+The flow layer plans bounded neighbor-to-neighbor transfers for:
+
+- population migration;
+- food trade;
+- wood trade;
+- water trade;
+- ecological/biological spread.
+
+Each flow records a source chunk, destination chunk, amount, simulation time, type, and reason. The deterministic executor subtracts from the source and adds the same amount to the destination. Unit tests assert conservation across transfers.
+
+Provider-selected chunk policies influence these flows indirectly: `release/evacuate` creates migration pressure, `attract` creates destination pull, and `trade_route` enables stronger resource exchange. Jev still does not write numeric balances itself.
+
+Materialized chunks are excluded from coarse-flow planning while fine simulation is active, preventing duplicate accounting across LOD layers.

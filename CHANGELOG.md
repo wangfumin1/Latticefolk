@@ -16,6 +16,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Multilingual project overviews, repository cover, badges, citation metadata, and expanded acknowledgements.
 - First-pass coarse↔fine distant-chunk materialization with deterministic settlement/resource planning, representative residents, in-session identity restoration, and coarse-state feedback.
 - SQLite world persistence for coarse chunks, visited fine chunks, home-town entities, player inventory/location, time, and weather, including periodic transactional saves.
+- Conserved neighbor-to-neighbor coarse-world flows for migration, food, wood, water, and ecology spread, with explicit source/destination flow records and conservation tests.
 
 ### Changed
 

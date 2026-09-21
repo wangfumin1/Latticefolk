@@ -44,7 +44,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine chunk materialization → ✅ SQLite 永続化 → **chunk 間の人口・資源・交易・生態フロー** → Region/World decision → dynamic streaming → procedural settlement/environment → 生産とインタラクション → 生態系 → 生命周期・繁殖・遺伝・進化 → physics。
+✅ coarse↔fine chunk materialization → ✅ SQLite 永続化 → ✅ chunk 間の人口・資源・交易・生態フロー → **Region / World decision** → Region/World decision → dynamic streaming → procedural settlement/environment → 生産とインタラクション → 生態系 → 生命周期・繁殖・遺伝・進化 → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 
