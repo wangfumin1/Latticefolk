@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible problem in Latticefolk.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps to reproduce the problem.
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Decision provider
+      placeholder: fallback / jev / other
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, Node version, browser

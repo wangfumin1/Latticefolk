@@ -1,0 +1,5 @@
+Quaternius — Cube World Kit
+Source: https://quaternius.com/packs/cubeworldkit.html
+Retrieved: 2026-09-21
+License: CC0 / Creative Commons Zero (as displayed on the official pack page)
+See ../../../../THIRD_PARTY_NOTICES.md for project-level notices.

@@ -1,0 +1,5 @@
+{"kind":"line","text":"早啊，今天看起来会很忙。","tags":["greet","morning"],"intents":["greet"],"moods":["calm","happy"],"roles":[],"weight":1}
+{"kind":"line","text":"面包刚出炉，要不要带一个？","tags":["food","bread","trade"],"intents":["trade"],"moods":["happy"],"roles":["baker"],"weight":1}
+{"kind":"fragment","slot":"opener","text":"说起来，","tags":["topic"],"intents":["smalltalk","share_news"],"moods":["neutral","curious"],"roles":[],"weight":1}
+{"kind":"fragment","slot":"body","text":"井边刚才有人提到一个新消息","tags":["well","news"],"intents":["share_news"],"moods":["curious"],"roles":[],"weight":1}
+{"kind":"fragment","slot":"closer","text":"，你听说了吗？","tags":["question"],"intents":["share_news","smalltalk"],"moods":["curious"],"roles":[],"weight":1}

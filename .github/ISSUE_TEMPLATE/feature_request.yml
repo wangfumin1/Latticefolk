@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a simulation, tooling, or provider extension.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Simulation/provider boundary
+      description: If relevant, explain whether this belongs in the simulation core or a decision-provider adapter.
