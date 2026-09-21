@@ -186,7 +186,8 @@ export class CoarseWorldRuntime {
 
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
-    const chunks=[...this.chunks.values()].sort((a,b)=>this.pressure(b)-this.pressure(a)).slice(0,8);
+    const priority=(chunk:CoarseChunkState)=>(chunk.decisionVersion===0?10_000:0)+this.pressure(chunk);
+    const chunks=[...this.chunks.values()].sort((a,b)=>priority(b)-priority(a)).slice(0,8);
     const body:ChunkDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,chunks};
     try{
       const r=await fetch('/api/world/chunks/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
