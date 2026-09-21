@@ -71,3 +71,21 @@ The first round-trip LOD path is live.
 - God View never causes materialization; it remains an out-of-world observer.
 
 The next stage replaces the in-memory cache with durable SQLite persistence so browser/server restarts do not erase chunk history.
+
+
+## Durable world persistence
+
+World state is now durable across browser/server restarts through a server-side SQLite database at `data/latticefolk.sqlite`.
+
+The persistence boundary mirrors the simulation hierarchy:
+
+- `world_meta`: day, simulation clock, weather, player position, and player inventory;
+- `coarse_chunks`: one authoritative aggregate record per distant chunk;
+- `fine_chunks`: detailed NPC/object state for chunks that have been visited/materialized;
+- `home_state`: detailed state for the always-fine center town.
+
+SQLite runs in WAL mode. Saves are transactional, so coarse/fine/home tables move to the same snapshot together. The browser performs a periodic save and attempts a final `sendBeacon` save during page unload.
+
+Persistence does **not** make the browser authoritative. The browser submits a validated snapshot to the server; the server owns the durable database. The current schema is snapshot version 1 and is intentionally simple while simulation data structures are still changing rapidly.
+
+See [Persistence](persistence.md).

@@ -19,6 +19,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - 统一 `WorldObject + capabilities` 交互体系：房屋、水井、市场、箱桶、推车、树木、岩石、花、工具、床、工作台等都属于真实世界对象，而不是单纯装饰。
 - 本地 deterministic fallback + 可选 Jev provider。
 - 远区 chunk 粗模拟与批量 Jev 策略 / 迁徙 / 生态决策。
+- SQLite 持久化：远区状态、访问过的细粒度 chunk、中心小镇、玩家背包/位置、时间和天气可跨重启恢复。
 - 上帝控制台 Jev input-token 与费用预算：分钟 / 小时 / 每日 token、每日 USD 上限、置信度阈值、缓存、调用类型统计和省流 / 平衡 / 高质量预设。
 - 检索优先的预制台词库，支持完整台词和 opener/body/closer 片段组合。
 - 简体中文、English、日本語、Español UI 与语料支持。
@@ -59,7 +60,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：coarse↔fine chunk 双向转换 → SQLite 世界持久化 → 跨 chunk 人口/资源/贸易/生态守恒流 → Region/World 决策层 → 动态 chunk streaming → 程序化聚落与环境 → 更完整的生产与交互 → 动植物生态 → 生老病死/繁殖/遗传/进化 → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → **跨 chunk 人口/资源/贸易/生态守恒流** → Region/World 决策层 → 动态 chunk streaming → 程序化聚落与环境 → 更完整的生产与交互 → 动植物生态 → 生老病死/繁殖/遗传/进化 → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 

@@ -33,3 +33,10 @@ World generation should be seed based and chunked. Global generation establishes
 Latticefolk can transition a distant aggregate chunk into a local entity simulation when the first-person player travels into it, and collapse it back when the player leaves. This is deliberately bounded: one distant chunk is materialized at a time, resident count is a representative subset of coarse population, and detailed state is retained in memory during the session.
 
 The next milestone is durable persistence, followed by conserved cross-chunk flows and multi-chunk streaming.
+
+
+## Implemented milestone: durable world persistence
+
+The world now survives process and browser restarts. Coarse chunk policies/resources, detailed visited-chunk residents and objects, center-town state, player inventory/location, time, and weather are stored in SQLite. This moves the project from session-only LOD experiments toward a persistent world.
+
+The next milestone is conserved exchange between chunks: migration and goods must move from an explicit source to an explicit destination instead of independently increasing/decreasing aggregate counters.

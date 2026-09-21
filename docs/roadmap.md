@@ -27,8 +27,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 ## World-scale simulation priorities
 
 - ✅ First-pass coarse↔fine chunk materialization with in-session persistent identity and coarse resource feedback.
-- ⏭ Durable SQLite persistence for world/chunk/fine-entity state across restarts.
-- Inter-chunk flows for migration, trade, disease, wildlife movement, danger, and resource transport.
+- ✅ Durable SQLite persistence for world/chunk/fine-entity state across restarts.
+- ⏭ Inter-chunk conserved flows for migration, trade, resource transport, ecology pressure, disease, wildlife movement, and danger.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

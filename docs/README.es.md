@@ -17,6 +17,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 - Sistema unificado `WorldObject + capabilities` para edificios, pozo, mercado, almacenamiento, carros, árboles, rocas, flores y herramientas.
 - Fallback determinista y provider Jev opcional.
 - Simulación gruesa de chunks lejanos con población, recursos, ecología, prosperidad y decisiones por lotes.
+- Persistencia SQLite para chunks, NPC/objetos visitados, progreso del jugador, hora y clima entre reinicios.
 - Presupuesto de tokens/coste de Jev administrable desde God View.
 - Diálogo escrito previamente con recuperación local y selección de líneas o fragmentos.
 - UI y corpus en chino simplificado, inglés, japonés y español.
@@ -44,7 +45,7 @@ God View también es estrictamente un observador externo y no aparece en la perc
 
 ## Hoja de ruta
 
-Materialización coarse↔fine → persistencia SQLite → flujos conservados entre chunks → decisiones Region/World → streaming dinámico → generación procedural → cadenas de producción → ecología → ciclo vital/reproducción/herencia/evolución → física completa.
+✅ Materialización coarse↔fine → ✅ persistencia SQLite → **flujos conservados entre chunks** → decisiones Region/World → streaming dinámico → generación procedural → cadenas de producción → ecología → ciclo vital/reproducción/herencia/evolución → física completa.
 
 Consulta [Roadmap](roadmap.md), [Architecture](architecture.md) y [Decision providers](decision-providers.md).
 
