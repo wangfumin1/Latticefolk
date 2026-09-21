@@ -92,6 +92,7 @@ export interface NpcMemory {
 
 export interface NpcState {
   id: string;
+  chunkId?: string;
   name: string;
   role: NpcRole;
   position: Vec2;
@@ -115,6 +116,7 @@ export interface NpcState {
 
 export interface WorldObjectState {
   id: string;
+  chunkId?: string;
   kind: ObjectKind;
   name: string;
   position: Vec2;

@@ -12,6 +12,7 @@ export interface CoarseWorldStatus {
   pending: boolean;
   lastSource: string;
   lastBatchSize: number;
+  materializedChunks: number;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -29,6 +30,7 @@ export class CoarseWorldRuntime {
   readonly radius = 4;
   readonly localRadius = 1;
   readonly chunks = new Map<string,CoarseChunkState>();
+  readonly materialized = new Set<string>();
 
   private root = new THREE.Group();
   private tiles = new Map<string,THREE.Mesh>();
@@ -138,7 +140,7 @@ export class CoarseWorldRuntime {
     if(this.simulationAccumulator>=1){
       const steps=Math.floor(this.simulationAccumulator);
       this.simulationAccumulator-=steps;
-      for(const chunk of this.chunks.values())this.simulate(chunk,steps,ctx.weather);
+      for(const chunk of this.chunks.values())if(!this.materialized.has(chunk.id))this.simulate(chunk,steps,ctx.weather);
     }
     if(!this.pending&&performance.now()>=this.nextDecisionAt)void this.requestBatch(ctx);
   }
@@ -187,7 +189,7 @@ export class CoarseWorldRuntime {
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
     const priority=(chunk:CoarseChunkState)=>(chunk.decisionVersion===0?10_000:0)+this.pressure(chunk);
-    const chunks=[...this.chunks.values()].sort((a,b)=>priority(b)-priority(a)).slice(0,8);
+    const chunks=[...this.chunks.values()].filter(chunk=>!this.materialized.has(chunk.id)).sort((a,b)=>priority(b)-priority(a)).slice(0,8);
     const body:ChunkDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,chunks};
     try{
       const r=await fetch('/api/world/chunks/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -212,6 +214,31 @@ export class CoarseWorldRuntime {
     }
   }
 
+  get worldHalf() { return (this.radius + .5) * this.chunkSize; }
+
+  chunkAtWorld(x:number,z:number) {
+    const cx=Math.floor((x+this.chunkSize/2)/this.chunkSize);
+    const cz=Math.floor((z+this.chunkSize/2)/this.chunkSize);
+    return this.chunks.get(`chunk_${cx}_${cz}`);
+  }
+
+  setMaterialized(chunkId:string,value:boolean) {
+    const chunk=this.chunks.get(chunkId);
+    if(!chunk)return;
+    if(value)this.materialized.add(chunkId);else this.materialized.delete(chunkId);
+    const marker=this.markers.get(chunkId);
+    if(marker)marker.visible=!value;
+  }
+
+  applyFineSummary(chunkId:string,patch:Partial<Pick<CoarseChunkState,'food'|'wood'|'water'|'ecology'|'danger'|'prosperity'>>) {
+    const chunk=this.chunks.get(chunkId);
+    if(!chunk)return;
+    for(const key of ['food','wood','water','ecology','danger','prosperity'] as const){
+      const value=patch[key];
+      if(typeof value==='number')chunk[key]=clamp(value);
+    }
+  }
+
   status():CoarseWorldStatus {
     const list=[...this.chunks.values()];
     const avg=(f:(c:CoarseChunkState)=>number)=>list.reduce((s,c)=>s+f(c),0)/Math.max(1,list.length);
@@ -221,6 +248,7 @@ export class CoarseWorldRuntime {
       pending:this.pending,
       lastSource:this.lastSource,
       lastBatchSize:this.lastBatchSize,
+      materializedChunks:this.materialized.size,
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)
