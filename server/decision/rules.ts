@@ -182,7 +182,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
   const decisions:WildlifeDecisionResult[]=req.requests.map(entry=>{
     const animal=entry.wildlife;
     const nearbyFox=entry.world.nearbyWildlife.find(x=>x.species==='fox'&&x.distance<5);
-    const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.distance<8);
+    const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.ageDays>90&&x.distance<8);
     let action:WildlifeAction='wander';
     let targetObjectId:string|undefined;
     let targetWildlifeId:string|undefined;

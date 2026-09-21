@@ -22,7 +22,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       strategy:'trade_route',migrationPolicy:'retain',ecologyPolicy:'balance',
       lastDecisionAt:123,decisionVersion:4
     }],
-    fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[]}],
+    fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[],wildlifeStates:[{
+      id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
+      sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},currentAction:'forage',lastDecisionAt:10,birthDay:3
+    }]}],
     homeNpcs:[],homeObjects:[]
   };
   store.save(snapshot);
@@ -31,6 +34,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.meta.day,4);
   assert.equal(loaded.coarseChunks[0]?.strategy,'trade_route');
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
   assert.equal(store.stats().hasSave,true);
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});

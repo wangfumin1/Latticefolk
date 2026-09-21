@@ -286,7 +286,7 @@ export interface WildlifeDecisionRequest {
     minuteOfDay: number;
     weather: string;
     nearbyResources: Array<{ id:string; tags:string[]; distance:number; resourceAmount?:number }>;
-    nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; distance:number; health:number; currentAction:WildlifeAction }>;
+    nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; sex:'female'|'male'; ageDays:number; distance:number; health:number; currentAction:WildlifeAction }>;
   };
   allowedActions: WildlifeAction[];
 }

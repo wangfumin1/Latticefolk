@@ -11,7 +11,7 @@ import { craftAtWorkstation } from './world/production';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -116,6 +116,8 @@ interface FineChunkRuntime {
   chunkId:string;
   npcIds:string[];
   objectIds:string[];
+  wildlifeIds:string[];
+  initialWildlifeCounts:Partial<Record<WildlifeSpecies,number>>;
   blockedKeys:string[];
   groups:THREE.Object3D[];
   initialMetrics:FineMetrics;
@@ -123,6 +125,16 @@ interface FineChunkRuntime {
 interface FineChunkCache {
   npcStates:NpcState[];
   objectStates:WorldObjectState[];
+  wildlifeStates:WildlifeState[];
+}
+interface WildlifeRuntime {
+  state: WildlifeState;
+  mesh: THREE.Group;
+  path: Vec2[];
+  pathIndex: number;
+  nextDecisionAt: number;
+  actionResolved: boolean;
+  removed?: boolean;
 }
 interface NpcRuntime {
   state: NpcState;
@@ -156,6 +168,7 @@ class TownGame {
   blocked = new Set<string>();
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
+  wildlife = new Map<string,WildlifeRuntime>();
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
@@ -168,8 +181,8 @@ class TownGame {
   aiPaused = false;
   inFlight = 0;
   maxInFlight = 3;
-  hoverEntity?: {type:'npc'|'object'; id:string};
-  selectedEntity?: {type:'npc'|'object'; id:string};
+  hoverEntity?: {type:'npc'|'object'|'wildlife'; id:string};
+  selectedEntity?: {type:'npc'|'object'|'wildlife'; id:string};
   cameraMode: 'firstPerson'|'god' = 'firstPerson';
   perceptionEpoch = 0;
   playerPosition: Vec2 = {x:0,z:7};
@@ -205,6 +218,8 @@ class TownGame {
   persistenceReady = false;
   persistenceSaveInFlight = false;
   lastPersistenceSaveAt = 0;
+  wildlifeDecisionPending = false;
+  nextWildlifeBatchAt = 0;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -730,11 +745,11 @@ class TownGame {
   selectGodEntity() {
     const entity=this.pickEntity(this.godPointer,Infinity);
     this.selectedEntity=entity;
-    if(entity){const name=entity.type==='npc'?this.npcs.get(entity.id)?.state.name:this.objects.get(entity.id)?.state.name;this.toast(`已选择：${name||entity.id}`);}
+    if(entity){const name=entity.type==='npc'?this.npcs.get(entity.id)?.state.name:entity.type==='wildlife'?this.wildlifeName(this.wildlife.get(entity.id)!.state.species):this.objects.get(entity.id)?.state.name;this.toast(`已选择：${name||entity.id}`);}
   }
 
-  entityPosition(entity:{type:'npc'|'object';id:string}):Vec2|undefined {
-    return entity.type==='npc'?this.npcs.get(entity.id)?.state.position:this.objects.get(entity.id)?.state.position;
+  entityPosition(entity:{type:'npc'|'object'|'wildlife';id:string}):Vec2|undefined {
+    return entity.type==='npc'?this.npcs.get(entity.id)?.state.position:entity.type==='wildlife'?this.wildlife.get(entity.id)?.state.position:this.objects.get(entity.id)?.state.position;
   }
 
   async importDialogue() {
@@ -757,6 +772,7 @@ class TownGame {
       this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt});
       this.updateObjects();
       this.updateNpcs(dt);
+      this.updateWildlife(dt);
       if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
     }
     this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
@@ -824,13 +840,14 @@ class TownGame {
   buildWorldSnapshot():WorldPersistenceSnapshot {
     const fine=new Map<string,PersistedFineChunk>();
     for(const [chunkId,cache] of this.fineChunkCache){
-      fine.set(chunkId,{chunkId,npcStates:structuredClone(cache.npcStates),objectStates:structuredClone(cache.objectStates)});
+      fine.set(chunkId,{chunkId,npcStates:structuredClone(cache.npcStates),objectStates:structuredClone(cache.objectStates),wildlifeStates:structuredClone(cache.wildlifeStates)});
     }
     for(const [chunkId,runtime] of this.materializedChunks){
       fine.set(chunkId,{
         chunkId,
         npcStates:runtime.npcIds.map(id=>this.npcs.get(id)?.state).filter((x):x is NpcState=>Boolean(x)).map(x=>structuredClone(x)),
-        objectStates:runtime.objectIds.map(id=>this.objects.get(id)?.state).filter((x):x is WorldObjectState=>Boolean(x)).map(x=>structuredClone(x))
+        objectStates:runtime.objectIds.map(id=>this.objects.get(id)?.state).filter((x):x is WorldObjectState=>Boolean(x)).map(x=>structuredClone(x)),
+        wildlifeStates:runtime.wildlifeIds.map(id=>this.wildlife.get(id)?.state).filter((x):x is WildlifeState=>Boolean(x)).map(x=>structuredClone(x))
       });
     }
     const homeNpcs=[...this.npcs.values()].filter(x=>!x.state.chunkId).map(x=>structuredClone(x.state));
@@ -869,7 +886,8 @@ class TownGame {
     for(const saved of snapshot.fineChunks||[]){
       this.fineChunkCache.set(saved.chunkId,{
         npcStates:structuredClone(saved.npcStates||[]),
-        objectStates:structuredClone(saved.objectStates||[])
+        objectStates:structuredClone(saved.objectStates||[]),
+        wildlifeStates:structuredClone(saved.wildlifeStates||[])
       });
     }
 
@@ -932,7 +950,7 @@ class TownGame {
     if(this.materializedChunks.has(chunk.id))return;
     const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
     const runtime:FineChunkRuntime={
-      chunkId:chunk.id,npcIds:[],objectIds:[],blockedKeys:[],groups:[],
+      chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},blockedKeys:[],groups:[],
       initialMetrics:{food:0,wood:0,ecology:0,prosperity:0}
     };
     this.materializedChunks.set(chunk.id,runtime);
@@ -941,6 +959,7 @@ class TownGame {
     const cached=this.fineChunkCache.get(chunk.id);
     const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
     const cachedNpcs=new Map((cached?.npcStates||[]).map(state=>[state.id,state]));
+    const cachedWildlife=new Map((cached?.wildlifeStates||[]).map(state=>[state.id,state]));
 
     for(const road of plan.roads){
       const saved=cachedObjects.get(road.id);
@@ -989,10 +1008,24 @@ class TownGame {
       runtime.npcIds.push(state.id);
     }
 
+    for(const p of plan.wildlife){
+      const saved=cachedWildlife.get(p.id);
+      const state:WildlifeState=saved?structuredClone(saved):{
+        id:p.id,chunkId:chunk.id,species:p.species,position:{x:p.x,z:p.z},ageDays:p.ageDays,
+        health:78+Math.random()*14,hunger:20+Math.random()*28,thirst:18+Math.random()*30,energy:62+Math.random()*28,
+        sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
+        lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
+      };
+      state.chunkId=chunk.id;
+      this.spawnWildlife(state);
+      runtime.wildlifeIds.push(state.id);
+      runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+    }
+
     runtime.initialMetrics=this.fineMetrics(runtime);
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
-    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`);
+    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`);
   }
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
@@ -1018,6 +1051,45 @@ class TownGame {
 
     this.attachVisualTarget({group:mesh,asset:characterAsset,height:1.82,rotationY:0});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(mesh);
+  }
+
+  spawnWildlife(state:WildlifeState) {
+    const g=this.makeProceduralAnimal(state);
+    g.position.set(state.position.x,0,state.position.z);
+    g.userData={entityType:'wildlife',entityId:state.id};
+    this.scene.add(g);
+    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
+    if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
+  }
+
+  makeProceduralAnimal(state:WildlifeState) {
+    const g=new THREE.Group();
+    const palette:Record<WildlifeSpecies,{body:number;accent:number}>={
+      rabbit:{body:0xb8a48d,accent:0xe4d4c1},
+      deer:{body:0x9a6945,accent:0xd2b28f},
+      boar:{body:0x5d4a3c,accent:0x796354},
+      fox:{body:0xc86f35,accent:0xf0d0a5}
+    };
+    const color=palette[state.species];
+    const scale=Math.max(.55,state.traits.size);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(1.15*scale,.65*scale,.55*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:.95}));
+    body.position.y=.55*scale;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(.48*scale,.48*scale,.48*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:.95}));
+    head.position.set(0,.72*scale,.52*scale);
+    g.add(body,head);
+    for(const sx of [-.38,.38])for(const sz of [-.18,.18]){
+      const leg=new THREE.Mesh(new THREE.BoxGeometry(.14*scale,.5*scale,.14*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));
+      leg.position.set(sx*scale,.25*scale,sz*scale);g.add(leg);
+    }
+    if(state.species==='rabbit'){
+      for(const x of [-.12,.12]){const ear=new THREE.Mesh(new THREE.BoxGeometry(.1*scale,.55*scale,.1*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:1}));ear.position.set(x*scale,1.18*scale,.48*scale);g.add(ear);}
+    }else if(state.species==='deer'){
+      for(const x of [-.16,.16]){const antler=new THREE.Mesh(new THREE.BoxGeometry(.06*scale,.48*scale,.06*scale),new THREE.MeshStandardMaterial({color:0x5b4331,roughness:1}));antler.position.set(x*scale,1.08*scale,.5*scale);g.add(antler);}
+    }else if(state.species==='fox'){
+      const tail=new THREE.Mesh(new THREE.BoxGeometry(.25*scale,.25*scale,.75*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));tail.position.set(0,.55*scale,-.65*scale);tail.rotation.x=-.35;g.add(tail);
+    }
+    g.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
+    return g;
   }
 
   fineMetrics(runtime:FineChunkRuntime):FineMetrics {
@@ -1071,6 +1143,26 @@ class TownGame {
       this.npcs.delete(id);
     }
 
+    const wildlifeStates:WildlifeState[]=[];
+    const currentWildlifeCounts:Partial<Record<WildlifeSpecies,number>>={};
+    for(const id of runtime.wildlifeIds){
+      const animal=this.wildlife.get(id);if(!animal)continue;
+      wildlifeStates.push(structuredClone(animal.state));
+      currentWildlifeCounts[animal.state.species]=(currentWildlifeCounts[animal.state.species]||0)+1;
+      animal.removed=true;
+      animal.mesh.parent?.remove(animal.mesh);
+      this.wildlife.delete(id);
+    }
+    if(chunk?.wildlife){
+      for(const population of chunk.wildlife){
+        const initial=runtime.initialWildlifeCounts[population.species]||0;
+        const current=currentWildlifeCounts[population.species]||0;
+        if(initial<=0&&current<=0)continue;
+        const scale=initial>0?Math.min(4,Math.max(1,population.count/initial)):1;
+        population.count=Math.max(0,population.count+(current-initial)*scale);
+      }
+    }
+
     const objectStates: WorldObjectState[]=[];
     for(const id of runtime.objectIds){
       const object=this.objects.get(id);if(!object)continue;
@@ -1081,7 +1173,7 @@ class TownGame {
 
     for(const key of runtime.blockedKeys)this.blocked.delete(key);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
-    this.fineChunkCache.set(chunkId,{npcStates,objectStates});
+    this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
     this.coarseWorld.setMaterialized(chunkId,false);
     if(this.activeFineChunkId===chunkId)this.activeFineChunkId=undefined;
@@ -1104,6 +1196,223 @@ class TownGame {
   updateObjects() {
     const t=Date.now();
     for(const o of this.objects.values()) if(o.state.respawnAt && t>=o.state.respawnAt){o.state.respawnAt=undefined;o.state.pickupable=true;o.mesh.visible=true;}
+  }
+
+  updateWildlife(dt:number) {
+    for(const animal of [...this.wildlife.values()]){
+      if(animal.removed)continue;
+      const s=animal.state;
+      s.ageDays+=dt*2.2/1440;
+      s.hunger=clamp(s.hunger+dt*.22,0,100);
+      s.thirst=clamp(s.thirst+dt*.30,0,100);
+      s.energy=clamp(s.energy-dt*.045,0,100);
+      if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
+      else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
+      if(s.health<=0){this.removeWildlife(animal,'自然死亡');continue;}
+
+      this.moveWildlife(animal,dt);
+      if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
+      s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
+    }
+    if(!this.aiPaused&&!this.wildlifeDecisionPending&&this.wildlife.size&&now()>=this.nextWildlifeBatchAt){
+      void this.requestWildlifeBatch();
+    }
+  }
+
+  moveWildlife(animal:WildlifeRuntime,dt:number) {
+    if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;return;}
+    const p=animal.path[animal.pathIndex]!;
+    const pos=animal.mesh.position;
+    const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
+    if(d<.12){animal.pathIndex++;if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}return;}
+    const speed=animal.state.traits.speed*(animal.state.currentAction==='flee'||animal.state.currentAction==='hunt'?1.18:1);
+    pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
+    animal.mesh.rotation.y=Math.atan2(dx,dz);
+  }
+
+  wildlifeAllowedActions(state:WildlifeState):WildlifeAction[] {
+    const actions:WildlifeAction[]=['wander','rest','drink','forage','flee','seek_mate'];
+    if(state.species==='rabbit'||state.species==='deer'||state.species==='boar')actions.push('graze');
+    if(state.species==='fox')actions.push('hunt');
+    return actions;
+  }
+
+  wildlifeSnapshot(animal:WildlifeRuntime):WildlifeDecisionBatchRequest['requests'][number] {
+    const nearbyResources=[...this.objects.values()]
+      .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
+      .map(o=>({id:o.state.id,tags:o.state.tags,distance:dist(animal.state.position,o.state.position),resourceAmount:o.state.resourceAmount}))
+      .sort((a,b)=>a.distance-b.distance).slice(0,16);
+    const nearbyWildlife=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed)
+      .map(x=>({id:x.state.id,species:x.state.species,sex:x.state.sex,ageDays:x.state.ageDays,distance:dist(animal.state.position,x.state.position),health:x.state.health,currentAction:x.state.currentAction}))
+      .filter(x=>x.distance<=12).sort((a,b)=>a.distance-b.distance).slice(0,12);
+    return {
+      wildlife:structuredClone(animal.state),
+      world:{gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,nearbyResources,nearbyWildlife},
+      allowedActions:this.wildlifeAllowedActions(animal.state).filter(action=>{
+        if(action==='drink')return nearbyResources.some(x=>x.tags.includes('water'));
+        if(action==='hunt')return nearbyWildlife.some(x=>['rabbit','deer'].includes(x.species));
+        if(action==='seek_mate')return nearbyWildlife.some(x=>x.species===animal.state.species&&x.sex!==animal.state.sex&&x.ageDays>90);
+        return true;
+      })
+    };
+  }
+
+  async requestWildlifeBatch() {
+    const due=[...this.wildlife.values()].filter(x=>!x.removed&&now()>=x.nextDecisionAt)
+      .sort((a,b)=>{
+        const urgency=(x:WildlifeRuntime)=>Math.max(x.state.hunger,x.state.thirst,100-x.state.energy)+(100-x.state.health)*.5;
+        return urgency(b)-urgency(a);
+      }).slice(0,6);
+    if(!due.length){this.nextWildlifeBatchAt=now()+1500;return;}
+    this.wildlifeDecisionPending=true;
+    const req:WildlifeDecisionBatchRequest={requests:due.map(x=>this.wildlifeSnapshot(x))};
+    try{
+      const response=await fetch('/api/wildlife/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});
+      const out=await response.json() as WildlifeDecisionBatchResponse;
+      if(!response.ok)throw new Error('wildlife decision failed');
+      for(const decision of out.decisions){
+        const animal=this.wildlife.get(decision.wildlifeId);
+        if(animal&&!animal.removed)this.applyWildlifeDecision(animal,decision);
+      }
+    }catch{
+      for(const animal of due)animal.nextDecisionAt=now()+5000+Math.random()*5000;
+    }finally{
+      this.wildlifeDecisionPending=false;
+      this.nextWildlifeBatchAt=now()+2500;
+    }
+  }
+
+  applyWildlifeDecision(animal:WildlifeRuntime,decision:WildlifeDecisionResult) {
+    const s=animal.state;
+    s.currentAction=decision.action;s.targetObjectId=decision.targetObjectId;s.targetWildlifeId=decision.targetWildlifeId;s.lastDecisionAt=Date.now();
+    animal.path=[];animal.pathIndex=0;animal.actionResolved=false;
+    let target:Vec2|undefined;
+
+    if(decision.action==='drink'||decision.action==='graze'||decision.action==='forage'){
+      const object=(decision.targetObjectId&&this.objects.get(decision.targetObjectId))||this.findWildlifeResource(animal,decision.action);
+      if(object){s.targetObjectId=object.state.id;target=object.state.position;}
+    }else if(decision.action==='hunt'||decision.action==='seek_mate'){
+      const other=(decision.targetWildlifeId&&this.wildlife.get(decision.targetWildlifeId))||this.findWildlifeTarget(animal,decision.action);
+      if(other){s.targetWildlifeId=other.state.id;target=other.state.position;}
+    }else if(decision.action==='flee'){
+      const threat=(decision.targetWildlifeId&&this.wildlife.get(decision.targetWildlifeId))||this.findWildlifeTarget(animal,'flee');
+      const from=threat?.state.position||this.playerPosition;
+      let dx=s.position.x-from.x,dz=s.position.z-from.z;
+      if(Math.hypot(dx,dz)<.1){dx=.7;dz=.7;}
+      const length=Math.hypot(dx,dz);target={x:s.position.x+dx/length*8,z:s.position.z+dz/length*8};
+    }else if(decision.action==='wander'){
+      target=this.randomPassableNear(s.position,7,s.chunkId);
+    }
+
+    if(target)animal.path=this.findPath(s.position,target);
+    if(!animal.path.length)this.completeWildlifeAction(animal);
+  }
+
+  findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
+    const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
+    const wanted=(o:RuntimeObject)=>{
+      if(action==='drink')return o.state.tags.includes('water')||o.state.kind==='well';
+      if(action==='graze')return o.state.kind==='farm_plot'||o.state.tags.includes('food')||o.state.tags.includes('nature');
+      return o.state.tags.includes('forage')||o.state.tags.includes('food')||o.state.kind==='bush'||o.state.kind==='flower';
+    };
+    return candidates.filter(wanted).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+  }
+
+  findWildlifeTarget(animal:WildlifeRuntime,action:WildlifeAction) {
+    const candidates=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed);
+    if(action==='hunt')return candidates.filter(x=>['rabbit','deer'].includes(x.state.species)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    if(action==='seek_mate')return candidates.filter(x=>x.state.species===animal.state.species&&x.state.sex!==animal.state.sex&&x.state.ageDays>90).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    if(action==='flee')return candidates.filter(x=>x.state.species==='fox').sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    return undefined;
+  }
+
+  completeWildlifeAction(animal:WildlifeRuntime) {
+    const s=animal.state;
+    const object=s.targetObjectId?this.objects.get(s.targetObjectId):undefined;
+    const other=s.targetWildlifeId?this.wildlife.get(s.targetWildlifeId):undefined;
+    switch(s.currentAction){
+      case 'drink':
+        s.thirst=clamp(s.thirst-58,0,100);s.energy=clamp(s.energy-1,0,100);break;
+      case 'graze':
+      case 'forage':
+        s.hunger=clamp(s.hunger-(s.currentAction==='graze'?34:28),0,100);
+        if(object&&typeof object.state.resourceAmount==='number')object.state.resourceAmount=Math.max(0,object.state.resourceAmount-.25);
+        break;
+      case 'rest':
+        s.energy=clamp(s.energy+24,0,100);break;
+      case 'flee':
+        s.energy=clamp(s.energy-10,0,100);break;
+      case 'hunt':
+        if(other&&dist(s.position,other.state.position)<=2.3){
+          const damage=s.species==='fox'?(other.state.species==='rabbit'?100:45):25;
+          other.state.health=clamp(other.state.health-damage,0,100);
+          s.hunger=clamp(s.hunger-(other.state.species==='rabbit'?48:30),0,100);
+          s.energy=clamp(s.energy-8,0,100);
+          if(other.state.health<=0)this.removeWildlife(other,'被捕食');
+        }
+        break;
+      case 'seek_mate':
+        if(other&&dist(s.position,other.state.position)<=2.5)this.tryWildlifeReproduction(animal,other);
+        break;
+      case 'wander':
+        s.energy=clamp(s.energy-2,0,100);break;
+    }
+    animal.actionResolved=true;
+    animal.nextDecisionAt=now()+8000+Math.random()*10000;
+    s.targetObjectId=undefined;s.targetWildlifeId=undefined;
+  }
+
+  tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
+    if(a.state.sex!=='female'||a.state.species!==b.state.species||a.state.sex===b.state.sex)return;
+    const adult=a.state.species==='rabbit'?90:300;
+    if(a.state.ageDays<adult||b.state.ageDays<adult||a.state.health<60||b.state.health<60||a.state.hunger>70||a.state.thirst>70)return;
+    const chunk=this.coarseWorld.chunks.get(a.state.chunkId);
+    const population=chunk?.wildlife?.find(x=>x.species===a.state.species);
+    const current=[...this.wildlife.values()].filter(x=>x.state.chunkId===a.state.chunkId&&x.state.species===a.state.species&&!x.removed).length;
+    if(population&&current>=Math.max(2,Math.ceil(population.carryingCapacity*.45)))return;
+    const fertility=(a.state.traits.fertility+b.state.traits.fertility)/2;
+    if(!this.deterministicChance(`${a.state.id}:${b.state.id}:${this.day}:${Math.floor(this.minuteOfDay/30)}`,fertility*.22))return;
+    const generation=Math.max(a.state.generation,b.state.generation)+1;
+    const traits={
+      speed:this.inheritTrait(a.state.traits.speed,b.state.traits.speed,`${a.state.id}:speed:${generation}`),
+      size:this.inheritTrait(a.state.traits.size,b.state.traits.size,`${a.state.id}:size:${generation}`),
+      fertility:clamp(this.inheritTrait(a.state.traits.fertility,b.state.traits.fertility,`${a.state.id}:fertility:${generation}`),.15,1),
+      wariness:clamp(this.inheritTrait(a.state.traits.wariness,b.state.traits.wariness,`${a.state.id}:wariness:${generation}`),.1,1)
+    };
+    const id=`${a.state.chunkId}_wild_${a.state.species}_g${generation}_${this.day}_${Math.floor(this.minuteOfDay)}_${this.wildlife.size}`;
+    const baby:WildlifeState={
+      id,chunkId:a.state.chunkId,species:a.state.species,
+      position:{x:(a.state.position.x+b.state.position.x)/2+.3,z:(a.state.position.z+b.state.position.z)/2+.3},
+      ageDays:0,health:88,hunger:18,thirst:18,energy:82,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
+      generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:this.day
+    };
+    this.spawnWildlife(baby);
+    const runtime=this.materializedChunks.get(a.state.chunkId);if(runtime)runtime.wildlifeIds.push(id);
+    a.state.energy=clamp(a.state.energy-16,0,100);a.state.hunger=clamp(a.state.hunger+12,0,100);
+    this.event(`${this.wildlifeName(a.state.species)}种群出现了第 ${generation} 代幼体。`);
+  }
+
+  deterministicChance(key:string,threshold:number) {
+    let h=2166136261;
+    for(let i=0;i<key.length;i++){h^=key.charCodeAt(i);h=Math.imul(h,16777619);}
+    return (h>>>0)/4294967295<clamp(threshold,0,1);
+  }
+
+  inheritTrait(a:number,b:number,key:string) {
+    let h=2166136261;
+    for(let i=0;i<key.length;i++){h^=key.charCodeAt(i);h=Math.imul(h,16777619);}
+    const mutation=((h>>>0)/4294967295-.5)*.10;
+    return ((a+b)/2)*(1+mutation);
+  }
+
+  removeWildlife(animal:WildlifeRuntime,reason:string) {
+    if(animal.removed)return;
+    animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
+    this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${reason}。`);
+  }
+
+  wildlifeName(species:WildlifeSpecies) {
+    return i18n.t(`wildlife.${species}`);
   }
 
   updateNpcs(dt:number) {
@@ -1415,7 +1724,10 @@ class TownGame {
   interact() {
     if(!this.hoverEntity)return;
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id);if(n)this.playerTalk(n);}
-    else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
+    else if(this.hoverEntity.type==='wildlife'){
+      const animal=this.wildlife.get(this.hoverEntity.id);
+      if(animal)this.toast(`${this.wildlifeName(animal.state.species)} · ${i18n.t('wildlife.health')} ${animal.state.health.toFixed(0)} · ${i18n.t('wildlife.action')} ${animal.state.currentAction}`);
+    }else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
   }
 
   async npcTalkPlayerAuto(n:NpcRuntime,intent:SocialIntent) {
@@ -1546,9 +1858,9 @@ class TownGame {
 
   pickEntity(pointer:THREE.Vector2,maxDistance:number) {
     this.raycaster.setFromCamera(pointer,this.camera);
-    const targets:THREE.Object3D[]=[...[...this.npcs.values()].map(n=>n.mesh), ...[...this.objects.values()].filter(o=>o.mesh.visible).map(o=>o.mesh)];
+    const targets:THREE.Object3D[]=[...[...this.npcs.values()].map(n=>n.mesh), ...[...this.wildlife.values()].filter(x=>!x.removed).map(x=>x.mesh), ...[...this.objects.values()].filter(o=>o.mesh.visible).map(o=>o.mesh)];
     const hits=this.raycaster.intersectObjects(targets,true).filter(h=>h.distance<=maxDistance);
-    for(const h of hits){let o:THREE.Object3D|null=h.object;while(o&&!o.userData.entityType)o=o.parent;if(o?.userData.entityType==='npc'||o?.userData.entityType==='object')return {type:o.userData.entityType as 'npc'|'object',id:String(o.userData.entityId)};}
+    for(const h of hits){let o:THREE.Object3D|null=h.object;while(o&&!o.userData.entityType)o=o.parent;if(o?.userData.entityType==='npc'||o?.userData.entityType==='object'||o?.userData.entityType==='wildlife')return {type:o.userData.entityType as 'npc'|'object'|'wildlife',id:String(o.userData.entityId)};}
     return undefined;
   }
 
@@ -1557,17 +1869,18 @@ class TownGame {
     this.hoverEntity=this.pickEntity(pointer,this.cameraMode==='god'?Infinity:3.2);
     if(this.cameraMode==='god'){
       if(!this.hoverEntity){ui.prompt.textContent='';return;}
-      const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.objects.get(this.hoverEntity.id)?.state.name;
+      const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):this.objects.get(this.hoverEntity.id)?.state.name;
       ui.prompt.textContent=i18n.t('prompt.god',{name:name||''});return;
     }
     if(!this.hoverEntity){ui.prompt.textContent='';return;}
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.talk',{name:n.state.name});}
+    else if(this.hoverEntity.type==='wildlife'){const w=this.wildlife.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.wildlife',{name:this.wildlifeName(w.state.species)});}
     else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:o.state.name,count});}
   }
 
   updateUi() {
     const world=this.coarseWorld.status();
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
@@ -1577,6 +1890,13 @@ class TownGame {
       const inv=n.inventory.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'空';
       const memories=n.memories.slice(-3).reverse().map(m=>`<div class="memory">• ${this.escape(m.summary)}</div>`).join('')||'<span>暂无显著记忆</span>';
       ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(n.name)}</b><span>${n.role}</span></div><div>心情 ${n.mood} · 饥饿 ${n.hunger.toFixed(0)} · 精力 ${n.energy.toFixed(0)} · 社交 ${n.social.toFixed(0)}</div><div>当前行为 <b>${n.currentAction}</b> · 金钱 ${n.money}</div><div>背包 ${inv}</div><div class="npc-goal">${this.escape(n.goal)}</div>${d?`<div class="decision"><b>最近决策</b> ${d.action} → ${this.escape(String(target))}<br>${d.source.toUpperCase()} · confidence ${(d.confidence*100).toFixed(0)}% · ${d.stateShift}${d.socialIntent?` · ${d.socialIntent}`:''}<br><span>${this.escape(d.reasonCode)}</span></div>`:'<div class="decision"><span>等待首次决策…</span></div>'}<div class="memories"><b>短期记忆</b>${memories}</div>`;
+    } else if(entity?.type==='wildlife'){
+      const a=this.wildlife.get(entity.id);
+      if(a){
+        const s=a.state;
+        ui.npc.classList.remove('hidden');
+        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>`;
+      }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
     } else ui.npc.classList.add('hidden');
@@ -1601,6 +1921,10 @@ class TownGame {
     if(this.selectedEntity.type==='npc'){
       const a=this.npcs.get(this.selectedEntity.id)!;const remaining=a.path.slice(a.pathIndex);
       if(remaining.length){const pts=[new THREE.Vector3(a.mesh.position.x,.09,a.mesh.position.z),...remaining.map(x=>new THREE.Vector3(x.x,.09,x.z))];this.pathLine.geometry.dispose();this.pathLine.geometry=new THREE.BufferGeometry().setFromPoints(pts);this.pathLine.visible=true;}else this.pathLine.visible=false;
+    }else if(this.selectedEntity.type==='wildlife'){
+      const a=this.wildlife.get(this.selectedEntity.id);
+      const remaining=a?a.path.slice(a.pathIndex):[];
+      if(a&&remaining.length){const pts=[new THREE.Vector3(a.mesh.position.x,.09,a.mesh.position.z),...remaining.map(x=>new THREE.Vector3(x.x,.09,x.z))];this.pathLine.geometry.dispose();this.pathLine.geometry=new THREE.BufferGeometry().setFromPoints(pts);this.pathLine.visible=true;}else this.pathLine.visible=false;
     }else this.pathLine.visible=false;
   }
 
@@ -1638,7 +1962,7 @@ class TownGame {
   renderBudget(budget:any,syncInputs=false) {
     if(!budget||budget.unavailable){ui.budgetLive.textContent='当前 provider 不提供 Jev token 预算。';return;}
     const t=budget.inputTokens||{},calls=budget.calls||{},cost=budget.estimatedUsd||{},cfg=budget.config||{};
-    ui.budgetLive.innerHTML=`输入 tokens：分钟 <b>${Number(t.minute||0).toLocaleString()}</b> · 小时 <b>${Number(t.hour||0).toLocaleString()}</b> · 今日 <b>${Number(t.day||0).toLocaleString()}</b><br>估算今日费用 <b>${Number(cost.day||0).toFixed(4)}</b> · calls ${calls.minute||0}/min · NPC ${calls.npc||0} / 对话 ${calls.dialogue||0} / chunk ${calls.chunk||0}<br>缓存命中 ${budget.cacheHits||0} · 预算阻断 ${budget.blocked||0} · 低置信回退 ${budget.lowConfidenceFallbacks||0}`;
+    ui.budgetLive.innerHTML=`输入 tokens：分钟 <b>${Number(t.minute||0).toLocaleString()}</b> · 小时 <b>${Number(t.hour||0).toLocaleString()}</b> · 今日 <b>${Number(t.day||0).toLocaleString()}</b><br>估算今日费用 <b>${Number(cost.day||0).toFixed(4)}</b> · calls ${calls.minute||0}/min · NPC ${calls.npc||0} / 对话 ${calls.dialogue||0} / chunk ${calls.chunk||0} / region ${calls.region||0} / world ${calls.world||0} / wildlife ${calls.wildlife||0}<br>缓存命中 ${budget.cacheHits||0} · 预算阻断 ${budget.blocked||0} · 低置信回退 ${budget.lowConfidenceFallbacks||0}`;
     if(syncInputs&&!document.activeElement?.matches?.('#jevBudgetPanel input')){
       const set=(id:string,v:unknown)=>{const el=document.querySelector<HTMLInputElement>(id);if(el&&v!==undefined)el.value=String(v);};
       set('#budgetCallsMin',cfg.maxCallsPerMinute);set('#budgetTokensMin',cfg.maxInputTokensPerMinute);set('#budgetTokensHour',cfg.maxInputTokensPerHour);

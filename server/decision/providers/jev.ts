@@ -529,7 +529,7 @@ export class JevDecisionProvider implements DecisionProvider {
           type:'choice',
           instructions:'Choose a supplied animal only if the selected behavior requires prey, a mate, or a threat target.',
           criteria:Object.fromEntries(entry.world.nearbyWildlife.slice(0,24).map(x=>[
-            x.id,`${x.species}; distance=${x.distance.toFixed(1)}; health=${x.health.toFixed(0)}; action=${x.currentAction}`
+            x.id,`${x.species}; sex=${x.sex}; ageDays=${x.ageDays.toFixed(0)}; distance=${x.distance.toFixed(1)}; health=${x.health.toFixed(0)}; action=${x.currentAction}`
           ]))
         };
       }

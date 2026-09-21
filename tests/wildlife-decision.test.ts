@@ -12,7 +12,7 @@ test('wildlife fallback prioritizes nearby predator escape',()=>{
   const req:WildlifeDecisionBatchRequest={requests:[{
     wildlife:animal(),
     world:{gameTime:'09:00',minuteOfDay:540,weather:'clear',nearbyResources:[],nearbyWildlife:[
-      {id:'fox_1',species:'fox',distance:3,health:80,currentAction:'hunt'}
+      {id:'fox_1',species:'fox',sex:'male',ageDays:500,distance:3,health:80,currentAction:'hunt'}
     ]},
     allowedActions:['flee','wander','graze','rest']
   }]};

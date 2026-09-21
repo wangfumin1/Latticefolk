@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {
   CoarseChunkState, PersistedFineChunk, WorldPersistenceMeta, WorldPersistenceSnapshot,
-  NpcState, WorldObjectState
+  NpcState, WildlifeState, WorldObjectState
 } from '../src/types.js';
 
 type Row = Record<string, unknown>;
@@ -40,6 +40,7 @@ export class WorldPersistence {
         chunk_id TEXT PRIMARY KEY,
         npc_json TEXT NOT NULL,
         object_json TEXT NOT NULL,
+        wildlife_json TEXT NOT NULL DEFAULT '[]',
         updated_at INTEGER NOT NULL
       );
 
@@ -50,6 +51,10 @@ export class WorldPersistence {
         updated_at INTEGER NOT NULL
       );
     `);
+    const fineColumns=this.db.prepare("PRAGMA table_info(fine_chunks)").all() as Array<{name:string}>;
+    if(!fineColumns.some(column=>column.name==='wildlife_json')){
+      this.db.exec("ALTER TABLE fine_chunks ADD COLUMN wildlife_json TEXT NOT NULL DEFAULT '[]'");
+    }
   }
 
   save(snapshot:WorldPersistenceSnapshot) {
@@ -63,8 +68,8 @@ export class WorldPersistence {
       ON CONFLICT(id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at
     `);
     const upsertFine=this.db.prepare(`
-      INSERT INTO fine_chunks(chunk_id,npc_json,object_json,updated_at) VALUES(?,?,?,?)
-      ON CONFLICT(chunk_id) DO UPDATE SET npc_json=excluded.npc_json,object_json=excluded.object_json,updated_at=excluded.updated_at
+      INSERT INTO fine_chunks(chunk_id,npc_json,object_json,wildlife_json,updated_at) VALUES(?,?,?,?,?)
+      ON CONFLICT(chunk_id) DO UPDATE SET npc_json=excluded.npc_json,object_json=excluded.object_json,wildlife_json=excluded.wildlife_json,updated_at=excluded.updated_at
     `);
     const upsertHome=this.db.prepare(`
       INSERT INTO home_state(slot,npc_json,object_json,updated_at) VALUES('default',?,?,?)
@@ -85,7 +90,7 @@ export class WorldPersistence {
       const existingFine=this.db.prepare('SELECT chunk_id FROM fine_chunks').all() as Array<{chunk_id:string}>;
       for(const row of existingFine) if(!fineIds.has(row.chunk_id)) deleteFine.run(row.chunk_id);
       for(const chunk of data.fineChunks){
-        upsertFine.run(chunk.chunkId,JSON.stringify(chunk.npcStates),JSON.stringify(chunk.objectStates),savedAt);
+        upsertFine.run(chunk.chunkId,JSON.stringify(chunk.npcStates),JSON.stringify(chunk.objectStates),JSON.stringify(chunk.wildlifeStates||[]),savedAt);
       }
 
       upsertHome.run(JSON.stringify(data.homeNpcs),JSON.stringify(data.homeObjects),savedAt);
@@ -100,14 +105,15 @@ export class WorldPersistence {
     if(!metaRow)return null;
 
     const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
-    const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string}>;
+    const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
 
     const coarseChunks=coarseRows.map(row=>parse<CoarseChunkState|null>(row.state_json,null)).filter((x):x is CoarseChunkState=>Boolean(x));
     const fineChunks:PersistedFineChunk[]=fineRows.map(row=>({
       chunkId:row.chunk_id,
       npcStates:parse<NpcState[]>(row.npc_json,[]),
-      objectStates:parse<WorldObjectState[]>(row.object_json,[])
+      objectStates:parse<WorldObjectState[]>(row.object_json,[]),
+      wildlifeStates:parse<WildlifeState[]>(row.wildlife_json,[])
     }));
 
     return {
