@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fallbackDecision } from '../server/decision/rules.js';
+import { fallbackDecision, fallbackChunkDecisions } from '../server/decision/rules.js';
 import type { DecisionRequest, NpcState } from '../src/types.js';
 
 function npc(overrides: Partial<NpcState> = {}): NpcState {
@@ -34,4 +34,22 @@ test('fallback never returns an illegal action', () => {
   req.allowedActions = ['wander'];
   const result = fallbackDecision(req);
   assert.ok(req.allowedActions.includes(result.action));
+});
+
+
+test('coarse chunk fallback reacts to scarcity without inventing numeric mutations', () => {
+  const result = fallbackChunkDecisions({
+    day: 3,
+    gameTime: '14:20',
+    weather: 'clear',
+    chunks: [{
+      id:'chunk_2_0', cx:2, cz:0, biome:'plains', settlementLevel:1, population:18,
+      food:12, wood:55, water:20, ecology:46, danger:25, prosperity:38,
+      strategy:'sustain', migrationPolicy:'retain', ecologyPolicy:'balance',
+      lastDecisionAt:0, decisionVersion:0
+    }]
+  });
+  assert.equal(result.decisions[0]?.strategy, 'conserve');
+  assert.equal(result.decisions[0]?.migrationPolicy, 'release');
+  assert.equal(result.decisions[0]?.ecologyPolicy, 'recover');
 });
