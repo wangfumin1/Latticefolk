@@ -17,7 +17,7 @@ The database and its WAL/SHM sidecars are ignored by Git. It is runtime state, n
 | World meta | day, minute of day, weather |
 | Player | position and inventory |
 | Coarse world | every coarse chunk's population, resources, ecology, danger, prosperity, settlement level, provider-selected policy, and decision version |
-| Visited fine chunks | resident identities/state, memories, relationships, inventory, object storage, resource depletion |
+| Visited fine chunks | resident identities/state, memories, relationships, inventory, object storage, resource depletion, and persistent wildlife individuals/traits |
 | Center town | NPC and interactive-object state |
 
 The save format is currently `version: 1`.
@@ -26,7 +26,7 @@ The save format is currently `version: 1`.
 
 - `world_meta`
 - `coarse_chunks`
-- `fine_chunks`
+- `fine_chunks` â€” NPC JSON, object JSON, and wildlife JSON
 - `home_state`
 
 Writes use a single SQLite transaction so one logical snapshot cannot partially update only some simulation layers. SQLite runs with WAL journaling and `synchronous=NORMAL`.
@@ -53,3 +53,8 @@ This is intentionally separate from procedural generation: generation answers â€
 - Jev runtime budget settings remain configuration/runtime-control state and are not part of the world save.
 
 When the schema begins to stabilize, migrations and explicit backup/export tooling should replace destructive development-time compatibility handling.
+
+
+### Wildlife schema extension
+
+The wildlife milestone adds a `wildlife_json` column to `fine_chunks`. Existing SQLite databases are upgraded at startup with a backward-compatible column migration and default empty wildlife arrays; no manual reset is required.
