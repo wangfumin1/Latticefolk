@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
+<title id="title">Latticefolk</title><desc id="desc">A living autonomous town connected to a larger simulated world.</desc>
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#bfe8ff"/><stop offset="1" stop-color="#f5fbff"/></linearGradient>
+  <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#77ad63"/><stop offset="1" stop-color="#4e7e4d"/></linearGradient>
+  <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102333" stop-opacity=".96"/><stop offset="1" stop-color="#193947" stop-opacity=".94"/></linearGradient>
+  <filter id="shadow"><feDropShadow dx="0" dy="7" stdDeviation="10" flood-opacity=".18"/></filter>
+</defs>
+<rect width="1600" height="560" fill="url(#sky)"/>
+<circle cx="1370" cy="92" r="45" fill="#fff7c6" opacity=".9"/>
+<path d="M0 303 L140 218 264 291 384 174 508 275 632 198 770 292 905 176 1037 267 1168 206 1322 288 1467 195 1600 260 1600 560 0 560Z" fill="#72906d" opacity=".55"/>
+<path d="M0 350 Q230 295 430 355 T820 342 T1190 348 T1600 320 L1600 560 0 560Z" fill="url(#ground)"/>
+<path d="M730 560 L814 341 886 341 1016 560Z" fill="#c9b88e"/>
+<path d="M0 458 Q290 410 578 445 T1100 436 T1600 420" fill="none" stroke="#d8caa3" stroke-width="26" opacity=".72"/>
+<g filter="url(#shadow)" stroke="#513e2c" stroke-width="6">
+  <g transform="translate(1040 278)">
+    <rect x="0" y="42" width="190" height="126" rx="3" fill="#e8d2a5"/><path d="M-18 47 L94 -28 208 47Z" fill="#a34f3f"/>
+    <rect x="74" y="98" width="40" height="70" fill="#6d4c35"/><rect x="19" y="78" width="38" height="34" fill="#8fd1e3"/><rect x="135" y="78" width="38" height="34" fill="#8fd1e3"/>
+  </g>
+  <g transform="translate(1280 310) scale(.76)">
+    <rect x="0" y="42" width="190" height="126" fill="#f0dcbd"/><path d="M-18 47 L94 -28 208 47Z" fill="#b95f47"/>
+    <rect x="74" y="98" width="40" height="70" fill="#73503a"/>
+  </g>
+  <g transform="translate(890 335) scale(.56)">
+    <rect x="0" y="42" width="190" height="126" fill="#e3c79c"/><path d="M-18 47 L94 -28 208 47Z" fill="#8f473a"/>
+    <rect x="74" y="98" width="40" height="70" fill="#61452f"/>
+  </g>
+</g>
+<g fill="#376b3d" stroke="#2f5a35" stroke-width="4">
+  <g transform="translate(1220 275)"><rect x="-8" y="50" width="16" height="66" fill="#79533a"/><circle cx="0" cy="36" r="48"/></g>
+  <g transform="translate(1440 300) scale(.8)"><rect x="-8" y="50" width="16" height="66" fill="#79533a"/><circle cx="0" cy="36" r="48"/></g>
+  <g transform="translate(965 295) scale(.75)"><rect x="-8" y="50" width="16" height="66" fill="#79533a"/><circle cx="0" cy="36" r="48"/></g>
+</g>
+<g transform="translate(735 372)" filter="url(#shadow)">
+  <ellipse cx="0" cy="77" rx="70" ry="18" fill="#000" opacity=".12"/>
+  <rect x="-62" y="20" width="124" height="58" rx="4" fill="#817367"/>
+  <ellipse cx="0" cy="20" rx="62" ry="18" fill="#9f9487"/>
+  <ellipse cx="0" cy="20" rx="45" ry="11" fill="#6ca2ba"/>
+  <rect x="-6" y="-70" width="12" height="88" fill="#6e523c"/>
+  <path d="M-54 -56 H54 L40 -22 H-40Z" fill="#9a5e3d"/>
+</g>
+<g transform="translate(560 386)">
+  <rect x="-18" y="20" width="36" height="56" rx="5" fill="#537aa5"/><rect x="-21" y="-20" width="42" height="42" rx="7" fill="#dfac82"/><rect x="-30" y="1" width="60" height="22" rx="6" fill="#9a4a3f"/>
+  <rect x="-17" y="75" width="13" height="37" fill="#38414a"/><rect x="4" y="75" width="13" height="37" fill="#38414a"/>
+</g>
+<g transform="translate(650 404) scale(.86)">
+  <rect x="-18" y="20" width="36" height="56" rx="5" fill="#6e9453"/><rect x="-21" y="-20" width="42" height="42" rx="7" fill="#d7a57f"/><rect x="-30" y="1" width="60" height="22" rx="6" fill="#7b583b"/>
+  <rect x="-17" y="75" width="13" height="37" fill="#38414a"/><rect x="4" y="75" width="13" height="37" fill="#38414a"/>
+</g>
+<rect x="58" y="62" width="670" height="246" rx="24" fill="url(#panel)" filter="url(#shadow)"/>
+<g transform="translate(92 91)">
+  <path d="M42 0 84 24v48L42 96 0 72V24Z" fill="none" stroke="#75e0bb" stroke-width="10"/>
+  <path d="M22 28 42 42 62 27M42 42v28M26 57l16 13 17-14" fill="none" stroke="#b7f5df" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="202" y="147" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="70" font-weight="800" fill="#ffffff">Latticefolk</text>
+<text x="94" y="207" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="26" fill="#cfe8f2">A living 3D world for autonomous NPCs and evolving societies.</text>
+<text x="94" y="253" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#8ed9c0">SIMULATE</text>
+<circle cx="222" cy="246" r="4" fill="#7fa8bb"/><text x="242" y="253" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#8ed9c0">OBSERVE</text>
+<circle cx="363" cy="246" r="4" fill="#7fa8bb"/><text x="383" y="253" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#8ed9c0">INTERACT</text>
+<circle cx="507" cy="246" r="4" fill="#7fa8bb"/><text x="527" y="253" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#8ed9c0">EVOLVE</text>
+<g transform="translate(91 280)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" fill="#d9edf5">
+  <rect width="132" height="35" rx="17" fill="#27485a"/><text x="20" y="23">Three.js + TS</text>
+  <rect x="143" width="156" height="35" rx="17" fill="#27485a"/><text x="164" y="23">Pluggable AI</text>
+  <rect x="310" width="171" height="35" rx="17" fill="#27485a"/><text x="331" y="23">Living chunks</text>
+  <rect x="492" width="143" height="35" rx="17" fill="#27485a"/><text x="515" y="23">Open source</text>
+</g>
+<g opacity=".9" fill="none" stroke="#d9f7eb" stroke-width="2">
+  <path d="M1215 153 C1312 111 1410 128 1510 79"/><path d="M1239 180 C1340 223 1433 191 1532 224"/>
+  <circle cx="1215" cy="153" r="7" fill="#8ed9c0"/><circle cx="1510" cy="79" r="7" fill="#8ed9c0"/><circle cx="1239" cy="180" r="7" fill="#8ed9c0"/><circle cx="1532" cy="224" r="7" fill="#8ed9c0"/>
+</g>
+</svg>

@@ -1,25 +1,72 @@
-# Latticefolk 中文简介
+# Latticefolk
 
-Latticefolk 是一个开源的 3D Web 自主 NPC 小镇沙盒。项目把“世界模拟”和“决策模型”明确分离：NPC 的移动、碰撞、寻路、库存、数值变化和动作合法性由确定性的游戏系统负责；决策引擎只从游戏提供的合法候选中选择行为、目标、社交意图、状态倾向和台词。
+<p align="center"><img src="assets/cover.svg" alt="Latticefolk" width="100%"></p>
 
-当前内置本地规则 provider，并可选接入 Jev / TypeSafe System One。Jev 只是一个 adapter，核心架构不会与某个模型 API 绑定。
+<p align="center">
+<strong>一个面向自主 NPC、小镇社会与演化世界的 3D Web 开源模拟项目。</strong>
+</p>
+
+<p align="center"><a href="../README.md">English</a> · <b>简体中文</b> · <a href="README.ja.md">日本語</a> · <a href="README.es.md">Español</a></p>
+
+Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模型真正参与一个持续运行的世界：NPC 会工作、采集、制作、交易、赠礼、送货、取水、巡逻、拜访、休息、睡眠、探索并建立关系；远处区域也会以粗粒度 chunk 状态持续演化，并由可插拔决策引擎参与区域策略。
+
+项目**不绑定 Jev**。Jev / TypeSafe System One 是当前第一个远程决策适配器，核心模拟只依赖通用的 `DecisionProvider`。
+
+## 当前已经实现
+
+- Three.js 第一人称 3D 小镇与真正的观察者上帝视角。
+- 约 20 种有界 NPC 行为，行为会真实改变库存、金钱、关系和需求。
+- 统一 `WorldObject + capabilities` 交互体系：房屋、水井、市场、箱桶、推车、树木、岩石、花、工具、床、工作台等都属于真实世界对象，而不是单纯装饰。
+- 本地 deterministic fallback + 可选 Jev provider。
+- 远区 chunk 粗模拟与批量 Jev 策略 / 迁徙 / 生态决策。
+- 上帝控制台 Jev input-token 与费用预算：分钟 / 小时 / 每日 token、每日 USD 上限、置信度阈值、缓存、调用类型统计和省流 / 平衡 / 高质量预设。
+- 检索优先的预制台词库，支持完整台词和 opener/body/closer 片段组合。
+- 简体中文、English、日本語、Español UI 与语料支持。
+- Quaternius CC0 低多边形角色、建筑和道具素材。
 
 ## 本地运行
 
-```powershell
-copy .env.example .env
+需要 Node.js 20+：
+
+```bash
+git clone https://github.com/wangfumin1/Latticefolk.git
+cd Latticefolk
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-Windows 也可以直接运行 `run.bat`。
+Windows 可以直接使用 `run.bat` 或 `run.ps1`。
 
-## 关键设计
+没有 Jev Key 时游戏仍会使用本地 fallback。需要启用 Jev 时：
 
-- 第一人称时玩家是 NPC 世界中的真实实体。
-- 上帝视角是世界外观察者，NPC 完全感知不到玩家。
-- 海量预制台词先通过本地标签索引召回，再由决策 provider 从小候选集选择。
-- 远程 provider 失败时自动安全回退，不让小镇停止运行。
-- 新模型接入放在 `server/decision/providers/`，不改模拟核心。
+```dotenv
+DECISION_PROVIDER=jev
+TYPESAFE_API_KEY=your_server_side_key
+JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone
+JEV_MODEL=jev-latest
+```
 
-更完整说明请阅读根目录 `README.md` 和 `docs/`。
+API Key 只应存在于服务端环境变量。
+
+## 核心原则
+
+**决策模型负责选择意图，模拟器负责执行世界事实。**
+
+例如 Jev 可以选择“去采矿”“向某人赠礼”“这个 chunk 采取资源保护策略”，但不能直接凭空把石料改成 999、生成不存在的人、跳过库存守恒或修改非法状态。
+
+上帝视角同样是严格的世界外观察者：进入上帝视角后，玩家实体不会出现在 NPC 感知或 Jev 候选中。
+
+## 开发路线
+
+当前顺序为：coarse↔fine chunk 双向转换 → SQLite 世界持久化 → 跨 chunk 人口/资源/贸易/生态守恒流 → Region/World 决策层 → 动态 chunk streaming → 程序化聚落与环境 → 更完整的生产与交互 → 动植物生态 → 生老病死/繁殖/遗传/进化 → 完整物理层。
+
+完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
+
+## 参与贡献
+
+欢迎新增决策 provider、交互能力、语料、翻译、世界系统、生态模型和素材适配。请先阅读 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+
+## 致谢与许可
+
+感谢 Three.js、Quaternius、TypeSafe/Jev 以及所有贡献者。源码采用 [MIT](../LICENSE)；随仓库分发的第三方素材许可详见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。研究或演示引用可使用 [CITATION.cff](../CITATION.cff)。

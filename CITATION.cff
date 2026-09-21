@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use Latticefolk in research, demos, or derivative simulation work, please cite this repository."
+title: "Latticefolk"
+type: software
+authors:
+  - family-names: "wangfumin1"
+repository-code: "https://github.com/wangfumin1/Latticefolk"
+url: "https://github.com/wangfumin1/Latticefolk"
+license: MIT
+version: "0.1.0"
+date-released: 2026-09-21
+keywords:
+  - autonomous agents
+  - NPC simulation
+  - game AI
+  - world simulation
+  - decision models
