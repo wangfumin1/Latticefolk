@@ -8,13 +8,13 @@ The project currently ships with a local fallback decision provider and an optio
 
 ## Current features
 
-- Playable Three.js 3D town with first-person controls.
+- Playable Three.js 3D town with first-person controls, a 72×72 expanded demo district, and multiple connected neighborhoods.
 - God mode (`G`) with orbit, pan, zoom, selection, focus, path inspection, and NPC decision inspection.
 - God mode is a true observer state: the player entity is absent from NPC perception and decision targets.
 - Autonomous NPC needs, mood, social state, money, inventory, relationships, short-term memory, goals, work, rest, eating, wandering, pickup/drop, object use, and NPC/player social interactions.
 - Bounded decision API for actions, targets, social intent, state tendencies, and action commitment.
 - Large authored-dialogue library with local indexed retrieval plus complete-line or fragment selection.
-- Animated low-poly characters and environment assets from Quaternius Cube World Kit (CC0).
+- Animated low-poly characters from Quaternius Cube World Kit plus buildings/props from Ultimate Fantasy RTS (CC0).
 - Graceful local fallback when no remote decision provider is configured or a remote decision fails.
 
 ## Quick start
@@ -96,4 +96,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md). New decision integrations should implem
 
 Source code: [MIT](LICENSE).
 
-Included Quaternius Cube World Kit assets are CC0. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and third-party licensing details.
+Included Quaternius Cube World Kit and Ultimate Fantasy RTS assets are CC0. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and third-party licensing details.

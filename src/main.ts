@@ -9,7 +9,7 @@ import type {
   ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
 } from './types';
 
-const WORLD_SIZE = 36;
+const WORLD_SIZE = 72;
 const HALF = WORLD_SIZE / 2;
 const keyOf = (x:number,z:number) => `${x},${z}`;
 const clamp = (v:number,min:number,max:number) => Math.max(min,Math.min(max,v));
@@ -92,7 +92,7 @@ interface NpcRuntime {
 
 class TownGame {
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, .05, 120);
+  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, .05, 180);
   renderer = new THREE.WebGLRenderer({antialias:true});
   controls: PointerLockControls;
   orbit: OrbitControls;
@@ -113,7 +113,7 @@ class TownGame {
   logs: string[] = [];
   aiPaused = false;
   inFlight = 0;
-  maxInFlight = 2;
+  maxInFlight = 3;
   hoverEntity?: {type:'npc'|'object'; id:string};
   selectedEntity?: {type:'npc'|'object'; id:string};
   cameraMode: 'firstPerson'|'god' = 'firstPerson';
@@ -138,7 +138,7 @@ class TownGame {
   gltfLoader = new GLTFLoader();
   assets = new Map<string,AssetTemplate>();
   visualTargets: VisualTarget[] = [];
-  assetBase = '/assets/quaternius/cube-world';
+  assetRoot = '/assets/quaternius';
   assetsReady = false;
 
   constructor() {
@@ -151,7 +151,7 @@ class TownGame {
     this.renderer.toneMappingExposure = 1.08;
     document.querySelector('#game')!.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color(0x91c9ef);
-    this.scene.fog = new THREE.Fog(0x91c9ef, 24, 58);
+    this.scene.fog = new THREE.Fog(0x91c9ef, 48, 118);
     this.camera.position.set(0,1.7,7);
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
@@ -160,7 +160,7 @@ class TownGame {
     this.orbit.dampingFactor = .08;
     this.orbit.screenSpacePanning = false;
     this.orbit.minDistance = 7;
-    this.orbit.maxDistance = 48;
+    this.orbit.maxDistance = 96;
     this.orbit.maxPolarAngle = Math.PI * .49;
     this.orbit.minPolarAngle = Math.PI * .08;
     this.orbit.target.set(0,0,0);
@@ -185,42 +185,71 @@ class TownGame {
     ground.position.y = -.125; ground.receiveShadow = true; this.scene.add(ground);
 
     const roadMat = new THREE.MeshStandardMaterial({color:0xc3aa7d,roughness:1});
-    const road1 = new THREE.Mesh(new THREE.BoxGeometry(3,.03,WORLD_SIZE-2),roadMat); road1.position.set(0,.02,0);
-    const road2 = new THREE.Mesh(new THREE.BoxGeometry(WORLD_SIZE-2,.031,3),roadMat); road2.position.set(0,.021,0);
-    this.scene.add(road1,road2);
+    const addRoad=(x:number,z:number,w:number,d:number)=>{
+      const road=new THREE.Mesh(new THREE.BoxGeometry(w,.035,d),roadMat);
+      road.position.set(x,.02,z);road.receiveShadow=true;this.scene.add(road);
+    };
+    addRoad(0,0,4,WORLD_SIZE-4);
+    addRoad(0,0,WORLD_SIZE-4,4);
+    addRoad(0,-18,WORLD_SIZE-12,2.4);
+    addRoad(0,18,WORLD_SIZE-12,2.4);
+    addRoad(-18,0,2.4,WORLD_SIZE-12);
+    addRoad(18,0,2.4,WORLD_SIZE-12);
 
-    this.addBuilding('农舍',-12,-10,5,4,0x9d744f);
-    this.addBuilding('面包房',-5,-10,5,4,0xd58c55);
-    this.addBuilding('杂货店',7,-10,6,4,0x79a3a8);
-    this.addBuilding('工坊',-11,9,6,5,0x7f8796);
-    this.addBuilding('守卫所',10,9,5,4,0x8a7868);
-    this.addBuilding('民居',4,10,5,4,0xb28c75);
+    this.addBuilding('农舍',-22,-18,7,6,0x9d744f,'houseA',5.8,.08);
+    this.addBuilding('面包房',-10,-18,7,6,0xd58c55,'houseB',5.9,-.08);
+    this.addBuilding('杂货市场',8,-18,9,7,0x79a3a8,'marketBuilding',6.6,0);
+    this.addBuilding('旅店',21,-22,7,6,0xb28c75,'houseB',6.1,Math.PI);
+    this.addBuilding('工坊',-22,12,8,7,0x7f8796,'storageBuilding',6.1,.08);
+    this.addBuilding('守卫所',20,12,8,7,0x8a7868,'barracksBuilding',6.6,-.08);
+    this.addBuilding('民居',8,14,7,6,0xb28c75,'houseA',5.8,Math.PI);
+    this.addBuilding('北侧民居',-6,16,7,6,0xa77c61,'houseB',5.8,Math.PI);
+    this.addBuilding('议事厅',0,27,9,8,0x8b7b68,'townCenter',7.2,Math.PI);
+    this.addBuilding('仓库',23,-8,8,7,0x8a795d,'storageBuilding',6.0,Math.PI/2);
+    this.addBuilding('风车',-28,27,9,9,0x9a805f,'windmill',8.5,.1);
+    this.addBuilding('农场主屋',-28,-2,9,8,0x96704f,'farmBuilding',6.7,Math.PI/2);
 
     this.addObject({id:'well',kind:'well',name:'中央水井',position:{x:0,z:0},tags:['water','town','social'],usable:true,pickupable:false});
-    this.addObject({id:'bench_w',kind:'bench',name:'西侧长椅',position:{x:-3,z:2.5},tags:['rest','social'],usable:true,pickupable:false});
-    this.addObject({id:'bench_e',kind:'bench',name:'东侧长椅',position:{x:3,z:-2.5},tags:['rest','social'],usable:true,pickupable:false});
-    this.addObject({id:'farm_plot',kind:'farm_plot',name:'菜地',position:{x:-12,z:-5},tags:['work','farm','food'],usable:true,pickupable:false});
-    this.addObject({id:'oven',kind:'workstation',name:'面包炉',position:{x:-5,z:-6.5},tags:['work','baker','bread'],usable:true,pickupable:false});
-    this.addObject({id:'market',kind:'food_stall',name:'集市摊位',position:{x:7,z:-3.5},tags:['food','trade','market'],usable:true,pickupable:false,item:'bread'});
-    this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-10,z:5.5},tags:['work','maker','wood'],usable:true,pickupable:false});
-    this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:10,z:5.5},tags:['work','guard','safety'],usable:true,pickupable:false});
-    this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:4,z:6.5},tags:['rest','sleep'],usable:true,pickupable:false});
-    this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-8,z:3.5},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
-    this.addObject({id:'tree_apple_1',kind:'tree',name:'苹果树',position:{x:-7,z:-1},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
-    this.addObject({id:'tree_apple_2',kind:'tree',name:'苹果树',position:{x:10,z:1.5},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
+    this.addObject({id:'bench_w',kind:'bench',name:'西侧长椅',position:{x:-4,z:3},tags:['rest','social'],usable:true,pickupable:false});
+    this.addObject({id:'bench_e',kind:'bench',name:'东侧长椅',position:{x:4,z:-3},tags:['rest','social'],usable:true,pickupable:false});
+    this.addObject({id:'farm_plot',kind:'farm_plot',name:'南侧农田',position:{x:-22,z:-10},tags:['work','farm','food'],usable:true,pickupable:false});
+    this.addObject({id:'oven',kind:'workstation',name:'面包炉',position:{x:-10,z:-13},tags:['work','baker','bread'],usable:true,pickupable:false});
+    this.addObject({id:'market',kind:'food_stall',name:'集市摊位',position:{x:8,z:-11},tags:['food','trade','market'],usable:true,pickupable:false,item:'bread'});
+    this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
+    this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
+    this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:7,z:9},tags:['rest','sleep'],usable:true,pickupable:false});
+    this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-15,z:7},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
+    this.addObject({id:'barrel_food',kind:'crate',name:'补给木桶',position:{x:12,z:-9},tags:['food','supply','market'],usable:false,pickupable:true,item:'apple'});
+    this.addObject({id:'mine',kind:'workstation',name:'旧矿井',position:{x:29,z:25},tags:['work','resource','stone','mine'],usable:true,pickupable:false});
+    this.addObject({id:'mill',kind:'workstation',name:'风车磨坊',position:{x:-27,z:20},tags:['work','farm','grain','mill'],usable:true,pickupable:false});
+    this.addObject({id:'tree_apple_1',kind:'tree',name:'苹果树',position:{x:-8,z:-5},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
+    this.addObject({id:'tree_apple_2',kind:'tree',name:'苹果树',position:{x:14,z:1.5},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
+    this.addObject({id:'tree_apple_3',kind:'tree',name:'苹果树',position:{x:-18,z:23},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
 
-    for (const [x,z] of [[-15,2],[-14,5],[14,-4],[13,3],[-7,13],[14,13],[-15,-15],[14,-14]] as Array<[number,number]>) this.addTreeDecoration(x,z);
+    for (const [x,z] of [
+      [-32,6],[-31,12],[-30,-12],[-25,-29],[-14,30],[-7,-30],[14,30],[30,15],[31,4],
+      [29,-14],[22,-30],[4,-31],[-14,-27],[-31,-24],[33,-4],[-3,33]
+    ] as Array<[number,number]>) this.addTreeDecoration(x,z);
   }
 
-  addBuilding(_name:string,x:number,z:number,w:number,d:number,color:number) {
+  addBuilding(_name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0) {
     const g = new THREE.Group();
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,2.7,d), new THREE.MeshStandardMaterial({color,roughness:.9}));
-    wall.position.y=1.35; wall.castShadow=true; wall.receiveShadow=true; g.add(wall);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.5,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));
-    roof.position.y=3.4; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(.85,1.7,.08),new THREE.MeshStandardMaterial({color:0x51372a}));
-    door.position.set(0,.85,d/2+.045); g.add(door);
+    const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9});
+    const trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,3,d), wallMat);
+    wall.position.y=1.5; wall.castShadow=true; wall.receiveShadow=true; g.add(wall);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));
+    roof.position.y=4; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(.95,1.9,.12),trimMat);
+    door.position.set(0,.95,d/2+.065); g.add(door);
+    for(const sx of [-1,1]){
+      const window=new THREE.Mesh(new THREE.BoxGeometry(.75,.7,.09),new THREE.MeshStandardMaterial({color:0x9ed5e8,roughness:.35,metalness:.05}));
+      window.position.set(sx*Math.min(1.5,w*.25),1.75,d/2+.07);g.add(window);
+    }
+    const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));
+    foundation.position.y=.12;foundation.receiveShadow=true;g.add(foundation);
     g.position.set(x,0,z); this.scene.add(g);
+    if(asset)this.visualTargets.push({group:g,asset,height,rotationY});
     const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
     for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++) this.blocked.add(keyOf(gx,gz));
   }
@@ -265,7 +294,8 @@ class TownGame {
     this.scene.add(g);
     this.objects.set(state.id,{state,mesh:g});
     if(state.kind==='tree') this.visualTargets.push({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
-    if(state.kind==='crate') this.visualTargets.push({group:g,asset:'chest',height:1.0,rotationY:Math.PI/2});
+    if(state.kind==='crate') this.visualTargets.push({group:g,asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2});
+    if(state.id==='mine') this.visualTargets.push({group:g,asset:'mineAsset',height:4.5,rotationY:Math.PI});
   }
 
 
@@ -285,23 +315,28 @@ class TownGame {
 
   setupNpcs() {
     const seed: Array<[string,string,NpcRole,number,number,string|undefined,Mood]> = [
-      ['mina','米娜','farmer',-9,-4,'farm_plot','calm'],
-      ['ren','莲','baker',-4,-4,'oven','happy'],
-      ['sora','空','shopkeeper',5,-3,'market','neutral'],
-      ['kai','凯','guard',8,3,'guard_post','calm'],
-      ['yui','结衣','maker',-8,4,'maker_table','curious'],
-      ['nao','直','resident',3,5,undefined,'neutral'],
+      ['mina','米娜','farmer',-20,-9,'farm_plot','calm'],
+      ['ren','莲','baker',-9,-11,'oven','happy'],
+      ['sora','空','shopkeeper',7,-10,'market','neutral'],
+      ['kai','凯','guard',18,6,'guard_post','calm'],
+      ['yui','结衣','maker',-18,6,'maker_table','curious'],
+      ['nao','直','resident',6,8,undefined,'neutral'],
+      ['haru','春','farmer',-26,5,'mill','happy'],
+      ['mei','芽衣','resident',-4,9,undefined,'curious'],
+      ['toma','冬马','guard',22,3,'guard_post','neutral'],
+      ['aki','秋','shopkeeper',14,-7,'market','calm'],
     ];
     for (const [id,name,role,x,z,workAt,mood] of seed) {
       const state: NpcState = {
-        id,name,role,position:{x,z},home:{x:x<0?x-2:x+2,z:z<0?z-5:z+5},workAt,mood,
+        id,name,role,position:{x,z},home:{x:x<0?x-3:x+3,z:z<0?z-6:z+6},workAt,mood,
         hunger:25+Math.random()*25,energy:65+Math.random()*25,social:45+Math.random()*30,money:8+Math.floor(Math.random()*12),
         inventory: role==='baker'?[{kind:'bread',count:2}]:role==='farmer'?[{kind:'apple',count:1}]:[],
         relationships:{},memories:[],currentAction:'idle',goal:'过好今天并照顾自己的需要',lastDecisionAt:0
       };
       const mesh=this.makeBlockPerson(role); mesh.position.set(x,0,z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
-      const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1'};
-      this.visualTargets.push({group:mesh,asset:characterAsset[id],height:2.35,rotationY:Math.PI});
+      const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1',haru:'male2',mei:'female2',toma:'male1',aki:'female1'};
+      // Cube World characters already face the local +Z direction used by moveNpc.
+      this.visualTargets.push({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
       this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
@@ -330,30 +365,44 @@ class TownGame {
 
   async loadVisualAssets() {
     const defs: Record<string,string> = {
-      female1:'Character_Female_1.gltf', female2:'Character_Female_2.gltf',
-      male1:'Character_Male_1.gltf', male2:'Character_Male_2.gltf',
-      tree1:'Tree_1.gltf', tree2:'Tree_2.gltf', tree3:'Tree_3.gltf',
-      bush:'Bush.gltf', rock:'Rock2.gltf', flowers:'Flowers_1.gltf',
-      chest:'Chest_Closed.gltf', cart:'Cart.gltf', axe:'Axe_Wood.gltf', shovel:'Shovel_Wood.gltf'
+      female1:'cube-world/Character_Female_1.gltf', female2:'cube-world/Character_Female_2.gltf',
+      male1:'cube-world/Character_Male_1.gltf', male2:'cube-world/Character_Male_2.gltf',
+      tree1:'cube-world/Tree_1.gltf', tree2:'cube-world/Tree_2.gltf', tree3:'cube-world/Tree_3.gltf',
+      bush:'cube-world/Bush.gltf', rock:'cube-world/Rock2.gltf', flowers:'cube-world/Flowers_1.gltf',
+      chest:'cube-world/Chest_Closed.gltf', cart:'cube-world/Cart.gltf', axe:'cube-world/Axe_Wood.gltf', shovel:'cube-world/Shovel_Wood.gltf',
+      houseA:'ultimate-fantasy-rts/Houses_SecondAge_1_Level3.gltf',
+      houseB:'ultimate-fantasy-rts/Houses_SecondAge_2_Level3.gltf',
+      marketBuilding:'ultimate-fantasy-rts/Market_FirstAge_Level3.gltf',
+      barracksBuilding:'ultimate-fantasy-rts/Barracks_FirstAge_Level3.gltf',
+      storageBuilding:'ultimate-fantasy-rts/Storage_FirstAge_Leve3.gltf',
+      townCenter:'ultimate-fantasy-rts/TownCenter_FirstAge_Level3.gltf',
+      windmill:'ultimate-fantasy-rts/Windmill_FirstAge.gltf',
+      farmBuilding:'ultimate-fantasy-rts/Farm_SecondAge_Level3.gltf',
+      crate_rts:'ultimate-fantasy-rts/Crate.gltf',
+      barrel:'ultimate-fantasy-rts/Barrel.gltf',
+      mineAsset:'ultimate-fantasy-rts/Mine.gltf'
     };
     const loaded = await Promise.allSettled(Object.entries(defs).map(async ([key,file])=>{
-      const gltf=await this.gltfLoader.loadAsync(`${this.assetBase}/${file}`);
+      const gltf=await this.gltfLoader.loadAsync(`${this.assetRoot}/${file}`);
       this.assets.set(key,{scene:gltf.scene,animations:gltf.animations});
     }));
     const failures=loaded.filter(x=>x.status==='rejected').length;
     for(const target of this.visualTargets)this.applyVisualTarget(target);
-    this.spawnAssetDecoration('bush',-14,0,1.0,.2);
-    this.spawnAssetDecoration('bush',13,-1,1.0,1.7);
-    this.spawnAssetDecoration('bush',-4,13,1.0,.7);
-    this.spawnAssetDecoration('rock',15,7,.8,.6);
-    this.spawnAssetDecoration('rock',-15,-7,.65,2.2);
-    this.spawnAssetDecoration('flowers',-2,-5,.85,.4);
-    this.spawnAssetDecoration('flowers',4,3,.8,2.3);
-    this.spawnAssetDecoration('cart',8,-4.8,1.35,Math.PI/2);
-    this.spawnAssetDecoration('axe',-10.8,5.1,.9,-.4);
-    this.spawnAssetDecoration('shovel',-12.8,-5.7,.9,.5);
+    this.spawnAssetDecoration('bush',-16,1,1.0,.2);
+    this.spawnAssetDecoration('bush',16,-2,1.0,1.7);
+    this.spawnAssetDecoration('bush',-5,23,1.0,.7);
+    this.spawnAssetDecoration('rock',31,8,.8,.6);
+    this.spawnAssetDecoration('rock',-30,-8,.65,2.2);
+    this.spawnAssetDecoration('flowers',-4,-7,.85,.4);
+    this.spawnAssetDecoration('flowers',5,4,.8,2.3);
+    this.spawnAssetDecoration('cart',10,-10.5,1.35,Math.PI/2);
+    this.spawnAssetDecoration('axe',-20.8,6.5,.9,-.4);
+    this.spawnAssetDecoration('shovel',-22.8,-10.7,.9,.5);
+    this.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);
+    this.spawnAssetDecoration('barrel',10,-8.8,1.15,0);
+    this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
     this.assetsReady=failures===0;
-    this.log(`视觉素材：Quaternius Cube World Kit 已加载 ${Object.keys(defs).length-failures}/${Object.keys(defs).length}`);
+    this.log(`视觉素材：Quaternius 已加载 ${Object.keys(defs).length-failures}/${Object.keys(defs).length}（Cube World + Ultimate Fantasy RTS）`);
     if(failures)this.log(`有 ${failures} 个素材加载失败，已保留程序化 fallback。`);
   }
 
@@ -604,7 +653,7 @@ class TownGame {
     if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
-    const speed=1.2; pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;agent.mesh.rotation.y=Math.atan2(dx,dz);
+    const speed=1.65; pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;agent.mesh.rotation.y=Math.atan2(dx,dz);
   }
 
   async requestDecision(agent:NpcRuntime) {
@@ -629,16 +678,16 @@ class TownGame {
     const nearNpcs: DecisionRequest['world']['nearbyNpcs']=[...this.npcs.values()].filter(x=>x!==agent).map(x=>({
       id:x.state.id,name:x.state.name,role:x.state.role,mood:x.state.mood,distance:dist(agent.state.position,x.state.position),
       relationship:agent.state.relationships[x.state.id]??{affinity:50,trust:50,familiarity:20},currentAction:x.state.currentAction
-    })).filter(x=>x.distance<=9);
+    })).filter(x=>x.distance<=12);
     // First-person mode materializes the player into the NPC world model. God mode does not.
     if(this.cameraMode==='firstPerson') {
       const playerPos=this.playerPosition; const playerDistance=dist(agent.state.position,playerPos);
-      if(playerDistance<=9) nearNpcs.push({id:'player',name:'玩家',role:'player',mood:'neutral',isPlayer:true,distance:playerDistance,relationship:agent.state.relationships.player??{affinity:50,trust:50,familiarity:5},currentAction:'idle'});
+      if(playerDistance<=12) nearNpcs.push({id:'player',name:'玩家',role:'player',mood:'neutral',isPlayer:true,distance:playerDistance,relationship:agent.state.relationships.player??{affinity:50,trust:50,familiarity:5},currentAction:'idle'});
     }
     nearNpcs.sort((a,b)=>a.distance-b.distance); nearNpcs.splice(8);
     const nearObjects=[...this.objects.values()].filter(x=>x.mesh.visible).map(x=>({
       id:x.state.id,kind:x.state.kind,name:x.state.name,tags:x.state.tags,distance:dist(agent.state.position,x.state.position),usable:x.state.usable,pickupable:x.state.pickupable,item:x.state.item
-    })).filter(x=>x.distance<=10).sort((a,b)=>a.distance-b.distance).slice(0,14);
+    })).filter(x=>x.distance<=14).sort((a,b)=>a.distance-b.distance).slice(0,18);
     return {gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,nearbyNpcs:nearNpcs,nearbyObjects:nearObjects,recentEvents:this.recentEvents.slice(-8)};
   }
 
@@ -871,7 +920,7 @@ class TownGame {
     const s={x:Math.round(start.x),z:Math.round(start.z)},g={x:Math.round(end.x),z:Math.round(end.z)};
     const passable=(x:number,z:number)=>Math.abs(x)<HALF&&Math.abs(z)<HALF&&(!this.blocked.has(keyOf(x,z))||(x===g.x&&z===g.z));
     const open=[s],came=new Map<string,string>(),cost=new Map<string,number>([[keyOf(s.x,s.z),0]]);const goalKey=keyOf(g.x,g.z);let found=false;
-    while(open.length&&cost.size<1800){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
+    while(open.length&&cost.size<9000){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
     if(!found)return[];const rev:Vec2[]=[];let k=goalKey;while(k!==keyOf(s.x,s.z)){const [x,z]=k.split(',').map(Number);rev.push({x,z});const prev=came.get(k);if(!prev)break;k=prev;}return rev.reverse();
   }
 }

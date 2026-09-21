@@ -13,6 +13,17 @@ The repository includes selected files from **Cube World Kit** by Quaternius und
 
 CC0 permits copying, modification, redistribution, and commercial use without attribution. Attribution is nevertheless retained here as a project provenance record.
 
+## Quaternius — Ultimate Fantasy RTS
+
+The repository includes selected glTF files from **Ultimate Fantasy RTS** by Quaternius under `public/assets/quaternius/ultimate-fantasy-rts/`.
+
+- Source: https://quaternius.com/packs/ultimatefantasyrts.html
+- Official download folder: https://drive.google.com/drive/folders/1h7sztlZyavWla-JDk3jp6KiWDdMh08yd
+- License: **CC0 / Creative Commons Zero** as displayed on the official pack page when retrieved on 2026-09-21.
+- Included assets: houses, market, barracks, storage building, town center, windmill, farm building, crate, barrel, and mine.
+
+These assets are used for the expanded demo town while the rendering layer remains replaceable by future modular building catalogs.
+
 ## Runtime dependencies
 
 The npm dependencies declared in `package.json` are not vendored into this repository. Their upstream licenses apply independently. Run your package manager's license audit before redistributing a bundled product if your distribution process requires it.

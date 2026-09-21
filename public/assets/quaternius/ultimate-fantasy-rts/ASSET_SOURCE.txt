@@ -1,0 +1,8 @@
+Quaternius — Ultimate Fantasy RTS
+Source: https://quaternius.com/packs/ultimatefantasyrts.html
+Official download: https://drive.google.com/drive/folders/1h7sztlZyavWla-JDk3jp6KiWDdMh08yd
+License: CC0 / Creative Commons Zero
+Retrieved: 2026-09-21
+
+Selected glTF files are vendored for the Latticefolk demo world. They may be copied,
+modified, redistributed, and used commercially under CC0.

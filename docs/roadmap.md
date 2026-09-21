@@ -1,14 +1,67 @@
 # Roadmap
 
-Latticefolk is an early autonomous-NPC town sandbox. Near-term work is organized around simulation depth rather than one specific model provider.
+Latticefolk is an early autonomous-world sandbox. Near-term work is focused on making the current town genuinely playable; long-term work moves from a fixed demo town toward a persistent, procedural living world. Decision engines remain replaceable and never become authoritative over simulation truth.
 
-- Persistent saves and deterministic world seeds
-- Long-term NPC goals, schedules, households, and ownership
-- Production chains, trade, money flow, and resource scarcity
-- NPC-to-NPC item exchange and negotiated interactions
-- Farming, crafting, construction, and world modification
-- Long-term memory and relationship history
-- More environment events and consequences
-- Larger populations with decision batching, LOD, and spatial partitioning
-- Additional decision-provider adapters
-- Automated browser smoke tests and performance budgets
+## Near term — playable town
+
+- Replace placeholder buildings with authored or modular CC0 asset catalogs while keeping collision/navigation data independent from visuals.
+- Expand world size, population, schedules, households, ownership, interiors, and points of interest.
+- Add richer player/NPC interactions: item exchange, buying/selling, harvesting, crafting, storage, tool use, construction, requests, favors, jobs, and reputation.
+- Production chains, trade, money flow, stock, scarcity, and resource ownership.
+- Persistent saves and deterministic world seeds.
+- Long-term NPC goals, schedules, households, ownership, memory, and relationship history.
+- Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets.
+- Automated browser smoke tests and deterministic simulation tests.
+
+## Dialogue and character voice
+
+The authored dialogue system evolves from a flat shared corpus into layered voice libraries:
+
+1. global reusable fragments and lines;
+2. role/culture/location-specific vocabulary;
+3. per-character voice fragments, habits, memories, names, and relationship references;
+4. situation- and event-derived temporary phrases.
+
+A bounded decision provider such as Jev chooses semantic intent, candidate fragments, ordering, and whether a character-specific or shared phrase should be used. Corpus growth is a separate capability: a text-generation provider may propose new fragments when a gap is detected, while validation/deduplication/moderation and persistence remain deterministic systems. This keeps Jev useful as a decision model without pretending it is a free-text language generator.
+
+## Dynamic world generation
+
+Move from one fixed map to deterministic chunk generation inspired by voxel/sandbox games:
+
+- **Global coarse decisions:** climate regions, biome graph, settlements, roads, rivers, resource fields, population pressure, migration, and large events.
+- **Regional decisions:** district type, building lots, farms, forests, resource nodes, ecology capacity, and travel links.
+- **Local fine decisions:** building modules, furniture, plants, loot, object placement, NPC action choices, and event reactions.
+- Seeded generation makes worlds reproducible and permits persistent edits without regenerating unchanged chunks.
+
+## Ecology and procedural content
+
+- Multiple plant, animal, monster, and micro-ecology archetypes.
+- Food webs, habitat/resource requirements, competition, predation, disease, weather response, and population migration.
+- Procedural organisms built from constrained morphology, material, animation, stat, behavior, and habitat genes rather than arbitrary unconstrained meshes.
+- Procedural buildings, villages, ruins, resource sites, roads, interiors, vegetation clusters, and environmental storytelling.
+- Generated content must expose semantic tags/capabilities to the simulation, not exist only as visual decoration.
+
+## Lifecycle, reproduction, and evolution
+
+- Age stages, health, injury, disease, hunger, energy, fertility, pregnancy/offspring where appropriate to the species, aging, and death.
+- Family/lineage records and inherited traits.
+- Reproduction combines inheritable parameters with mutation and environmental selection pressure.
+- Jev or another decision provider may participate in mate choice, nesting, migration, care, risk-taking, social behavior, and other bounded behavioral decisions; genetics, inheritance, physiology, and population accounting remain deterministic simulation systems.
+- Long-running worlds should support measurable generational change rather than scripted cosmetic "evolution".
+
+## Physics and world interaction
+
+- Replace ad-hoc collision checks with a dedicated physics layer.
+- Character controllers, rigid bodies, triggers, slopes, doors, movable objects, projectiles, vehicles/carts, stacking, and physical resources.
+- Physics runs independently from decision providers; AI selects intentions/actions while the physics engine resolves actual motion and contact.
+- Chunk streaming and simulation LOD must support physics sleeping/unloading for distant regions.
+
+## Architecture milestones
+
+- World/chunk persistence and entity-component separation.
+- Simulation clock and event bus independent from rendering frame rate.
+- Spatial index and hierarchical simulation LOD.
+- Generic capability-based `WorldObject` interactions instead of hard-coded object-kind branches.
+- Decision-provider API for immediate action, medium-term goals, social choices, and event reactions.
+- Content-provider API for optional procedural text/model/content generation, distinct from decision providers.
+- Additional decision-provider adapters beyond Jev and the deterministic fallback.
