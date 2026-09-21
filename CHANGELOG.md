@@ -21,6 +21,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Unbounded first-person coarse-world streaming with a fixed active window, persistent discovered chunks, observer-safe God View, and O(n) neighbor flow planning.
 - Semantic procedural fine-chunk settlements with deterministic archetypes, roads, functional buildings/sites, role-aware residents, and resource placement that avoids roads/buildings.
 - Shared deterministic production recipes for NPCs and players, including flour/bread and plank/tool multi-step chains with localized new item types.
+- Persistent coarse/fine wildlife ecology for rabbit/deer/boar/fox populations, habitat carrying capacity, conserved migration, fine needs/predation/reproduction, inheritable traits, batched Jev decisions, interactive inspection, and SQLite wildlife persistence.
 
 ### Changed
 
