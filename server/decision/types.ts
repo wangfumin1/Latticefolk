@@ -1,4 +1,4 @@
-import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse } from '../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse } from '../../src/types.js';
 
 export interface DecisionProviderStatus {
   id: string;
@@ -20,4 +20,5 @@ export interface DecisionProvider {
   status(): DecisionProviderStatus;
   decide(request: DecisionRequest): Promise<DecisionResponse>;
   dialogueDecision(request: DialogueRequest): Promise<DialogueResponse>;
+  decideChunks(request: ChunkDecisionRequest): Promise<ChunkDecisionResponse>;
 }
