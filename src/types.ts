@@ -37,6 +37,7 @@ export type ObjectKind =
   | 'tree'
   | 'crate'
   | 'well'
+  | 'water_patch'
   | 'farm_plot'
   | 'building'
   | 'road'
@@ -244,12 +245,21 @@ export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
 export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'fox';
 export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate';
+export type WorldSeason = 'spring' | 'summer' | 'autumn' | 'winter';
+
+export interface PlantBiomassState {
+  grass: number;
+  shrub: number;
+  fruit: number;
+  crop: number;
+}
 
 export interface CoarseWildlifePopulation {
   species: WildlifeSpecies;
   count: number;
   carryingCapacity: number;
   health: number;
+  diseaseLoad?: number;
 }
 
 export interface WildlifeTraits {
@@ -277,6 +287,9 @@ export interface WildlifeState {
   targetWildlifeId?: string;
   lastDecisionAt: number;
   birthDay: number;
+  diseaseLoad?: number;
+  motherId?: string;
+  fatherId?: string;
 }
 
 export interface WildlifeDecisionRequest {
@@ -329,6 +342,7 @@ export interface CoarseChunkState {
   strategy: ChunkStrategy;
   migrationPolicy: ChunkMigrationPolicy;
   ecologyPolicy: ChunkEcologyPolicy;
+  plants?: PlantBiomassState;
   wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;

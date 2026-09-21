@@ -6,7 +6,7 @@ import type {
   WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
-import { applyWildlifeMigration, ensureWildlifePopulations, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
+import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -26,6 +26,7 @@ export interface CoarseWorldStatus {
   worldConnectivity: string;
   worldGrowth: string;
   wildlifePopulation: number;
+  plantBiomass: number;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -254,7 +255,7 @@ export class CoarseWorldRuntime {
     if(this.simulationAccumulator>=1){
       const steps=Math.floor(this.simulationAccumulator);
       this.simulationAccumulator-=steps;
-      for(const chunk of this.chunks.values())if(!this.materialized.has(chunk.id))this.simulate(chunk,steps,ctx.weather);
+      for(const chunk of this.chunks.values())if(!this.materialized.has(chunk.id))this.simulate(chunk,steps,ctx.weather,ctx.day);
     }
     this.flowAccumulator+=ctx.dt;
     if(this.flowAccumulator>=5){
@@ -267,7 +268,7 @@ export class CoarseWorldRuntime {
     if(!this.worldPending&&tick>=this.nextWorldDecisionAt)void this.requestWorld(ctx);
   }
 
-  private simulate(chunk:CoarseChunkState,seconds:number,weather:string) {
+  private simulate(chunk:CoarseChunkState,seconds:number,weather:string,day:number) {
     const scale=seconds*.035;
     const biomeFood=chunk.biome==='plains'?1.2:chunk.biome==='wetlands'?1.05:chunk.biome==='dryland' ? .55 : .82;
     const rain=weather==='rain'?1.18:weather==='clear' ? .98 : 1.04;
@@ -293,7 +294,7 @@ export class CoarseWorldRuntime {
       trade_route:()=>{chunk.prosperity=clamp(chunk.prosperity+1.0*scale);chunk.food=clamp(chunk.food+.22*scale);}
     };
     strategyEffect[chunk.strategy]();
-    simulateWildlife(chunk,seconds,weather);
+    simulateWildlife(chunk,seconds,weather,day);
 
     if(chunk.ecologyPolicy==='recover')chunk.ecology=clamp(chunk.ecology+.9*scale);
     if(chunk.ecologyPolicy==='protect')chunk.ecology=clamp(chunk.ecology+.55*scale);
@@ -512,6 +513,7 @@ export class CoarseWorldRuntime {
       worldConnectivity:this.worldPolicy.connectivity,
       worldGrowth:this.worldPolicy.growth,
       wildlifePopulation:list.reduce((sum,c)=>sum+wildlifeCount(c),0),
+      plantBiomass:list.reduce((sum,c)=>sum+plantBiomassTotal(c),0)/Math.max(1,list.length),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)

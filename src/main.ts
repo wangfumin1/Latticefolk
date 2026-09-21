@@ -111,7 +111,7 @@ interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
 interface AssetTemplate { scene: THREE.Object3D; animations: THREE.AnimationClip[]; }
 interface VisualTarget { group: THREE.Group; asset: string; height: number; rotationY?: number; targetWidth?: number; targetDepth?: number; }
 interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
-interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; }
+interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
 interface FineChunkRuntime {
   chunkId:string;
   npcIds:string[];
@@ -382,6 +382,8 @@ class TownGame {
     switch(state.kind) {
       case 'well':
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(1,1,.85,12),new THREE.MeshStandardMaterial({color:0x8b8c86})); mesh.position.y=.43; break;
+      case 'water_patch':
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
       case 'bench':
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.25,.65),new THREE.MeshStandardMaterial({color:0x79563c})); mesh.position.y=.65; break;
       case 'bed':
@@ -420,6 +422,7 @@ class TownGame {
   defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
     switch(state.kind){
       case 'well': return ['inspect','draw_water','drink','wash'];
+      case 'water_patch': return ['inspect','draw_water','drink','wash'];
       case 'bench': return ['inspect','sit','rest'];
       case 'bed': return ['inspect','rest','sleep'];
       case 'food_stall': return ['inspect','buy','sell','trade'];
@@ -951,7 +954,7 @@ class TownGame {
     const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
     const runtime:FineChunkRuntime={
       chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},blockedKeys:[],groups:[],
-      initialMetrics:{food:0,wood:0,ecology:0,prosperity:0}
+      initialMetrics:{food:0,wood:0,ecology:0,prosperity:0,shrub:0,fruit:0,crop:0}
     };
     this.materializedChunks.set(chunk.id,runtime);
     this.coarseWorld.setMaterialized(chunk.id,true);
@@ -1010,9 +1013,11 @@ class TownGame {
 
     for(const p of plan.wildlife){
       const saved=cachedWildlife.get(p.id);
+      const population=chunk.wildlife?.find(x=>x.species===p.species);
       const state:WildlifeState=saved?structuredClone(saved):{
         id:p.id,chunkId:chunk.id,species:p.species,position:{x:p.x,z:p.z},ageDays:p.ageDays,
-        health:78+Math.random()*14,hunger:20+Math.random()*28,thirst:18+Math.random()*30,energy:62+Math.random()*28,
+        health:clamp((population?.health??82)+(Math.random()-.5)*8,0,100),hunger:20+Math.random()*28,thirst:18+Math.random()*30,energy:62+Math.random()*28,
+        diseaseLoad:population?.diseaseLoad??0,
         sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
         lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
       };
@@ -1093,11 +1098,14 @@ class TownGame {
   }
 
   fineMetrics(runtime:FineChunkRuntime):FineMetrics {
-    let food=0,wood=0,ecology=0,prosperity=0;
+    let food=0,wood=0,ecology=0,prosperity=0,shrub=0,fruit=0,crop=0;
     for(const id of runtime.objectIds){
       const o=this.objects.get(id)?.state;if(!o)continue;
       const amount=Math.max(0,o.resourceAmount||0);
-      if(o.item==='apple'||o.item==='grain'||o.item==='bread')food+=amount;
+      if(o.item==='apple'||o.item==='grain'||o.item==='bread'||o.item==='flour')food+=amount;
+      if(o.kind==='farm_plot')crop+=amount;
+      if(o.kind==='bush'||o.kind==='flower')shrub+=amount;
+      if(o.kind==='tree'&&o.tags.includes('apple'))fruit+=amount;
       if(o.item==='wood'||o.tags.includes('wood'))wood+=amount;
       if(['tree','bush','flower'].includes(o.kind))ecology+=amount;
       for(const slot of o.storage||[]){
@@ -1115,7 +1123,7 @@ class TownGame {
         prosperity+=slot.kind==='tool'?slot.count*2:slot.count*.1;
       }
     }
-    return {food,wood,ecology,prosperity};
+    return {food,wood,ecology,prosperity,shrub,fruit,crop};
   }
 
   collapseFineChunk(chunkId:string) {
@@ -1131,6 +1139,11 @@ class TownGame {
         ecology:chunk.ecology+(current.ecology-initial.ecology)*.35,
         prosperity:chunk.prosperity+(current.prosperity-initial.prosperity)*.16
       });
+      if(chunk.plants){
+        chunk.plants.shrub=clamp(chunk.plants.shrub+(current.shrub-initial.shrub)*.8,0,100);
+        chunk.plants.fruit=clamp(chunk.plants.fruit+(current.fruit-initial.fruit)*.9,0,100);
+        chunk.plants.crop=clamp(chunk.plants.crop+(current.crop-initial.crop)*.9,0,100);
+      }
     }
 
     const npcStates: NpcState[]=[];
@@ -1145,10 +1158,12 @@ class TownGame {
 
     const wildlifeStates:WildlifeState[]=[];
     const currentWildlifeCounts:Partial<Record<WildlifeSpecies,number>>={};
+    const diseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
     for(const id of runtime.wildlifeIds){
       const animal=this.wildlife.get(id);if(!animal)continue;
       wildlifeStates.push(structuredClone(animal.state));
       currentWildlifeCounts[animal.state.species]=(currentWildlifeCounts[animal.state.species]||0)+1;
+      diseaseTotals[animal.state.species]=(diseaseTotals[animal.state.species]||0)+(animal.state.diseaseLoad||0);
       animal.removed=true;
       animal.mesh.parent?.remove(animal.mesh);
       this.wildlife.delete(id);
@@ -1160,6 +1175,7 @@ class TownGame {
         if(initial<=0&&current<=0)continue;
         const scale=initial>0?Math.min(4,Math.max(1,population.count/initial)):1;
         population.count=Math.max(0,population.count+(current-initial)*scale);
+        if(current>0)population.diseaseLoad=clamp((diseaseTotals[population.species]||0)/current,0,100);
       }
     }
 
@@ -1206,7 +1222,13 @@ class TownGame {
       s.hunger=clamp(s.hunger+dt*.22,0,100);
       s.thirst=clamp(s.thirst+dt*.30,0,100);
       s.energy=clamp(s.energy-dt*.045,0,100);
+      const maxAge=({rabbit:2200,deer:5200,boar:4300,fox:1900} as Record<WildlifeSpecies,number>)[s.species];
+      const agePressure=Math.max(0,s.ageDays/maxAge-.72);
+      const nearbyDisease=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed&&x.state.species===s.species&&dist(s.position,x.state.position)<4).map(x=>x.state.diseaseLoad||0);
+      const exposure=nearbyDisease.length?nearbyDisease.reduce((a,b)=>a+b,0)/nearbyDisease.length:0;
+      s.diseaseLoad=clamp((s.diseaseLoad||0)+(exposure-(s.diseaseLoad||0))*dt*.0015-dt*.002,0,100);
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
+      s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
       if(s.health<=0){this.removeWildlife(animal,'自然死亡');continue;}
 
@@ -1312,7 +1334,7 @@ class TownGame {
     const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
     const wanted=(o:RuntimeObject)=>{
       if(action==='drink')return o.state.tags.includes('water')||o.state.kind==='well';
-      if(action==='graze')return o.state.kind==='farm_plot'||o.state.tags.includes('food')||o.state.tags.includes('nature');
+      if(action==='graze')return o.state.kind==='farm_plot'||o.state.kind==='bush'||o.state.kind==='flower'||(o.state.kind==='tree'&&o.state.tags.includes('apple'))||o.state.tags.includes('food');
       return o.state.tags.includes('forage')||o.state.tags.includes('food')||o.state.kind==='bush'||o.state.kind==='flower';
     };
     return candidates.filter(wanted).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
@@ -1334,10 +1356,15 @@ class TownGame {
       case 'drink':
         s.thirst=clamp(s.thirst-58,0,100);s.energy=clamp(s.energy-1,0,100);break;
       case 'graze':
-      case 'forage':
+      case 'forage': {
         s.hunger=clamp(s.hunger-(s.currentAction==='graze'?34:28),0,100);
         if(object&&typeof object.state.resourceAmount==='number')object.state.resourceAmount=Math.max(0,object.state.resourceAmount-.25);
+        else if(s.currentAction==='graze'){
+          const chunk=this.coarseWorld.chunks.get(s.chunkId);
+          if(chunk?.plants)chunk.plants.grass=clamp(chunk.plants.grass-.35,0,100);
+        }
         break;
+      }
       case 'rest':
         s.energy=clamp(s.energy+24,0,100);break;
       case 'flee':
@@ -1384,7 +1411,8 @@ class TownGame {
       id,chunkId:a.state.chunkId,species:a.state.species,
       position:{x:(a.state.position.x+b.state.position.x)/2+.3,z:(a.state.position.z+b.state.position.z)/2+.3},
       ageDays:0,health:88,hunger:18,thirst:18,energy:82,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-      generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:this.day
+      generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:this.day,
+      diseaseLoad:Math.max(0,((a.state.diseaseLoad||0)+(b.state.diseaseLoad||0))*.18),motherId:a.state.id,fatherId:b.state.id
     };
     this.spawnWildlife(baby);
     const runtime=this.materializedChunks.get(a.state.chunkId);if(runtime)runtime.wildlifeIds.push(id);
@@ -1880,7 +1908,7 @@ class TownGame {
 
   updateUi() {
     const world=this.coarseWorld.status();
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;

@@ -224,7 +224,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   if(chunk.settlementLevel>0){
     add('well','well','聚落水井',centerX+2.4,centerZ+2.4,['water','settlement','social'],['inspect','draw_water','drink','wash'],{},'wellAsset',3.2);
     add('farm','farm_plot','公共农地',centerX-8.0,centerZ+1.8,['work','farm','food'],['inspect','harvest','work'],{
-      item:'grain',resourceAmount:Math.max(3,Math.round(chunk.food/12))
+      item:'grain',resourceAmount:Math.max(3,Math.round((chunk.plants?.crop??chunk.food)/10))
     });
     if(['market_hamlet','wetland_hamlet','farmstead'].includes(archetype)){
       add('market','food_stall','乡间摊位',centerX+7.2,centerZ-1.8,['food','trade','market'],['inspect','buy','sell','trade'],{item:'bread'});
@@ -238,6 +238,12 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     }
     add('supply','crate','公共补给箱',centerX-2.7,centerZ+2.5,['storage','supply'],['inspect','store','take'],{storage:[]},'crate_rts',1.05,.2);
     add('cart','cart','运输推车',centerX+4.7,centerZ+1.2,['transport','storage','trade'],['inspect','load','unload'],{storage:[]},'cart',1.3,Math.PI/2);
+  }
+
+  if(chunk.water>=52&&(chunk.settlementLevel===0||chunk.biome==='wetlands')){
+    add('natural_water','water_patch','自然水洼',centerX+5.8,centerZ+5.4,['water','nature','habitat'],['inspect','drink','draw_water','wash'],{
+      resourceAmount:Math.max(4,Math.round(chunk.water/9))
+    });
   }
 
   if(archetype==='quarry_outpost'){
@@ -254,7 +260,8 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     return Math.hypot(lx,lz)<3.8&&chunk.settlementLevel>0;
   };
 
-  const natureCount=9+Math.round(chunk.ecology/10);
+  const vegetation=(chunk.plants?.grass||0)+(chunk.plants?.shrub||0)+(chunk.plants?.fruit||0);
+  const natureCount=8+Math.round(chunk.ecology/12)+Math.min(6,Math.round(vegetation/55));
   let placed=0,attempts=0;
   while(placed<natureCount&&attempts<natureCount*8){
     attempts++;
@@ -264,7 +271,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     if(chunk.biome==='forest'||(chunk.biome==='plains'&&random()>.48)){
       const apple=random()>.72;
       add(`tree_${i}`,'tree',apple?'野生果树':'林木',x,z,['nature','wood',...(apple?['apple']:[])],['inspect','harvest','chop'],{
-        item:apple?'apple':'wood',resourceAmount:3+Math.floor(random()*4)
+        item:apple?'apple':'wood',resourceAmount:apple?Math.max(2,Math.round((chunk.plants?.fruit??40)/16)):3+Math.floor(random()*4)
       },['tree1','tree2','tree3'][i%3],3.5+random()*.8,random()*Math.PI*2);
     }else if(chunk.biome==='hills'||chunk.biome==='dryland'||random()>.66){
       add(`rock_${i}`,'rock','岩石',x,z,['nature','resource','stone'],['inspect','mine'],{
@@ -272,7 +279,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
       },'rock',.75+random()*.5,random()*Math.PI*2);
     }else if(random()>.5){
       add(`bush_${i}`,'bush','灌木丛',x,z,['nature','forage'],['inspect','forage'],{
-        item:'flower',resourceAmount:2+Math.floor(random()*3)
+        item:'flower',resourceAmount:Math.max(2,Math.round((chunk.plants?.shrub??35)/18))
       },'bush',.9+random()*.25,random()*Math.PI*2);
     }else{
       add(`flower_${i}`,'flower','野花',x,z,['nature','flower'],['inspect','harvest'],{

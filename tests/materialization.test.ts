@@ -49,3 +49,13 @@ test('biome and policy create distinct settlement archetypes',()=>{
   assert.equal(refuge.archetype,'refuge');
   assert.ok(quarry.objects.some(x=>x.state.tags.includes('mine')));
 });
+
+
+test('wetland wilderness exposes natural water for wildlife and player interaction',()=>{
+  const wild={...chunk,id:'chunk_7_7',cx:7,cz:7,biome:'wetlands' as const,settlementLevel:0,population:0,water:88};
+  const plan=planFineChunk(wild,24);
+  const water=plan.objects.find(x=>x.state.kind==='water_patch');
+  assert.ok(water);
+  assert.ok(water!.state.tags.includes('water'));
+  assert.ok(water!.state.capabilities?.includes('drink'));
+});
