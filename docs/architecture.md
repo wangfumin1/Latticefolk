@@ -144,3 +144,20 @@ The coarse world is no longer bounded to the original 9×9 chunk square.
 - Conserved-flow planning now scans coordinate neighbors instead of all chunk pairs, keeping it approximately O(n) in discovered chunks.
 
 The active render window and the discovered persistent world are separate concepts, so travel has no fixed map edge while scene complexity stays bounded.
+
+
+## Semantic procedural settlements
+
+Fine materialization now generates settlement content from coarse state instead of using one generic layout.
+
+A chunk chooses a deterministic archetype from biome, settlement level, strategy, danger, resources, and prosperity: `farmstead`, `market_hamlet`, `timber_camp`, `quarry_outpost`, `wetland_hamlet`, `refuge`, or `wilderness`.
+
+The archetype drives:
+
+- road layout;
+- functional building mix and placement;
+- water, farm, market, workshop, guard, storage, cart, mine, and tool sites;
+- representative resident roles and work targets;
+- biome-specific resource distribution.
+
+Generated nature avoids building footprints and road corridors. Generated roads are themselves semantic `WorldObject` entities rather than visual-only meshes. All generated functional objects expose explicit capabilities used by both players and NPC decision logic.
