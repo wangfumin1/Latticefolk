@@ -30,6 +30,27 @@ app.get('/api/health', (_req, res) => res.json({
   dialogue: dialogue.stats(),
 }));
 
+app.get('/api/decision/budget', (_req, res) => {
+  res.json(decision.status().budget ?? { unavailable:true });
+});
+
+app.put('/api/decision/budget', (req, res) => {
+  const runtimeAdminAllowed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_RUNTIME_ADMIN === 'true';
+  if (!runtimeAdminAllowed) {
+    res.status(403).json({ error:'Runtime admin controls are disabled in production. Set ALLOW_RUNTIME_ADMIN=true to enable.' });
+    return;
+  }
+  if (!decision.updateBudget) {
+    res.status(400).json({ error:'Active decision provider does not expose a runtime budget.' });
+    return;
+  }
+  try {
+    res.json(decision.updateBudget(req.body ?? {}));
+  } catch (error) {
+    res.status(400).json({ error:error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get('/api/dialogue/stats', (_req, res) => res.json(dialogue.stats()));
 
 app.post('/api/dialogue/import', (req, res) => {

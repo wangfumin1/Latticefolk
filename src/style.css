@@ -5,3 +5,9 @@
 .interaction-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}.interaction-head b{font-size:18px}.interaction-head button{padding:3px 9px;font-size:18px;line-height:1;background:rgba(255,255,255,.1);color:white}
 .interaction-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.interaction-actions button{text-align:left;background:#d9f2ff;padding:10px 12px}
 .interaction-meta{margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;opacity:.65;line-height:1.45}
+
+.admin-section{border:1px solid rgba(255,255,255,.1);border-radius:9px;padding:10px;background:rgba(255,255,255,.025)}
+.admin-section-title{font-weight:800;margin-bottom:8px;font-size:13px}
+.budget-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px}.budget-grid label{display:grid;grid-template-columns:1fr 104px;gap:7px;font-size:11px}.budget-grid input{min-width:0;width:100%;background:#101b23;color:#eef6ff;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:5px 6px}
+.budget-presets{margin-top:9px;flex-wrap:wrap}.budget-presets button{font-size:11px;padding:6px 8px}
+#budgetLive{margin-top:8px;line-height:1.45}

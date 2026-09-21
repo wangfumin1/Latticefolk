@@ -5,12 +5,12 @@ export function retrieveDialogueCandidates(dialogue: DialogueStore, req: Dialogu
   const tags = [req.intent, String(req.speaker.mood), req.world.weather, ...req.world.nearbyTags];
   const lines = dialogue.retrieve({
     kind: 'line', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role,
-    limit: 40, excludeText: req.recentLines,
+    limit: 16, excludeText: req.recentLines,
   });
   const fragments = {
-    opener: dialogue.retrieve({ kind: 'fragment', slot: 'opener', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 20 }),
-    body: dialogue.retrieve({ kind: 'fragment', slot: 'body', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 40 }),
-    closer: dialogue.retrieve({ kind: 'fragment', slot: 'closer', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 20 }),
+    opener: dialogue.retrieve({ kind: 'fragment', slot: 'opener', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 8 }),
+    body: dialogue.retrieve({ kind: 'fragment', slot: 'body', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 16 }),
+    closer: dialogue.retrieve({ kind: 'fragment', slot: 'closer', tags, intent: req.intent, mood: String(req.speaker.mood), role: req.speaker.role, limit: 8 }),
   };
   return { lines, fragments };
 }

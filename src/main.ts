@@ -36,6 +36,25 @@ app.innerHTML = `
 <div id="admin" class="panel admin hidden">
   <div class="panel-title">Town Console <span>Tab 关闭</span></div>
   <div id="adminStatus"></div>
+  <div class="admin-section" id="jevBudgetPanel">
+    <div class="admin-section-title">Jev Budget / 调用策略</div>
+    <div class="budget-grid">
+      <label>calls/min <input id="budgetCallsMin" type="number" min="0" step="1" /></label>
+      <label>tokens/min <input id="budgetTokensMin" type="number" min="0" step="1000" /></label>
+      <label>tokens/hour <input id="budgetTokensHour" type="number" min="0" step="10000" /></label>
+      <label>tokens/day <input id="budgetTokensDay" type="number" min="0" step="10000" /></label>
+      <label>USD/day <input id="budgetUsdDay" type="number" min="0" step="0.01" /></label>
+      <label>min confidence <input id="budgetConfidence" type="number" min="0" max="1" step="0.05" /></label>
+      <label>cache ms <input id="budgetCacheTtl" type="number" min="0" step="250" /></label>
+    </div>
+    <div class="row budget-presets">
+      <button data-budget-preset="economy">省流</button>
+      <button data-budget-preset="balanced">平衡</button>
+      <button data-budget-preset="quality">高质量</button>
+      <button id="budgetApplyBtn">应用预算</button>
+    </div>
+    <div id="budgetLive" class="small"></div>
+  </div>
   <label>批量导入格式
     <select id="importFormat"><option value="plain">纯文本 / TSV</option><option value="jsonl">JSONL</option><option value="json">JSON 数组</option></select>
   </label>
@@ -70,6 +89,7 @@ const ui = {
   log: document.querySelector<HTMLDivElement>('#log')!,
   admin: document.querySelector<HTMLDivElement>('#admin')!,
   adminStatus: document.querySelector<HTMLDivElement>('#adminStatus')!,
+  budgetLive: document.querySelector<HTMLDivElement>('#budgetLive')!,
   toast: document.querySelector<HTMLDivElement>('#toast')!,
   speechLayer: document.querySelector<HTMLDivElement>('#speechLayer')!,
   modeBtn: document.querySelector<HTMLButtonElement>('#modeBtn')!,
@@ -569,6 +589,8 @@ class TownGame {
     this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
     this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
     document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
+    document.querySelector('#budgetApplyBtn')!.addEventListener('click',()=>this.applyBudgetFromUi());
+    document.querySelectorAll<HTMLButtonElement>('[data-budget-preset]').forEach(btn=>btn.addEventListener('click',()=>this.applyBudgetPreset(btn.dataset.budgetPreset||'balanced')));
 
     this.renderer.domElement.addEventListener('pointermove',(e)=>{
       const rect=this.renderer.domElement.getBoundingClientRect();
@@ -1240,7 +1262,49 @@ class TownGame {
     }else this.pathLine.visible=false;
   }
 
-  async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${s.inputTokens}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;}catch{ui.decision.textContent='后端离线';}}
+  applyBudgetPreset(name:string) {
+    const presets:Record<string,{calls:number;minute:number;hour:number;day:number;usd:number;confidence:number;cache:number}>={
+      economy:{calls:24,minute:35_000,hour:250_000,day:1_200_000,usd:.06,confidence:.45,cache:6000},
+      balanced:{calls:60,minute:120_000,hour:1_000_000,day:5_000_000,usd:.25,confidence:.35,cache:2500},
+      quality:{calls:120,minute:300_000,hour:2_500_000,day:12_000_000,usd:.55,confidence:.25,cache:1000},
+    };
+    const p=presets[name]||presets.balanced;
+    const set=(id:string,v:number)=>{const el=document.querySelector<HTMLInputElement>(id);if(el)el.value=String(v);};
+    set('#budgetCallsMin',p.calls);set('#budgetTokensMin',p.minute);set('#budgetTokensHour',p.hour);set('#budgetTokensDay',p.day);
+    set('#budgetUsdDay',p.usd);set('#budgetConfidence',p.confidence);set('#budgetCacheTtl',p.cache);
+    void this.applyBudgetFromUi();
+  }
+
+  async applyBudgetFromUi() {
+    const num=(id:string)=>Number(document.querySelector<HTMLInputElement>(id)?.value||0);
+    const payload={
+      maxCallsPerMinute:num('#budgetCallsMin'),
+      maxInputTokensPerMinute:num('#budgetTokensMin'),
+      maxInputTokensPerHour:num('#budgetTokensHour'),
+      maxInputTokensPerDay:num('#budgetTokensDay'),
+      maxUsdPerDay:num('#budgetUsdDay'),
+      minConfidence:num('#budgetConfidence'),
+      cacheTtlMs:num('#budgetCacheTtl'),
+    };
+    try{
+      const r=await fetch('/api/decision/budget',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+      const out=await r.json();if(!r.ok)throw new Error(out.error||'budget update failed');
+      this.renderBudget(out,true);this.toast('Jev 预算已更新');
+    }catch(e){this.toast(`预算更新失败：${e instanceof Error?e.message:String(e)}`);}
+  }
+
+  renderBudget(budget:any,syncInputs=false) {
+    if(!budget||budget.unavailable){ui.budgetLive.textContent='当前 provider 不提供 Jev token 预算。';return;}
+    const t=budget.inputTokens||{},calls=budget.calls||{},cost=budget.estimatedUsd||{},cfg=budget.config||{};
+    ui.budgetLive.innerHTML=`输入 tokens：分钟 <b>${Number(t.minute||0).toLocaleString()}</b> · 小时 <b>${Number(t.hour||0).toLocaleString()}</b> · 今日 <b>${Number(t.day||0).toLocaleString()}</b><br>估算今日费用 <b>${Number(cost.day||0).toFixed(4)}</b> · calls ${calls.minute||0}/min · NPC ${calls.npc||0} / 对话 ${calls.dialogue||0} / chunk ${calls.chunk||0}<br>缓存命中 ${budget.cacheHits||0} · 预算阻断 ${budget.blocked||0} · 低置信回退 ${budget.lowConfidenceFallbacks||0}`;
+    if(syncInputs&&!document.activeElement?.matches?.('#jevBudgetPanel input')){
+      const set=(id:string,v:unknown)=>{const el=document.querySelector<HTMLInputElement>(id);if(el&&v!==undefined)el.value=String(v);};
+      set('#budgetCallsMin',cfg.maxCallsPerMinute);set('#budgetTokensMin',cfg.maxInputTokensPerMinute);set('#budgetTokensHour',cfg.maxInputTokensPerHour);
+      set('#budgetTokensDay',cfg.maxInputTokensPerDay);set('#budgetUsdDay',cfg.maxUsdPerDay);set('#budgetConfidence',cfg.minConfidence);set('#budgetCacheTtl',cfg.cacheTtlMs);
+    }
+  }
+
+  async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true);}catch{ui.decision.textContent='后端离线';}}
 
   gameTimeText(){const h=Math.floor(this.minuteOfDay/60)%24,m=Math.floor(this.minuteOfDay%60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
   say(a:NpcRuntime,text:string){a.speech={text,until:now()+Math.max(3500,Math.min(9000,text.length*220))};}

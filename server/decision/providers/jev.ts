@@ -8,6 +8,7 @@ import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions } from '../r
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
+import { JevBudgetController, type JevCallKind, type JevBudgetConfig, type JevBudgetSnapshot } from '../budget.js';
 
 type JevAnswer = {
   type?: string;
@@ -71,31 +72,14 @@ const STATE_SHIFTS: Record<StateShift,string> = {
   goal_intensify:'The NPC should become more committed to its current practical goal.'
 };
 
-class MinuteLimiter {
-  private stamps: number[] = [];
-  constructor(private max: number) {}
-  allow() {
-    if (!this.max) return true;
-    const now = Date.now();
-    this.stamps = this.stamps.filter(x => now - x < 60_000);
-    if (this.stamps.length >= this.max) return false;
-    this.stamps.push(now);
-    return true;
-  }
-  state() {
-    const now = Date.now();
-    this.stamps = this.stamps.filter(x => now - x < 60_000);
-    return { max: this.max, usedLastMinute: this.stamps.length };
-  }
-}
-
 export class JevDecisionProvider implements DecisionProvider {
   readonly id = 'jev';
   private readonly endpoint = process.env.JEV_ENDPOINT || 'https://api.typesafe.ai/v1/systemone';
   private readonly model = process.env.JEV_MODEL || 'jev-latest';
   private readonly timeout = Math.max(500, Number(process.env.JEV_TIMEOUT_MS || 2500));
   private readonly key = process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || '';
-  private readonly limiter = new MinuteLimiter(Math.max(0, Number(process.env.JEV_MAX_CALLS_PER_MINUTE || 60)));
+  private readonly budget = new JevBudgetController();
+  private readonly cache = new Map<string,{expires:number,value:JevResponse}>();
   private calls = 0;
   private failures = 0;
   private lastError = '';
@@ -118,18 +102,42 @@ export class JevDecisionProvider implements DecisionProvider {
       lastLatencyMs: this.lastLatencyMs,
       lastModel: this.lastModel,
       inputTokens: this.inputTokens,
-      limiter: this.limiter.state(),
+      limiter: { max:this.budget.getConfig().maxCallsPerMinute, usedLastMinute:this.budget.snapshot().calls.minute },
+      budget: this.budget.snapshot(),
     };
   }
 
-  private async call(state: unknown, questions: Record<string, unknown>): Promise<JevResponse> {
+  updateBudget(patch: Partial<JevBudgetConfig>): JevBudgetSnapshot {
+    return this.budget.update(patch);
+  }
+
+  private cacheKey(kind:JevCallKind,payload:unknown) {
+    const text=JSON.stringify({kind,payload});
+    let h=2166136261;
+    for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
+    return `${kind}:${(h>>>0).toString(36)}:${text.length}`;
+  }
+
+  private async call(kind:JevCallKind,state: unknown, questions: Record<string, unknown>): Promise<JevResponse> {
     if (!this.key) throw new Error('TYPESAFE_API_KEY is not configured');
-    if (!this.limiter.allow()) throw new Error('Jev per-minute budget guard reached');
+    const payload={ model:this.model, state, questions };
+    const estimated=this.budget.estimateTokens(payload);
+    const gate=this.budget.canCall(kind,estimated);
+    if(!gate.ok)throw new Error(`Jev budget guard: ${gate.reason}`);
+
+    const cacheKey=this.cacheKey(kind,payload);
+    const cached=this.cache.get(cacheKey);
+    if(cached&&cached.expires>Date.now()){
+      this.budget.recordCacheHit();
+      return cached.value;
+    }
+    if(cached)this.cache.delete(cacheKey);
+
     const started = performance.now();
     const response = await fetch(this.endpoint, {
       method:'POST',
       headers:{ 'authorization':`Bearer ${this.key}`, 'content-type':'application/json' },
-      body:JSON.stringify({ model:this.model, state, questions }),
+      body:JSON.stringify(payload),
       signal:AbortSignal.timeout(this.timeout),
     });
     this.lastLatencyMs = Math.round(performance.now() - started);
@@ -140,23 +148,27 @@ export class JevDecisionProvider implements DecisionProvider {
     }
     const json = await response.json() as JevResponse;
     this.lastModel = json.model || this.model;
-    this.inputTokens += json.usage?.input_tokens || 0;
+    const actual=Math.max(0,Number(json.usage?.input_tokens||estimated));
+    this.inputTokens += actual;
+    this.budget.record(kind,actual);
+    const ttl=this.budget.getConfig().cacheTtlMs;
+    if(ttl>0)this.cache.set(cacheKey,{expires:Date.now()+ttl,value:json});
     return json;
   }
 
   async decide(req: DecisionRequest): Promise<DecisionResponse> {
     if (!this.key) return fallbackDecision(req);
+    // Deterministic emergency needs do not require paid inference.
+    if ((req.npc.hunger >= 92 && req.allowedActions.includes('eat')) ||
+        (req.npc.energy <= 8 && (req.allowedActions.includes('sleep') || req.allowedActions.includes('rest')))) {
+      return { ...fallbackDecision(req), source:'rule_guard' };
+    }
     const actionCriteria = Object.fromEntries(req.allowedActions.slice(0, 255).map(a => [a, ACTION_DESCRIPTIONS[a]]));
     const questions: Record<string, unknown> = {
       action: {
         type:'choice',
         instructions:'Choose the NPC next high-level action. Pick only an action that is feasible from the supplied state and available choices. Needs, schedule, relationships, nearby opportunities, and current goal all matter.',
         criteria:actionCriteria,
-      },
-      social_intent: {
-        type:'choice',
-        instructions:'If this NPC speaks to someone soon, choose the most context-appropriate social intent. This is a bounded intent, not dialogue generation.',
-        criteria:SOCIAL_INTENTS,
       },
       state_shift: {
         type:'choice',
@@ -169,7 +181,13 @@ export class JevDecisionProvider implements DecisionProvider {
         criteria:['Very weak: reconsider almost immediately','Weak: brief attempt','Normal: ordinary commitment','Strong: persist despite small distractions','Very strong: stay committed unless blocked or urgent need appears']
       }
     };
-    if (req.world.nearbyNpcs.length) {
+    const socialActions=req.allowedActions.some(a=>['talk','visit','trade','gift','deliver'].includes(a));
+    if (req.world.nearbyNpcs.length && socialActions) {
+      questions.social_intent = {
+        type:'choice',
+        instructions:'Choose the most context-appropriate bounded social intent if the selected action involves another person. Do not generate dialogue.',
+        criteria:SOCIAL_INTENTS,
+      };
       questions.target_npc = {
         type:'choice',
         instructions:'Choose the most relevant nearby person for a possible social interaction.',
@@ -189,16 +207,21 @@ export class JevDecisionProvider implements DecisionProvider {
         id:req.npc.id, name:req.npc.name, role:req.npc.role, mood:req.npc.mood,
         hunger:req.npc.hunger, energy:req.npc.energy, social:req.npc.social, money:req.npc.money,
         inventory:req.npc.inventory, currentAction:req.npc.currentAction, goal:req.npc.goal,
-        recentMemories:req.npc.memories.slice(-6), lastDialogue:req.npc.lastDialogue,
+        recentMemories:req.npc.memories.slice(-4), lastDialogue:req.npc.lastDialogue,
         routine:{ workHours:'08:00-17:00', eveningWindDown:'18:00-22:00', sleepHours:'22:00-06:00', meals:'when hunger becomes materially high' },
       },
-      world:req.world,
+      world:{
+        gameTime:req.world.gameTime, minuteOfDay:Math.round(req.world.minuteOfDay), weather:req.world.weather,
+        nearbyNpcs:req.world.nearbyNpcs.map(n=>({id:n.id,name:n.name,role:n.role,mood:n.mood,distance:Number(n.distance.toFixed(1)),relationship:n.relationship,currentAction:n.currentAction})),
+        nearbyObjects:req.world.nearbyObjects.map(o=>({id:o.id,kind:o.kind,name:o.name,tags:o.tags,capabilities:o.capabilities,distance:Number(o.distance.toFixed(1)),item:o.item})),
+        recentEvents:req.world.recentEvents.slice(-4)
+      },
       allowedActions:req.allowedActions,
       semantics:{ hunger:'0 full, 100 starving', energy:'0 exhausted, 100 rested', social:'0 lonely, 100 socially satisfied' }
     };
 
     try {
-      const out = await this.call(state, questions);
+      const out = await this.call('npc',state, questions);
       const a = out.answers || {};
       const selected = a.action?.choice as DecisionAction | undefined;
       const action = selected && req.allowedActions.includes(selected) ? selected : fallbackDecision(req).action;
@@ -207,6 +230,10 @@ export class JevDecisionProvider implements DecisionProvider {
       const targetNpcId = req.world.nearbyNpcs.some(n => n.id === a.target_npc?.choice) ? a.target_npc?.choice : undefined;
       const targetObjectId = req.world.nearbyObjects.some(o => o.id === a.target_object?.choice) ? a.target_object?.choice : undefined;
       const confidence = Math.min(1, Math.max(0, Number(a.action?.confidence ?? .5)));
+      if(confidence<this.budget.getConfig().minConfidence){
+        this.budget.recordLowConfidence();
+        return { ...fallbackDecision(req), source:'fallback-low-confidence', confidence };
+      }
       const commitment = Math.min(4, Math.max(0, Number(a.commitment?.score ?? 2)));
       return { source:'jev', action, targetNpcId, targetObjectId, socialIntent, stateShift, commitment, confidence, reasonCode:`jev_${action}` };
     } catch (error) {
@@ -280,7 +307,7 @@ export class JevDecisionProvider implements DecisionProvider {
     };
 
     try {
-      const out = await this.call(state, questions);
+      const out = await this.call('chunk',state, questions);
       const answers = out.answers || {};
       const validStrategy = Object.keys(strategies) as ChunkStrategy[];
       const validMigration = Object.keys(migrations) as ChunkMigrationPolicy[];
@@ -293,10 +320,17 @@ export class JevDecisionProvider implements DecisionProvider {
         const migrationPolicy = validMigration.includes(m?.choice as ChunkMigrationPolicy) ? m!.choice as ChunkMigrationPolicy : chunk.migrationPolicy;
         const ecologyPolicy = validEcology.includes(e?.choice as ChunkEcologyPolicy) ? e!.choice as ChunkEcologyPolicy : chunk.ecologyPolicy;
         const confidences=[s?.confidence,m?.confidence,e?.confidence].filter((x):x is number=>typeof x==='number');
-        const confidence=confidences.length?confidences.reduce((a,b)=>a+b,0)/confidences.length:.5;
+        const confidence=Math.min(1,Math.max(0,confidences.length?confidences.reduce((a,b)=>a+b,0)/confidences.length:.5));
+        if(confidence<this.budget.getConfig().minConfidence){
+          this.budget.recordLowConfidence();
+          return {
+            chunkId:chunk.id, strategy:chunk.strategy, migrationPolicy:chunk.migrationPolicy, ecologyPolicy:chunk.ecologyPolicy,
+            confidence, reasonCode:'jev_chunk_low_confidence_hold', source:'jev-hold'
+          };
+        }
         return {
           chunkId:chunk.id, strategy, migrationPolicy, ecologyPolicy,
-          confidence:Math.min(1,Math.max(0,confidence)),
+          confidence,
           reasonCode:`jev_chunk_${strategy}`,
           source:'jev'
         };
@@ -348,11 +382,11 @@ async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
       situation:req.situation,
       intent:req.intent,
       world:req.world,
-      recentLines:req.recentLines.slice(-6),
+      recentLines:req.recentLines.slice(-3),
       constraints:'Output decisions only. Dialogue text must come exclusively from candidate criteria.'
     };
     try {
-      const out = await this.call(state, questions);
+      const out = await this.call('dialogue',state, questions);
       const a = out.answers || {};
       let mode = (a.mode?.choice === 'fragments' ? 'fragments' : 'line') as 'line'|'fragments';
       let selected: DialogueEntry[] = [];
@@ -371,6 +405,11 @@ async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
       const text = selected.map(x => x.text).join('') || '……';
       const confidences = [a.mode?.confidence, a.line?.confidence, a.opener?.confidence, a.body?.confidence, a.closer?.confidence].filter((x): x is number => typeof x === 'number');
       const confidence = confidences.length ? confidences.reduce((x,y)=>x+y,0)/confidences.length : .5;
+      if(confidence<this.budget.getConfig().minConfidence){
+        this.budget.recordLowConfidence();
+        const fallback=fallbackDialogue(req,lines,fragments);
+        return {...fallback,source:'fallback-low-confidence',confidence};
+      }
       const relationEffect = (['positive','neutral','negative'].includes(String(a.relation_effect?.choice)) ? a.relation_effect?.choice : 'neutral') as RelationEffect;
       return { source:'jev', mode, text, selectedIds:selected.map(x=>x.id), confidence, relationEffect };
     } catch (error) {

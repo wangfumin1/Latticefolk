@@ -1,4 +1,5 @@
 import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse } from '../../src/types.js';
+import type { JevBudgetConfig, JevBudgetSnapshot } from './budget.js';
 
 export interface DecisionProviderStatus {
   id: string;
@@ -13,6 +14,7 @@ export interface DecisionProviderStatus {
   endpoint?: string;
   inputTokens?: number;
   limiter?: { max: number; usedLastMinute: number };
+  budget?: JevBudgetSnapshot;
 }
 
 export interface DecisionProvider {
@@ -21,4 +23,5 @@ export interface DecisionProvider {
   decide(request: DecisionRequest): Promise<DecisionResponse>;
   dialogueDecision(request: DialogueRequest): Promise<DialogueResponse>;
   decideChunks(request: ChunkDecisionRequest): Promise<ChunkDecisionResponse>;
+  updateBudget?(patch: Partial<JevBudgetConfig>): JevBudgetSnapshot;
 }
