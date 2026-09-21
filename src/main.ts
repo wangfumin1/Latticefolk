@@ -1228,8 +1228,8 @@ class TownGame {
       const exposure=nearbyDisease.length?nearbyDisease.reduce((a,b)=>a+b,0)/nearbyDisease.length:0;
       s.diseaseLoad=clamp((s.diseaseLoad||0)+(exposure-(s.diseaseLoad||0))*dt*.0015-dt*.002,0,100);
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
-      s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
+      s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
       if(s.health<=0){this.removeWildlife(animal,'自然死亡');continue;}
 
       this.moveWildlife(animal,dt);
