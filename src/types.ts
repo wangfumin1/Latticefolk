@@ -16,7 +16,17 @@ export type DecisionAction =
   | 'pickup'
   | 'use_object'
   | 'inspect'
-  | 'drop_item';
+  | 'drop_item'
+  | 'harvest'
+  | 'craft'
+  | 'trade'
+  | 'gift'
+  | 'deliver'
+  | 'fetch_water'
+  | 'patrol'
+  | 'visit'
+  | 'sleep'
+  | 'explore';
 
 export type ObjectKind =
   | 'bed'
@@ -29,7 +39,7 @@ export type ObjectKind =
   | 'farm_plot'
   | 'dropped_item';
 
-export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower';
+export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower' | 'grain' | 'water' | 'stone' | 'tool';
 
 export interface InventoryItem {
   kind: ItemKind;

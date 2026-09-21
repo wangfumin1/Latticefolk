@@ -35,7 +35,17 @@ const ACTION_DESCRIPTIONS: Record<DecisionAction, string> = {
   pickup: 'Pick up a useful nearby item that is legitimately available.',
   use_object: 'Interact with a nearby usable environmental object.',
   inspect: 'Approach and inspect something nearby out of curiosity or practical need.',
-  drop_item: 'Drop or place one carried item into the world for a practical reason.'
+  drop_item: 'Drop or place one carried item into the world for a practical reason.',
+  harvest: 'Harvest food, crops, wood, stone, or another resource from an appropriate world site.',
+  craft: 'Use a suitable workstation to transform carried resources into useful goods.',
+  trade: 'Buy, sell, or exchange useful goods with another NPC or a market.',
+  gift: 'Give one carried item to another NPC to help them or strengthen the relationship.',
+  deliver: 'Carry and hand over a useful item to another NPC who is likely to need it.',
+  fetch_water: 'Go to a well and collect water for later personal or household use.',
+  patrol: 'Follow a purposeful guard route through town to maintain presence and safety.',
+  visit: 'Go to another NPC for a friendly visit rather than a brief incidental chat.',
+  sleep: 'Go to a bed for substantial energy recovery when tired or at an appropriate time.',
+  explore: 'Travel farther than ordinary wandering to discover another part of the local area.'
 };
 
 const SOCIAL_INTENTS: Record<SocialIntent,string> = {

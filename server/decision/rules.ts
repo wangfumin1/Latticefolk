@@ -10,19 +10,35 @@ export function fallbackDecision(req: DecisionRequest): DecisionResponse {
   let action: DecisionAction = req.allowedActions.includes('idle') ? 'idle' : (req.allowedActions[0] ?? 'idle');
   let reasonCode = action === 'idle' ? 'fallback_idle' : 'fallback_first_legal';
 
+  const hour=req.world.minuteOfDay/60;
+  const role=n.role;
   if (n.hunger >= 72 && actions.has('eat')) { action = 'eat'; reasonCode = 'need_hunger'; }
-  else if (n.energy <= 28 && actions.has('rest')) { action = 'rest'; reasonCode = 'need_energy'; }
-  else if (n.social <= 30 && req.world.nearbyNpcs.length && actions.has('talk')) { action = 'talk'; reasonCode = 'need_social'; }
-  else if (actions.has('work') && req.world.minuteOfDay >= 8*60 && req.world.minuteOfDay <= 17*60 && Math.random() < .42) { action = 'work'; reasonCode = 'schedule_work'; }
+  else if (n.energy <= 18 && actions.has('sleep')) { action = 'sleep'; reasonCode = 'need_sleep'; }
+  else if (n.energy <= 32 && actions.has('rest')) { action = 'rest'; reasonCode = 'need_energy'; }
+  else if (n.social <= 28 && req.world.nearbyNpcs.length && actions.has('visit')) { action = 'visit'; reasonCode = 'need_social_visit'; }
+  else if (role==='guard' && actions.has('patrol') && Math.random()<.52) { action='patrol'; reasonCode='role_patrol'; }
+  else if (role==='farmer' && actions.has('harvest') && hour>=7 && hour<=17 && Math.random()<.58) { action='harvest'; reasonCode='role_harvest'; }
+  else if ((role==='baker'||role==='maker') && actions.has('craft') && hour>=8 && hour<=18 && Math.random()<.52) { action='craft'; reasonCode='role_craft'; }
+  else if (role==='shopkeeper' && actions.has('trade') && hour>=8 && hour<=19 && Math.random()<.56) { action='trade'; reasonCode='role_trade'; }
+  else if (actions.has('deliver') && n.inventory.some(i=>i.count>0) && Math.random()<.22) { action='deliver'; reasonCode='social_delivery'; }
+  else if (actions.has('gift') && n.inventory.some(i=>i.count>0) && n.social<55 && Math.random()<.15) { action='gift'; reasonCode='social_gift'; }
+  else if (actions.has('fetch_water') && !n.inventory.some(i=>i.kind==='water'&&i.count>0) && Math.random()<.25) { action='fetch_water'; reasonCode='resource_water'; }
+  else if (actions.has('work') && hour >= 8 && hour <= 17 && Math.random() < .42) { action = 'work'; reasonCode = 'schedule_work'; }
   else if (req.world.nearbyObjects.some(o => o.pickupable) && actions.has('pickup') && Math.random() < .18) { action = 'pickup'; reasonCode = 'opportunistic_pickup'; }
+  else if (actions.has('explore') && Math.random()<.18) { action='explore'; reasonCode='curiosity_explore'; }
   else if (actions.has('wander')) { action = 'wander'; reasonCode = 'fallback_wander'; }
 
-  const targetNpcId = action === 'talk' ? req.world.nearbyNpcs[0]?.id : undefined;
+  const targetNpcId = ['talk','visit','trade','gift','deliver'].includes(action) ? req.world.nearbyNpcs[0]?.id : undefined;
   let targetObjectId: string | undefined;
   if (action === 'pickup') targetObjectId = req.world.nearbyObjects.find(o => o.pickupable)?.id;
   if (action === 'rest') targetObjectId = req.world.nearbyObjects.find(o => ['bed','bench'].includes(o.kind))?.id;
   if (action === 'work') targetObjectId = req.world.nearbyObjects.find(o => ['workstation','farm_plot'].includes(o.kind))?.id;
   if (action === 'eat') targetObjectId = req.world.nearbyObjects.find(o => o.kind === 'food_stall')?.id;
+  if (action === 'sleep') targetObjectId = req.world.nearbyObjects.find(o => o.kind === 'bed')?.id;
+  if (action === 'harvest') targetObjectId = req.world.nearbyObjects.find(o => o.kind==='farm_plot'||o.kind==='tree'||o.tags.includes('mine')||o.tags.includes('resource'))?.id;
+  if (action === 'craft') targetObjectId = req.world.nearbyObjects.find(o => o.kind==='workstation')?.id;
+  if (action === 'fetch_water') targetObjectId = req.world.nearbyObjects.find(o => o.kind==='well')?.id;
+  if (action === 'trade' && !targetNpcId) targetObjectId = req.world.nearbyObjects.find(o => o.kind==='food_stall')?.id;
 
   const socialIntent: SocialIntent = pick(['greet','smalltalk','share_news'] as SocialIntent[], 'smalltalk');
   let stateShift: StateShift = 'stable';
