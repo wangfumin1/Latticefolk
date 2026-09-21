@@ -31,7 +31,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ First conserved inter-chunk flows for migration, food/wood/water trade, and ecology spread.
 - ✅ Region / World decision layers above chunk policy with slower bounded strategic coordination.
 - ✅ Dynamic chunk streaming and real travel beyond the original fixed world window.
-- ⏭ Procedural settlements, buildings, environments, roads, and semantic world content.
+- ✅ First semantic procedural settlement/environment generation with roads, functional sites, archetypes, and collision-aware resource placement.
+- ⏭ Richer production chains, storage logistics, object-state transitions, and multi-step interactions.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.
