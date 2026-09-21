@@ -6,13 +6,15 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest } from '../src/types.js';
+import { WorldPersistence } from './worldPersistence.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, WorldPersistenceSnapshot } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const dialogue = new DialogueStore(path.join(root, 'data', 'dialogue.jsonl'));
 const selection = createDecisionProvider(dialogue);
 const decision = selection.active;
+const worldStore = new WorldPersistence(path.join(root, 'data', 'latticefolk.sqlite'));
 const app = express();
 
 app.disable('x-powered-by');
@@ -28,6 +30,7 @@ app.get('/api/health', (_req, res) => res.json({
     status: decision.status(),
   },
   dialogue: dialogue.stats(),
+  persistence: worldStore.stats(),
 }));
 
 app.get('/api/decision/budget', (_req, res) => {
@@ -49,6 +52,32 @@ app.put('/api/decision/budget', (req, res) => {
   } catch (error) {
     res.status(400).json({ error:error instanceof Error ? error.message : String(error) });
   }
+});
+
+app.get('/api/world/state', (_req, res) => {
+  res.json({ snapshot:worldStore.load(), stats:worldStore.stats() });
+});
+
+app.post('/api/world/state', (req, res) => {
+  try {
+    const body=req.body as WorldPersistenceSnapshot;
+    if(!body || body.version!==1 || !body.meta || !Array.isArray(body.coarseChunks) || !Array.isArray(body.fineChunks)){
+      res.status(400).json({error:'Invalid world persistence payload'});
+      return;
+    }
+    res.json(worldStore.save(body));
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.delete('/api/world/state', (_req, res) => {
+  const runtimeAdminAllowed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_RUNTIME_ADMIN === 'true';
+  if(!runtimeAdminAllowed){
+    res.status(403).json({error:'World reset is disabled in production. Set ALLOW_RUNTIME_ADMIN=true to enable.'});
+    return;
+  }
+  res.json(worldStore.clear());
 });
 
 app.get('/api/dialogue/stats', (_req, res) => res.json(dialogue.stats()));
@@ -104,8 +133,15 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(dist)) {
 }
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, () => {
+const server=app.listen(port, () => {
   const status = decision.status();
   console.log(`[latticefolk] server on http://localhost:${port}`);
   console.log(`[latticefolk] decision provider: ${decision.id}${status.configured ? '' : ' (not configured; provider will fall back safely)'}`);
 });
+
+
+const shutdown=()=>{
+  server.close(()=>{ worldStore.close(); process.exit(0); });
+};
+process.on('SIGINT',shutdown);
+process.on('SIGTERM',shutdown);

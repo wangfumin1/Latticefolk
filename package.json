@@ -31,7 +31,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "better-sqlite3": "^12.4.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -41,6 +42,7 @@
     "concurrently": "^9.2.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vite": "^7.1.4"
+    "vite": "^7.1.4",
+    "@types/better-sqlite3": "^7.6.13"
   }
 }

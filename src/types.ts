@@ -282,3 +282,28 @@ export interface ChunkDecisionResponse {
   source: string;
   decisions: ChunkDecision[];
 }
+
+
+export interface PersistedFineChunk {
+  chunkId: string;
+  npcStates: NpcState[];
+  objectStates: WorldObjectState[];
+}
+
+export interface WorldPersistenceMeta {
+  day: number;
+  minuteOfDay: number;
+  weather: string;
+  playerPosition: Vec2;
+  playerInventory: Record<ItemKind, number>;
+}
+
+export interface WorldPersistenceSnapshot {
+  version: 1;
+  meta: WorldPersistenceMeta;
+  coarseChunks: CoarseChunkState[];
+  fineChunks: PersistedFineChunk[];
+  homeNpcs: NpcState[];
+  homeObjects: WorldObjectState[];
+  savedAt?: number;
+}

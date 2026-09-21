@@ -10,7 +10,7 @@ import { planFineChunk } from './world/materialization';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -201,6 +201,9 @@ class TownGame {
   activeFineChunkId?: string;
   materializedChunks = new Map<string,FineChunkRuntime>();
   fineChunkCache = new Map<string,FineChunkCache>();
+  persistenceReady = false;
+  persistenceSaveInFlight = false;
+  lastPersistenceSaveAt = 0;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -234,7 +237,9 @@ class TownGame {
     this.setupNpcs();
     void this.loadVisualAssets();
     this.bindInput();
+    window.addEventListener('beforeunload',()=>this.flushWorldBeacon());
     this.refreshHealth();
+    void this.initializePersistence();
     this.log('Latticefolk 已启动；未配置远程决策引擎时使用本地规则 provider。');
     this.animate();
   }
@@ -744,8 +749,15 @@ class TownGame {
   animate = () => {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
-    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
-    this.updateTime(dt); this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt}); this.updateObjects(); this.updateNpcs(dt); this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
+    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
+    if(this.persistenceReady){
+      this.updateTime(dt);
+      this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt});
+      this.updateObjects();
+      this.updateNpcs(dt);
+      if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
+    }
+    this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
   };
@@ -785,6 +797,125 @@ class TownGame {
   }
 
   isBlockedWorld(x:number,z:number) { return this.blocked.has(keyOf(Math.round(x),Math.round(z))); }
+
+  async initializePersistence() {
+    try{
+      const response=await fetch('/api/world/state');
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const data=await response.json() as {snapshot:WorldPersistenceSnapshot|null;stats?:unknown};
+      if(data.snapshot){
+        this.restoreWorldState(data.snapshot);
+        this.log(`已恢复世界存档 · day ${data.snapshot.meta.day} · ${data.snapshot.coarseChunks.length} coarse chunks · ${data.snapshot.fineChunks.length} visited fine chunks`);
+      }else{
+        this.log('未发现已有世界存档，将从当前 world seed 开始。');
+      }
+    }catch(error){
+      this.log(`世界存档加载失败，继续使用当前运行时：${error instanceof Error?error.message:String(error)}`);
+    }finally{
+      this.persistenceReady=true;
+      this.lastPersistenceSaveAt=now();
+      this.updateFineChunkMaterialization();
+    }
+  }
+
+  buildWorldSnapshot():WorldPersistenceSnapshot {
+    const fine=new Map<string,PersistedFineChunk>();
+    for(const [chunkId,cache] of this.fineChunkCache){
+      fine.set(chunkId,{chunkId,npcStates:structuredClone(cache.npcStates),objectStates:structuredClone(cache.objectStates)});
+    }
+    for(const [chunkId,runtime] of this.materializedChunks){
+      fine.set(chunkId,{
+        chunkId,
+        npcStates:runtime.npcIds.map(id=>this.npcs.get(id)?.state).filter((x):x is NpcState=>Boolean(x)).map(x=>structuredClone(x)),
+        objectStates:runtime.objectIds.map(id=>this.objects.get(id)?.state).filter((x):x is WorldObjectState=>Boolean(x)).map(x=>structuredClone(x))
+      });
+    }
+    const homeNpcs=[...this.npcs.values()].filter(x=>!x.state.chunkId).map(x=>structuredClone(x.state));
+    const homeObjects=[...this.objects.values()].filter(x=>!x.state.chunkId).map(x=>structuredClone(x.state));
+    return {
+      version:1,
+      meta:{
+        day:this.day,
+        minuteOfDay:this.minuteOfDay,
+        weather:this.weather,
+        playerPosition:{...this.playerPosition},
+        playerInventory:{...this.playerInventory}
+      },
+      coarseChunks:[...this.coarseWorld.chunks.values()].map(x=>structuredClone(x)),
+      fineChunks:[...fine.values()],
+      homeNpcs,
+      homeObjects
+    };
+  }
+
+  restoreWorldState(snapshot:WorldPersistenceSnapshot) {
+    if(snapshot.version!==1)return;
+    this.day=Math.max(1,Math.floor(snapshot.meta.day||1));
+    this.minuteOfDay=Math.max(0,Number(snapshot.meta.minuteOfDay)||0);
+    this.weather=String(snapshot.meta.weather||'clear');
+    this.playerInventory={...this.playerInventory,...snapshot.meta.playerInventory};
+    this.playerPosition={x:Number(snapshot.meta.playerPosition?.x||0),z:Number(snapshot.meta.playerPosition?.z||7)};
+    this.camera.position.x=this.playerPosition.x;
+    this.camera.position.z=this.playerPosition.z;
+    this.camera.position.y=1.7;
+
+    for(const saved of snapshot.coarseChunks||[]){
+      const current=this.coarseWorld.chunks.get(saved.id);
+      if(current)Object.assign(current,structuredClone(saved));
+    }
+
+    this.fineChunkCache.clear();
+    for(const saved of snapshot.fineChunks||[]){
+      this.fineChunkCache.set(saved.chunkId,{
+        npcStates:structuredClone(saved.npcStates||[]),
+        objectStates:structuredClone(saved.objectStates||[])
+      });
+    }
+
+    for(const saved of snapshot.homeNpcs||[]){
+      const runtime=this.npcs.get(saved.id);
+      if(!runtime)continue;
+      runtime.state=structuredClone(saved);
+      runtime.state.chunkId=undefined;
+      runtime.mesh.position.set(runtime.state.position.x,0,runtime.state.position.z);
+      runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
+      runtime.nextDecisionAt=now()+700+Math.random()*1800;
+    }
+
+    for(const saved of snapshot.homeObjects||[]){
+      const runtime=this.objects.get(saved.id);
+      if(!runtime)continue;
+      runtime.state=structuredClone(saved);
+      runtime.state.chunkId=undefined;
+      if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
+      else runtime.mesh.visible=true;
+    }
+  }
+
+  async saveWorldState() {
+    if(!this.persistenceReady||this.persistenceSaveInFlight)return;
+    this.persistenceSaveInFlight=true;
+    this.lastPersistenceSaveAt=now();
+    try{
+      const snapshot=this.buildWorldSnapshot();
+      const response=await fetch('/api/world/state',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
+      });
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    }catch(error){
+      this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
+    }finally{
+      this.persistenceSaveInFlight=false;
+    }
+  }
+
+  flushWorldBeacon() {
+    if(!this.persistenceReady)return;
+    try{
+      const payload=JSON.stringify(this.buildWorldSnapshot());
+      navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
+    }catch{}
+  }
 
   updateFineChunkMaterialization() {
     if(this.cameraMode!=='firstPerson')return;
