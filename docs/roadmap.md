@@ -10,7 +10,7 @@ Latticefolk is an early autonomous-world sandbox. Near-term work is focused on m
 - Production chains, trade, money flow, stock, scarcity, and resource ownership.
 - Persistent saves and deterministic world seeds.
 - Long-term NPC goals, schedules, households, ownership, memory, and relationship history.
-- Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets.
+- Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets. **Initial coarse distant-chunk runtime is implemented; next is coarse↔fine materialization and persistence.**
 - Automated browser smoke tests and deterministic simulation tests.
 
 ## Dialogue and character voice
@@ -23,6 +23,15 @@ The authored dialogue system evolves from a flat shared corpus into layered voic
 4. situation- and event-derived temporary phrases.
 
 A bounded decision provider such as Jev chooses semantic intent, candidate fragments, ordering, and whether a character-specific or shared phrase should be used. Corpus growth is a separate capability: a text-generation provider may propose new fragments when a gap is detected, while validation/deduplication/moderation and persistence remain deterministic systems. This keeps Jev useful as a decision model without pretending it is a free-text language generator.
+
+## World-scale simulation priorities
+
+- Coarse↔fine chunk materialization with persistent identity and resource conservation.
+- Inter-chunk flows for migration, trade, disease, wildlife movement, danger, and resource transport.
+- Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
+- Deterministic world seed + chunk persistence so unloaded areas retain history.
+- Streaming/render LOD so visual range and simulation range are independent.
+- Decision scheduling based on surprise/pressure, not fixed polling of every chunk.
 
 ## Dynamic world generation
 
