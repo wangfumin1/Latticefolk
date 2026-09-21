@@ -114,7 +114,7 @@ export class WorldPersistence {
       version:Number(metaRow.version)===1?1:1,
       meta:parse<WorldPersistenceMeta>(metaRow.meta_json,{
         day:1,minuteOfDay:8*60+15,weather:'clear',playerPosition:{x:0,z:7},
-        playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,water:0,stone:0,tool:0}
+        playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}
       }),
       coarseChunks,
       fineChunks,
