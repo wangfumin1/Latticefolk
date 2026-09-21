@@ -4,6 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { CoarseWorldRuntime } from './world/coarseWorld';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
   ItemKind, Mood, NpcRole, NpcState, SocialIntent, Vec2, WorldObjectState
@@ -25,6 +26,7 @@ app.innerHTML = `
   <div class="brand">LATTICEFOLK // LIVING TOWN</div>
   <div id="clock"></div>
   <div id="decisionStatus"></div>
+  <div id="worldStatus"></div>
   <div id="prompt"></div>
   <div id="inventory"></div>
 </div>
@@ -55,6 +57,7 @@ app.innerHTML = `
 const ui = {
   clock: document.querySelector<HTMLDivElement>('#clock')!,
   decision: document.querySelector<HTMLDivElement>('#decisionStatus')!,
+  world: document.querySelector<HTMLDivElement>('#worldStatus')!,
   prompt: document.querySelector<HTMLDivElement>('#prompt')!,
   inv: document.querySelector<HTMLDivElement>('#inventory')!,
   npc: document.querySelector<HTMLDivElement>('#npcPanel')!,
@@ -140,6 +143,7 @@ class TownGame {
   visualTargets: VisualTarget[] = [];
   assetRoot = '/assets/quaternius';
   assetsReady = false;
+  coarseWorld!: CoarseWorldRuntime;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -165,6 +169,7 @@ class TownGame {
     this.orbit.minPolarAngle = Math.PI * .08;
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
+    this.coarseWorld = new CoarseWorldRuntime(this.scene);
     this.sun.position.set(12,22,8); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048,2048);
     this.setupWorld();
@@ -579,7 +584,7 @@ class TownGame {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
     if(this.cameraMode==='firstPerson')this.updatePlayer(dt);else this.updateGodCamera(dt);
-    this.updateTime(dt); this.updateObjects(); this.updateNpcs(dt); this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
+    this.updateTime(dt); this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt}); this.updateObjects(); this.updateNpcs(dt); this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
   };
@@ -867,6 +872,8 @@ class TownGame {
   }
 
   updateUi() {
+    const world=this.coarseWorld.status();
+    ui.world.textContent=`远区 ${world.chunks} chunks · 已决策 ${world.decidedChunks}/${world.chunks} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)}`;
     ui.clock.textContent=`第 ${this.day} 天 · ${this.gameTimeText()} · ${this.weather==='clear'?'晴':this.weather==='cloudy'?'多云':'雨'}`;
     ui.inv.textContent=this.cameraMode==='god'?'观察者模式 · 玩家实体未进入 NPC 世界':`背包  🍎${this.playerInventory.apple}  🍞${this.playerInventory.bread}  🪵${this.playerInventory.wood}  ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
