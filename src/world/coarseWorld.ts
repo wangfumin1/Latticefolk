@@ -3,6 +3,7 @@ import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
   ChunkMigrationPolicy, ChunkEcologyPolicy, CoarseChunkState
 } from '../types';
+import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -13,6 +14,8 @@ export interface CoarseWorldStatus {
   lastSource: string;
   lastBatchSize: number;
   materializedChunks: number;
+  recentFlowCount: number;
+  lastFlowSummary: string;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -40,6 +43,8 @@ export class CoarseWorldRuntime {
   private lastBatchSize=0;
   private nextDecisionAt=performance.now()+3500;
   private simulationAccumulator=0;
+  private flowAccumulator=0;
+  private recentFlowLog:WorldFlowRecord[]=[];
 
   constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
     this.root.name='coarse-world';
@@ -142,6 +147,11 @@ export class CoarseWorldRuntime {
       this.simulationAccumulator-=steps;
       for(const chunk of this.chunks.values())if(!this.materialized.has(chunk.id))this.simulate(chunk,steps,ctx.weather);
     }
+    this.flowAccumulator+=ctx.dt;
+    if(this.flowAccumulator>=5){
+      this.flowAccumulator%=5;
+      this.runConservedFlows(ctx);
+    }
     if(!this.pending&&performance.now()>=this.nextDecisionAt)void this.requestBatch(ctx);
   }
 
@@ -177,6 +187,28 @@ export class CoarseWorldRuntime {
       chunk.settlementLevel++;
       this.refreshMarker(chunk);
     }
+  }
+
+  private runConservedFlows(ctx:UpdateContext) {
+    const planned=planConservedFlows(this.chunks.values(),{
+      day:ctx.day,
+      minuteOfDay:this.parseGameTime(ctx.gameTime),
+      materialized:this.materialized
+    });
+    const applied=applyConservedFlows(this.chunks,planned);
+    if(applied.length){
+      this.recentFlowLog.push(...applied);
+      if(this.recentFlowLog.length>120)this.recentFlowLog.splice(0,this.recentFlowLog.length-120);
+    }
+  }
+
+  private parseGameTime(value:string) {
+    const [h,m]=value.split(':').map(Number);
+    return (Number.isFinite(h)?h:0)*60+(Number.isFinite(m)?m:0);
+  }
+
+  flowHistory(limit=20) {
+    return this.recentFlowLog.slice(-Math.max(0,limit));
   }
 
   private pressure(chunk:CoarseChunkState) {
@@ -239,6 +271,11 @@ export class CoarseWorldRuntime {
     }
   }
 
+  private describeFlow(flow:WorldFlowRecord) {
+    const label=flow.kind==='migration'?'migration':flow.kind.replace('_trade','').replace('_spread','');
+    return `${label} ${flow.fromChunkId} → ${flow.toChunkId} ${flow.amount.toFixed(2)}`;
+  }
+
   status():CoarseWorldStatus {
     const list=[...this.chunks.values()];
     const avg=(f:(c:CoarseChunkState)=>number)=>list.reduce((s,c)=>s+f(c),0)/Math.max(1,list.length);
@@ -249,6 +286,8 @@ export class CoarseWorldRuntime {
       lastSource:this.lastSource,
       lastBatchSize:this.lastBatchSize,
       materializedChunks:this.materialized.size,
+      recentFlowCount:this.recentFlowLog.length,
+      lastFlowSummary:this.recentFlowLog.length?this.describeFlow(this.recentFlowLog[this.recentFlowLog.length-1]!):'—',
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)
