@@ -47,3 +47,10 @@ The next milestone is conserved exchange between chunks: migration and goods mus
 Neighboring coarse chunks now exchange population and transferable resources through explicit source/destination transactions. Migration and trade therefore have provenance and conservation instead of being independent local increments/decrements. Chunk policies selected by Jev/fallback influence flow pressure, while deterministic code owns the amounts and balance checks.
 
 The next milestone adds Region and World decision layers with much slower cadences than individual chunk decisions.
+
+
+## Implemented milestone: streamed persistent exploration
+
+The coarse world can now expand as far as first-person travel reaches. Only a bounded active window is rendered, while every discovered chunk keeps persistent aggregate history. Returning to a distant region restores the same state. God View remains observation-only and cannot discover new terrain by moving the camera.
+
+This is the foundation for larger procedural biomes, settlements, roads, ruins, ecology, and eventually multi-scale simulation far beyond the original town.
