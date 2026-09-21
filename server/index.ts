@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest } from '../src/types.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -52,6 +52,19 @@ app.post('/api/decision', async (req, res) => {
     return;
   }
   res.json(await decision.decide(body));
+});
+
+app.post('/api/world/chunks/decide', async (req, res) => {
+  const body = req.body as ChunkDecisionRequest;
+  if (!body || !Array.isArray(body.chunks) || typeof body.day !== 'number' || typeof body.gameTime !== 'string') {
+    res.status(400).json({ error: 'Invalid chunk decision payload' });
+    return;
+  }
+  if (body.chunks.length > 8) {
+    res.status(400).json({ error: 'Chunk decision batch exceeds 8 chunks' });
+    return;
+  }
+  res.json(await decision.decideChunks(body));
 });
 
 app.post('/api/dialogue', async (req, res) => {
