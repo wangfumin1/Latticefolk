@@ -54,3 +54,10 @@ The next milestone adds Region and World decision layers with much slower cadenc
 The coarse world can now expand as far as first-person travel reaches. Only a bounded active window is rendered, while every discovered chunk keeps persistent aggregate history. Returning to a distant region restores the same state. God View remains observation-only and cannot discover new terrain by moving the camera.
 
 This is the foundation for larger procedural biomes, settlements, roads, ruins, ecology, and eventually multi-scale simulation far beyond the original town.
+
+
+## Implemented milestone: semantic procedural settlements
+
+Materialized chunks now choose deterministic settlement archetypes from coarse biome and strategic state. Roads, functional buildings, work sites, storage, transport props, resource sites, residents, and surrounding nature are generated together as one semantic plan. Generated content exposes gameplay capabilities instead of becoming decorative-only scenery.
+
+The next milestone deepens production and logistics so generated farms, markets, storage, workshops, carts, and resource sites form connected multi-step systems rather than isolated interactions.
