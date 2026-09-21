@@ -16,6 +16,7 @@ The project currently ships with a local fallback decision provider and an optio
 - Large authored-dialogue library with local indexed retrieval plus complete-line or fragment selection.
 - Animated low-poly characters from Quaternius Cube World Kit plus buildings/props from Ultimate Fantasy RTS (CC0).
 - Graceful local fallback when no remote decision provider is configured or a remote decision fails.
+- Jev-aware coarse distant-chunk simulation: far regions retain aggregate population/resources/ecology and receive batched regional policy decisions without instantiating every NPC.
 
 ## Quick start
 
