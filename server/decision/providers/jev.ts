@@ -474,7 +474,7 @@ export class JevDecisionProvider implements DecisionProvider {
       const validG=Object.keys(growth) as WorldGrowthPolicy[];
       const priority=validP.includes(a.priority?.choice as WorldPriority)?a.priority!.choice as WorldPriority:'resilience';
       const connectivityChoice=validC.includes(a.connectivity?.choice as WorldConnectivityPolicy)?a.connectivity!.choice as WorldConnectivityPolicy:'balanced_networks';
-      const growth=validG.includes(a.growth?.choice as WorldGrowthPolicy)?a.growth!.choice as WorldGrowthPolicy:'steady';
+      const selectedGrowth=validG.includes(a.growth?.choice as WorldGrowthPolicy)?a.growth!.choice as WorldGrowthPolicy:'steady';
       const cs=[a.priority?.confidence,a.connectivity?.confidence,a.growth?.confidence].filter((x):x is number=>typeof x==='number');
       const confidence=Math.min(1,Math.max(0,cs.length?cs.reduce((x,y)=>x+y,0)/cs.length:.5));
       if(confidence<this.budget.getConfig().minConfidence){
@@ -482,7 +482,7 @@ export class JevDecisionProvider implements DecisionProvider {
         const fallback=fallbackWorldDecision(req).decision;
         return {source:'fallback-low-confidence',decision:{...fallback,confidence,source:'fallback-low-confidence'}};
       }
-      const decision:WorldDecision={priority,connectivity:connectivityChoice,growth,confidence,reasonCode:`jev_world_${priority}`,source:'jev'};
+      const decision:WorldDecision={priority,connectivity:connectivityChoice,growth:selectedGrowth,confidence,reasonCode:`jev_world_${priority}`,source:'jev'};
       return {source:'jev',decision};
     }catch(error){
       this.failures++;
