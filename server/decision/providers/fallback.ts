@@ -1,7 +1,7 @@
-import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse } from '../../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse } from '../../../src/types.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
-import { fallbackDecision, fallbackDialogue } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions } from '../rules.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
 
 export class FallbackDecisionProvider implements DecisionProvider {
@@ -23,5 +23,10 @@ export class FallbackDecisionProvider implements DecisionProvider {
     this.calls++;
     const { lines, fragments } = retrieveDialogueCandidates(this.dialogue, request);
     return fallbackDialogue(request, lines, fragments);
+  }
+
+  async decideChunks(request: ChunkDecisionRequest): Promise<ChunkDecisionResponse> {
+    this.calls++;
+    return fallbackChunkDecisions(request);
   }
 }
