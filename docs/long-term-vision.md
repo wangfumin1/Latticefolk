@@ -26,3 +26,10 @@ Evolution is intended to emerge from explicit inheritance and selection rather t
 ## Procedural world
 
 World generation should be seed based and chunked. Global generation establishes topology and large-scale constraints; regional generation establishes biome/settlement structure; local generation places detailed buildings, vegetation, resources, interiors, and interactables. The same capability/tag schema used by NPC decisions should describe procedurally generated content, so newly generated objects immediately participate in gameplay.
+
+
+## Implemented milestone: first coarse/fine round trip
+
+Latticefolk can transition a distant aggregate chunk into a local entity simulation when the first-person player travels into it, and collapse it back when the player leaves. This is deliberately bounded: one distant chunk is materialized at a time, resident count is a representative subset of coarse population, and detailed state is retained in memory during the session.
+
+The next milestone is durable persistence, followed by conserved cross-chunk flows and multi-chunk streaming.

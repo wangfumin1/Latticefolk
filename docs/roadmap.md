@@ -10,7 +10,7 @@ Latticefolk is an early autonomous-world sandbox. Near-term work is focused on m
 - Production chains, trade, money flow, stock, scarcity, and resource ownership.
 - Persistent saves and deterministic world seeds.
 - Long-term NPC goals, schedules, households, ownership, memory, and relationship history.
-- Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets. **Initial coarse distant-chunk runtime is implemented; next is coarse↔fine materialization and persistence.**
+- Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets. **Initial coarse distant-chunk runtime and first-pass coarse↔fine materialization are implemented; durable persistence is next.**
 - Automated browser smoke tests and deterministic simulation tests.
 
 ## Dialogue and character voice
@@ -26,7 +26,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 
 ## World-scale simulation priorities
 
-- Coarse↔fine chunk materialization with persistent identity and resource conservation.
+- ✅ First-pass coarse↔fine chunk materialization with in-session persistent identity and coarse resource feedback.
+- ⏭ Durable SQLite persistence for world/chunk/fine-entity state across restarts.
 - Inter-chunk flows for migration, trade, disease, wildlife movement, danger, and resource transport.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.

@@ -14,6 +14,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Coarse distant-chunk policy decisions using batched provider calls.
 - Multilingual UI and authored dialogue seeds for Simplified Chinese, English, Japanese, and Spanish.
 - Multilingual project overviews, repository cover, badges, citation metadata, and expanded acknowledgements.
+- First-pass coarse↔fine distant-chunk materialization with deterministic settlement/resource planning, representative residents, in-session identity restoration, and coarse-state feedback.
 
 ### Changed
 

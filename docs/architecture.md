@@ -55,3 +55,19 @@ Distant chunks are not AI-free placeholders. The active decision provider receiv
 This preserves the same authority boundary used for NPCs: a model selects policy; simulation code owns state mutation.
 
 The next required step is **round-trip LOD**: when a distant chunk becomes local, aggregate state must materialize into concrete inhabitants/resources/buildings; when it becomes distant, those entities must collapse back into aggregate state without losing persistent consequences.
+
+
+### Coarse ↔ fine materialization (implemented first pass)
+
+The first round-trip LOD path is live.
+
+- The fixed center remains the always-fine demo town.
+- Distant chunks continue as aggregate state until the **first-person player** enters one.
+- Entering a distant chunk deterministically materializes a representative subset of residents, settlement buildings, interactive work/trade/water sites, and biome resources from that coarse chunk.
+- While materialized, that chunk is removed from coarse evolution and regional-policy ticks to avoid double simulation.
+- Leaving the chunk collapses fine entities back into the coarse representation.
+- Resource depletion, representative wealth changes, and ecological depletion are summarized back into coarse indices.
+- Detailed fine NPC/object state is cached in memory, so re-entering the same chunk during the session restores identities, inventories, relationships, storage, and resource depletion.
+- God View never causes materialization; it remains an out-of-world observer.
+
+The next stage replaces the in-memory cache with durable SQLite persistence so browser/server restarts do not erase chunk history.
