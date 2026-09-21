@@ -145,10 +145,10 @@ export class CoarseWorldRuntime {
 
   private simulate(chunk:CoarseChunkState,seconds:number,weather:string) {
     const scale=seconds*.035;
-    const biomeFood=chunk.biome==='plains'?1.2:chunk.biome==='wetlands'?1.05:chunk.biome==='dryland'?.55:.82;
-    const rain=weather==='rain'?1.18:weather==='clear'?.98:1.04;
+    const biomeFood=chunk.biome==='plains'?1.2:chunk.biome==='wetlands'?1.05:chunk.biome==='dryland' ? .55 : .82;
+    const rain=weather==='rain'?1.18:weather==='clear' ? .98 : 1.04;
     chunk.food=clamp(chunk.food+(biomeFood*rain-.7-chunk.population*.006)*scale);
-    chunk.water=clamp(chunk.water+((weather==='rain'?1.5:chunk.biome==='wetlands'?.75:-.28)-chunk.population*.003)*scale);
+    chunk.water=clamp(chunk.water+((weather==='rain'?1.5:chunk.biome==='wetlands' ? .75 : -.28)-chunk.population*.003)*scale);
     chunk.wood=clamp(chunk.wood+((chunk.biome==='forest'?1.15:.45)-chunk.population*.004)*scale);
     chunk.ecology=clamp(chunk.ecology+(.18-chunk.population*.002)*scale);
 
