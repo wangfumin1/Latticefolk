@@ -1,4 +1,4 @@
-export type JevCallKind = 'npc' | 'dialogue' | 'chunk' | 'region' | 'world';
+export type JevCallKind = 'npc' | 'dialogue' | 'chunk' | 'region' | 'world' | 'wildlife';
 
 export interface JevBudgetConfig {
   enabled: boolean;
@@ -14,13 +14,14 @@ export interface JevBudgetConfig {
   chunkWeight: number;
   regionWeight: number;
   worldWeight: number;
+  wildlifeWeight: number;
 }
 
 export interface JevBudgetSnapshot {
   config: JevBudgetConfig;
   inputTokens: { minute: number; hour: number; day: number; lifetime: number };
   estimatedUsd: { day: number; lifetime: number };
-  calls: { minute: number; hour: number; day: number; lifetime: number; npc: number; dialogue: number; chunk: number; region: number; world: number };
+  calls: { minute: number; hour: number; day: number; lifetime: number; npc: number; dialogue: number; chunk: number; region: number; world: number; wildlife: number };
   blocked: number;
   cacheHits: number;
   lowConfidenceFallbacks: number;
@@ -50,11 +51,12 @@ export class JevBudgetController {
     chunkWeight:n('JEV_CHUNK_WEIGHT',0.65),
     regionWeight:n('JEV_REGION_WEIGHT',0.5),
     worldWeight:n('JEV_WORLD_WEIGHT',0.35),
+    wildlifeWeight:n('JEV_WILDLIFE_WEIGHT',0.3),
   };
   private usage: Usage[]=[];
   private lifetimeTokens=0;
   private lifetimeCalls=0;
-  private byKind:Record<JevCallKind,number>={npc:0,dialogue:0,chunk:0,region:0,world:0};
+  private byKind:Record<JevCallKind,number>={npc:0,dialogue:0,chunk:0,region:0,world:0,wildlife:0};
   private blocked=0;
   private cacheHits=0;
   private lowConfidenceFallbacks=0;
@@ -64,7 +66,7 @@ export class JevBudgetController {
   update(patch:Partial<JevBudgetConfig>){
     const numeric:(keyof JevBudgetConfig)[]=[
       'maxCallsPerMinute','maxInputTokensPerMinute','maxInputTokensPerHour','maxInputTokensPerDay',
-      'maxUsdPerDay','minConfidence','cacheTtlMs','npcWeight','dialogueWeight','chunkWeight','regionWeight','worldWeight'
+      'maxUsdPerDay','minConfidence','cacheTtlMs','npcWeight','dialogueWeight','chunkWeight','regionWeight','worldWeight','wildlifeWeight'
     ];
     if(typeof patch.enabled==='boolean')this.config.enabled=patch.enabled;
     for(const key of numeric){
@@ -100,7 +102,7 @@ export class JevBudgetController {
   }
 
   private weight(kind:JevCallKind){
-    return kind==='npc'?this.config.npcWeight:kind==='dialogue'?this.config.dialogueWeight:kind==='chunk'?this.config.chunkWeight:kind==='region'?this.config.regionWeight:this.config.worldWeight;
+    return kind==='npc'?this.config.npcWeight:kind==='dialogue'?this.config.dialogueWeight:kind==='chunk'?this.config.chunkWeight:kind==='region'?this.config.regionWeight:kind==='world'?this.config.worldWeight:this.config.wildlifeWeight;
   }
 
   canCall(kind:JevCallKind,estimatedTokens:number){

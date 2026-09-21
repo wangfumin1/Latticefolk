@@ -6,6 +6,7 @@ import type {
   WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
+import { applyWildlifeMigration, ensureWildlifePopulations, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -24,6 +25,7 @@ export interface CoarseWorldStatus {
   worldPriority: string;
   worldConnectivity: string;
   worldGrowth: string;
+  wildlifePopulation: number;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -102,7 +104,7 @@ export class CoarseWorldRuntime {
     const settlementLevel=settlementRoll>.86?2:settlementRoll>.62?1:0;
     const population=settlementLevel===0?Math.floor(this.hash(cx,cz,3)*4):Math.floor(5+this.hash(cx,cz,3)*(settlementLevel===2?26:12));
     const bias=(biome==='wetlands'||biome==='plains')?12:biome==='dryland'?-14:0;
-    return {
+    const chunk:CoarseChunkState={
       id:`chunk_${cx}_${cz}`,cx,cz,biome,settlementLevel,population,
       food:clamp(42+bias+this.hash(cx,cz,4)*42),
       wood:clamp(35+(biome==='forest'?35:0)+this.hash(cx,cz,5)*34),
@@ -113,6 +115,8 @@ export class CoarseWorldRuntime {
       strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',
       lastDecisionAt:0,decisionVersion:0
     };
+    ensureWildlifePopulations(chunk);
+    return chunk;
   }
 
   ensureChunk(cx:number,cz:number) {
@@ -154,7 +158,7 @@ export class CoarseWorldRuntime {
   restoreKnownChunks(saved:CoarseChunkState[]) {
     for(const state of saved){
       if(!state||typeof state.id!=='string')continue;
-      this.chunks.set(state.id,structuredClone(state));
+      const restored=structuredClone(state);ensureWildlifePopulations(restored);this.chunks.set(state.id,restored);
     }
     for(const id of this.activeChunkIds){
       const chunk=this.chunks.get(id);
@@ -289,6 +293,7 @@ export class CoarseWorldRuntime {
       trade_route:()=>{chunk.prosperity=clamp(chunk.prosperity+1.0*scale);chunk.food=clamp(chunk.food+.22*scale);}
     };
     strategyEffect[chunk.strategy]();
+    simulateWildlife(chunk,seconds,weather);
 
     if(chunk.ecologyPolicy==='recover')chunk.ecology=clamp(chunk.ecology+.9*scale);
     if(chunk.ecologyPolicy==='protect')chunk.ecology=clamp(chunk.ecology+.55*scale);
@@ -329,6 +334,8 @@ export class CoarseWorldRuntime {
       return {...flow,amount:flow.amount*factor};
     });
     const applied=applyConservedFlows(this.chunks,adjusted);
+    const wildlifeMoves=planWildlifeMigration(this.chunks.values(),this.materialized);
+    applyWildlifeMigration(this.chunks,wildlifeMoves);
     if(applied.length){
       this.recentFlowLog.push(...applied);
       if(this.recentFlowLog.length>120)this.recentFlowLog.splice(0,this.recentFlowLog.length-120);
@@ -504,6 +511,7 @@ export class CoarseWorldRuntime {
       worldPriority:this.worldPolicy.priority,
       worldConnectivity:this.worldPolicy.connectivity,
       worldGrowth:this.worldPolicy.growth,
+      wildlifePopulation:list.reduce((sum,c)=>sum+wildlifeCount(c),0),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)

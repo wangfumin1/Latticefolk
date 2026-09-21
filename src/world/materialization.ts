@@ -1,4 +1,4 @@
-import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WorldObjectState } from '../types';
+import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
 
 export type SettlementArchetype =
   | 'wilderness'
@@ -39,6 +39,17 @@ export interface FineObjectPlan {
   rotationY?: number;
 }
 
+export interface FineWildlifePlan {
+  id: string;
+  species: WildlifeSpecies;
+  x: number;
+  z: number;
+  ageDays: number;
+  sex: 'female' | 'male';
+  generation: number;
+  traits: WildlifeTraits;
+}
+
 export interface FineResidentPlan {
   id: string;
   name: string;
@@ -58,6 +69,7 @@ export interface FineChunkPlan {
   buildings: FineBuildingPlan[];
   objects: FineObjectPlan[];
   residents: FineResidentPlan[];
+  wildlife: FineWildlifePlan[];
 }
 
 function hash(text:string) {
@@ -165,6 +177,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   const buildings:FineBuildingPlan[]=[];
   const objects:FineObjectPlan[]=[];
   const residents:FineResidentPlan[]=[];
+  const wildlife:FineWildlifePlan[]=[];
 
   const addRoad=(suffix:string,name:string,x:number,z:number,w:number,d:number,tags:string[])=>{
     roads.push({id:`${chunk.id}_road_${suffix}`,name,x,z,w,d,tags:['road','travel',archetype,...tags]});
@@ -294,5 +307,37 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     });
   }
 
-  return {chunkId:chunk.id,archetype,roads,buildings,objects,residents};
+
+  const speciesBase:Record<WildlifeSpecies,{speed:number;size:number;fertility:number;wariness:number;maxFine:number}>={
+    rabbit:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3},
+    deer:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2},
+    boar:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2},
+    fox:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1}
+  };
+  for(const population of chunk.wildlife||[]){
+    const base=speciesBase[population.species];
+    if(!base||population.count<.35)continue;
+    const count=Math.min(base.maxFine,Math.max(1,Math.round(population.count/Math.max(2,population.carryingCapacity/Math.max(1,base.maxFine)))));
+    for(let i=0;i<count;i++){
+      let x=centerX,z=centerZ;
+      for(let attempt=0;attempt<12;attempt++){
+        const tx=centerX+(random()-.5)*(chunkSize-3),tz=centerZ+(random()-.5)*(chunkSize-3);
+        if(!reserved(tx,tz)){x=tx;z=tz;break;}
+      }
+      const variance=(amount:number)=>amount*(.88+random()*.24);
+      wildlife.push({
+        id:`${chunk.id}_wild_${population.species}_${i}`,
+        species:population.species,x,z,
+        ageDays:Math.floor(20+random()*(population.species==='rabbit'?500:population.species==='fox'?1800:3200)),
+        sex:random()>.5?'female':'male',
+        generation:0,
+        traits:{
+          speed:variance(base.speed),size:variance(base.size),
+          fertility:Math.min(1,variance(base.fertility)),wariness:Math.min(1,variance(base.wariness))
+        }
+      });
+    }
+  }
+
+  return {chunkId:chunk.id,archetype,roads,buildings,objects,residents,wildlife};
 }

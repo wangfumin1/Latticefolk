@@ -1,4 +1,4 @@
-import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy, RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy, WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy } from '../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy, RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy, WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeAction } from '../../src/types.js';
 
 function pick<T>(arr: T[], fallback: T): T {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : fallback;
@@ -175,4 +175,48 @@ export function fallbackWorldDecision(req: WorldDecisionRequest): WorldDecisionR
 
   const decision:WorldDecision={priority,connectivity,growth,confidence:.45,reasonCode,source:'fallback'};
   return {source:'fallback',decision};
+}
+
+
+export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): WildlifeDecisionBatchResponse {
+  const decisions:WildlifeDecisionResult[]=req.requests.map(entry=>{
+    const animal=entry.wildlife;
+    const nearbyFox=entry.world.nearbyWildlife.find(x=>x.species==='fox'&&x.distance<5);
+    const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.distance<8);
+    let action:WildlifeAction='wander';
+    let targetObjectId:string|undefined;
+    let targetWildlifeId:string|undefined;
+    let reasonCode='wildlife_wander';
+
+    if(animal.species!=='fox'&&nearbyFox&&entry.allowedActions.includes('flee')){
+      action='flee';targetWildlifeId=nearbyFox.id;reasonCode='predator_nearby';
+    }else if(animal.thirst>=72&&entry.allowedActions.includes('drink')){
+      action='drink';
+      targetObjectId=entry.world.nearbyResources.find(x=>x.tags.includes('water'))?.id;
+      reasonCode='thirst';
+    }else if(animal.hunger>=68){
+      if(animal.species==='fox'&&entry.allowedActions.includes('hunt')){
+        const prey=entry.world.nearbyWildlife.find(x=>['rabbit','deer'].includes(x.species)&&x.distance<10);
+        if(prey){action='hunt';targetWildlifeId=prey.id;reasonCode='predator_hunger';}
+        else if(entry.allowedActions.includes('forage')){action='forage';reasonCode='predator_scavenge';}
+      }else if(entry.allowedActions.includes(animal.species==='boar'?'forage':'graze')){
+        action=animal.species==='boar'?'forage':'graze';
+        const tags=animal.species==='boar'?['forage','food','farm']:['nature','food','grass'];
+        targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>tags.includes(tag)))?.id;
+        reasonCode='hunger';
+      }
+    }else if(animal.energy<=24&&entry.allowedActions.includes('rest')){
+      action='rest';reasonCode='low_energy';
+    }else if(animal.ageDays>90&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
+      action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';
+    }else if(entry.allowedActions.includes('forage')){
+      action='forage';
+      targetObjectId=entry.world.nearbyResources.find(x=>x.tags.includes('forage')||x.tags.includes('food'))?.id;
+      reasonCode='opportunistic_forage';
+    }
+
+    if(!entry.allowedActions.includes(action))action=entry.allowedActions[0]||'rest';
+    return {wildlifeId:animal.id,source:'fallback',action,targetObjectId,targetWildlifeId,confidence:.55,reasonCode};
+  });
+  return {source:'fallback',decisions};
 }

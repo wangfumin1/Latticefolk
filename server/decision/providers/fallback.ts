@@ -1,7 +1,7 @@
-import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse, RegionDecisionRequest, RegionDecisionResponse, WorldDecisionRequest, WorldDecisionResponse } from '../../../src/types.js';
+import type { DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse, ChunkDecisionRequest, ChunkDecisionResponse, RegionDecisionRequest, RegionDecisionResponse, WorldDecisionRequest, WorldDecisionResponse, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse } from '../../../src/types.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
-import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision, fallbackWildlifeDecisions } from '../rules.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
 
 export class FallbackDecisionProvider implements DecisionProvider {
@@ -38,5 +38,10 @@ export class FallbackDecisionProvider implements DecisionProvider {
   async decideWorld(request: WorldDecisionRequest): Promise<WorldDecisionResponse> {
     this.calls++;
     return fallbackWorldDecision(request);
+  }
+
+  async decideWildlife(request: WildlifeDecisionBatchRequest): Promise<WildlifeDecisionBatchResponse> {
+    this.calls++;
+    return fallbackWildlifeDecisions(request);
   }
 }

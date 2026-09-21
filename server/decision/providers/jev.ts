@@ -4,9 +4,10 @@ import type {
   ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision,
   ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy,
   RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy,
-  WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy
+  WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy,
+  WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeAction
 } from '../../../src/types.js';
-import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision } from '../rules.js';
+import { fallbackDecision, fallbackDialogue, fallbackChunkDecisions, fallbackRegionDecisions, fallbackWorldDecision, fallbackWildlifeDecisions } from '../rules.js';
 import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
@@ -491,7 +492,94 @@ export class JevDecisionProvider implements DecisionProvider {
     }
   }
 
-async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
+
+  async decideWildlife(req: WildlifeDecisionBatchRequest): Promise<WildlifeDecisionBatchResponse> {
+    const requests=req.requests.slice(0,6);
+    if(!this.key||!requests.length)return fallbackWildlifeDecisions({requests});
+
+    const descriptions:Record<WildlifeAction,string>={
+      graze:'Feed on suitable vegetation/crops when herbivore hunger is meaningful.',
+      forage:'Search nearby natural food opportunistically.',
+      drink:'Move to a nearby water source and drink.',
+      rest:'Stop moving and recover energy.',
+      flee:'Move away from a nearby threat or predator.',
+      hunt:'Predator approaches suitable nearby prey.',
+      wander:'Move locally without a stronger urgent goal.',
+      seek_mate:'Approach a suitable nearby same-species mate when healthy and mature.'
+    };
+    const questions:Record<string,unknown>={};
+    requests.forEach((entry,index)=>{
+      const allowed=entry.allowedActions.slice(0,16);
+      questions[`w${index}_action`]={
+        type:'choice',
+        instructions:'Choose the next bounded wildlife behavior. Prioritize immediate survival needs and real nearby opportunities. Do not invent resources, prey, or physiological changes.',
+        criteria:Object.fromEntries(allowed.map(action=>[action,descriptions[action]]))
+      };
+      if(entry.world.nearbyResources.length){
+        questions[`w${index}_resource`]={
+          type:'choice',
+          instructions:'Choose the most relevant supplied resource/site if the selected behavior uses one.',
+          criteria:Object.fromEntries(entry.world.nearbyResources.slice(0,24).map(x=>[
+            x.id,`tags=${x.tags.join(',')}; distance=${x.distance.toFixed(1)}; amount=${x.resourceAmount??'unknown'}`
+          ]))
+        };
+      }
+      if(entry.world.nearbyWildlife.length){
+        questions[`w${index}_animal`]={
+          type:'choice',
+          instructions:'Choose a supplied animal only if the selected behavior requires prey, a mate, or a threat target.',
+          criteria:Object.fromEntries(entry.world.nearbyWildlife.slice(0,24).map(x=>[
+            x.id,`${x.species}; distance=${x.distance.toFixed(1)}; health=${x.health.toFixed(0)}; action=${x.currentAction}`
+          ]))
+        };
+      }
+    });
+    const state={
+      simulationLayer:'wildlife',
+      animals:requests.map(entry=>({
+        id:entry.wildlife.id,species:entry.wildlife.species,ageDays:entry.wildlife.ageDays,
+        health:Number(entry.wildlife.health.toFixed(1)),hunger:Number(entry.wildlife.hunger.toFixed(1)),
+        thirst:Number(entry.wildlife.thirst.toFixed(1)),energy:Number(entry.wildlife.energy.toFixed(1)),
+        sex:entry.wildlife.sex,generation:entry.wildlife.generation,traits:entry.wildlife.traits,
+        allowedActions:entry.allowedActions,
+        nearbyResources:entry.world.nearbyResources,
+        nearbyWildlife:entry.world.nearbyWildlife
+      })),
+      world:{gameTime:requests[0]!.world.gameTime,minuteOfDay:requests[0]!.world.minuteOfDay,weather:requests[0]!.world.weather},
+      authority:'Select behavior and supplied targets only. Never directly mutate health, needs, reproduction, population, resources, or genetics.'
+    };
+
+    try{
+      const out=await this.call('wildlife',state,questions);
+      const answers=out.answers||{};
+      const fallback=fallbackWildlifeDecisions({requests});
+      const decisions:WildlifeDecisionResult[]=requests.map((entry,index)=>{
+        const actionAnswer=answers[`w${index}_action`];
+        const selected=actionAnswer?.choice as WildlifeAction|undefined;
+        const action=selected&&entry.allowedActions.includes(selected)?selected:fallback.decisions[index]!.action;
+        const confidence=Math.min(1,Math.max(0,typeof actionAnswer?.confidence==='number'?actionAnswer.confidence:.5));
+        if(confidence<this.budget.getConfig().minConfidence){
+          this.budget.recordLowConfidence();
+          return {...fallback.decisions[index]!,confidence,source:'fallback-low-confidence'};
+        }
+        const resourceId=answers[`w${index}_resource`]?.choice;
+        const wildlifeId=answers[`w${index}_animal`]?.choice;
+        const targetObjectId=entry.world.nearbyResources.some(x=>x.id===resourceId)?resourceId:undefined;
+        const targetWildlifeId=entry.world.nearbyWildlife.some(x=>x.id===wildlifeId)?wildlifeId:undefined;
+        return {
+          wildlifeId:entry.wildlife.id,source:'jev',action,targetObjectId,targetWildlifeId,
+          confidence,reasonCode:`jev_wildlife_${action}`
+        };
+      });
+      return {source:'jev',decisions};
+    }catch(error){
+      this.failures++;
+      this.lastError=error instanceof Error?error.message:String(error);
+      return fallbackWildlifeDecisions({requests});
+    }
+  }
+
+  async dialogueDecision(req: DialogueRequest): Promise<DialogueResponse> {
     const { lines, fragments } = retrieveDialogueCandidates(this.dialogue, req);
     if (!this.key) return fallbackDialogue(req, lines, fragments);
 

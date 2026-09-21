@@ -242,6 +242,77 @@ export type ChunkStrategy = 'sustain' | 'grow_settlement' | 'conserve' | 'extrac
 export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate';
 export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
+export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'fox';
+export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate';
+
+export interface CoarseWildlifePopulation {
+  species: WildlifeSpecies;
+  count: number;
+  carryingCapacity: number;
+  health: number;
+}
+
+export interface WildlifeTraits {
+  speed: number;
+  size: number;
+  fertility: number;
+  wariness: number;
+}
+
+export interface WildlifeState {
+  id: string;
+  chunkId: string;
+  species: WildlifeSpecies;
+  position: Vec2;
+  ageDays: number;
+  health: number;
+  hunger: number;
+  thirst: number;
+  energy: number;
+  sex: 'female' | 'male';
+  generation: number;
+  traits: WildlifeTraits;
+  currentAction: WildlifeAction;
+  targetObjectId?: string;
+  targetWildlifeId?: string;
+  lastDecisionAt: number;
+  birthDay: number;
+}
+
+export interface WildlifeDecisionRequest {
+  wildlife: WildlifeState;
+  world: {
+    gameTime: string;
+    minuteOfDay: number;
+    weather: string;
+    nearbyResources: Array<{ id:string; tags:string[]; distance:number; resourceAmount?:number }>;
+    nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; distance:number; health:number; currentAction:WildlifeAction }>;
+  };
+  allowedActions: WildlifeAction[];
+}
+
+export interface WildlifeDecisionResponse {
+  source: string;
+  action: WildlifeAction;
+  targetObjectId?: string;
+  targetWildlifeId?: string;
+  confidence: number;
+  reasonCode: string;
+}
+
+export interface WildlifeDecisionResult extends WildlifeDecisionResponse {
+  wildlifeId: string;
+}
+
+export interface WildlifeDecisionBatchRequest {
+  requests: WildlifeDecisionRequest[];
+}
+
+export interface WildlifeDecisionBatchResponse {
+  source: string;
+  decisions: WildlifeDecisionResult[];
+}
+
 export interface CoarseChunkState {
   id: string;
   cx: number;
@@ -258,6 +329,7 @@ export interface CoarseChunkState {
   strategy: ChunkStrategy;
   migrationPolicy: ChunkMigrationPolicy;
   ecologyPolicy: ChunkEcologyPolicy;
+  wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;
 }
@@ -375,6 +447,7 @@ export interface PersistedFineChunk {
   chunkId: string;
   npcStates: NpcState[];
   objectStates: WorldObjectState[];
+  wildlifeStates?: WildlifeState[];
 }
 
 export interface WorldPersistenceMeta {

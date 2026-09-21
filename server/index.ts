@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
 import { WorldPersistence } from './worldPersistence.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WorldPersistenceSnapshot } from '../src/types.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WildlifeDecisionBatchRequest, WorldPersistenceSnapshot } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -93,6 +93,19 @@ app.post('/api/dialogue/import', (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+app.post('/api/wildlife/decide', async (req, res) => {
+  const body=req.body as WildlifeDecisionBatchRequest;
+  if(!body||!Array.isArray(body.requests)){
+    res.status(400).json({error:'Invalid wildlife decision payload'});
+    return;
+  }
+  if(body.requests.length>6){
+    res.status(400).json({error:'Wildlife decision batch exceeds 6 animals'});
+    return;
+  }
+  res.json(await decision.decideWildlife(body));
 });
 
 app.post('/api/decision', async (req, res) => {
