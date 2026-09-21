@@ -29,7 +29,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ First-pass coarse↔fine chunk materialization with in-session persistent identity and coarse resource feedback.
 - ✅ Durable SQLite persistence for world/chunk/fine-entity state across restarts.
 - ✅ First conserved inter-chunk flows for migration, food/wood/water trade, and ecology spread.
-- ⏭ Region / World decision layers above chunk policy, including slower strategic coordination and large-scale events.
+- ✅ Region / World decision layers above chunk policy with slower bounded strategic coordination.
+- ⏭ Dynamic chunk streaming and real travel beyond the original fixed world window.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

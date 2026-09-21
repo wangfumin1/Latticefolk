@@ -108,3 +108,24 @@ Each flow records a source chunk, destination chunk, amount, simulation time, ty
 Provider-selected chunk policies influence these flows indirectly: `release/evacuate` creates migration pressure, `attract` creates destination pull, and `trade_route` enables stronger resource exchange. Jev still does not write numeric balances itself.
 
 Materialized chunks are excluded from coarse-flow planning while fine simulation is active, preventing duplicate accounting across LOD layers.
+
+
+## Region and World decision hierarchy
+
+Latticefolk now runs four decision scales:
+
+```text
+World policy        slowest cadence
+  ↓
+Region policy
+  ↓
+Chunk policy
+  ↓
+NPC intent          fastest cadence
+```
+
+Region aggregation summarizes neighboring chunks into population, settlements, food, wood, water, ecology, danger, and prosperity. The provider chooses only bounded regional policies: coordination priority, movement posture, and ecology posture.
+
+World aggregation summarizes all known regions and selects a long-horizon priority, connectivity posture, and growth posture. Region and World decisions never directly write population or resources. Deterministic simulation interprets them as bounded modifiers on settlement growth, conserved flows, ecology recovery, and danger reduction.
+
+Jev calls use lower Region/World budget weights because those layers run less often and should consume a smaller share of paid input tokens.
