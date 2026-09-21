@@ -16,6 +16,8 @@ export interface CoarseWorldStatus {
   lastSource: string;
   lastBatchSize: number;
   materializedChunks: number;
+  activeChunks: number;
+  activeCenter: string;
   recentFlowCount: number;
   lastFlowSummary: string;
   regionDecisions: number;
@@ -40,6 +42,7 @@ export class CoarseWorldRuntime {
   readonly localRadius = 1;
   readonly chunks = new Map<string,CoarseChunkState>();
   readonly materialized = new Set<string>();
+  readonly activeChunkIds = new Set<string>();
 
   private root = new THREE.Group();
   private tiles = new Map<string,THREE.Mesh>();
@@ -60,6 +63,8 @@ export class CoarseWorldRuntime {
   private nextWorldDecisionAt=performance.now()+18000;
   private regionPending=false;
   private worldPending=false;
+  private activeCenterCx=Number.NaN;
+  private activeCenterCz=Number.NaN;
 
   constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
     this.root.name='coarse-world';
@@ -84,27 +89,86 @@ export class CoarseWorldRuntime {
   }
 
   private generate() {
-    for(let cz=-this.radius;cz<=this.radius;cz++) for(let cx=-this.radius;cx<=this.radius;cx++) {
-      if(Math.abs(cx)<=this.localRadius&&Math.abs(cz)<=this.localRadius)continue;
-      const biome=this.biomeFor(cx,cz);
-      const settlementRoll=this.hash(cx,cz,2);
-      const settlementLevel=settlementRoll>.86?2:settlementRoll>.62?1:0;
-      const population=settlementLevel===0?Math.floor(this.hash(cx,cz,3)*4):Math.floor(5+this.hash(cx,cz,3)*(settlementLevel===2?26:12));
-      const bias=(biome==='wetlands'||biome==='plains')?12:biome==='dryland'?-14:0;
-      const chunk:CoarseChunkState={
-        id:`chunk_${cx}_${cz}`,cx,cz,biome,settlementLevel,population,
-        food:clamp(42+bias+this.hash(cx,cz,4)*42),
-        wood:clamp(35+(biome==='forest'?35:0)+this.hash(cx,cz,5)*34),
-        water:clamp(42+(biome==='wetlands'?35:biome==='dryland'?-25:0)+this.hash(cx,cz,6)*38),
-        ecology:clamp(48+this.hash(cx,cz,7)*42-settlementLevel*7),
-        danger:clamp(10+this.hash(cx,cz,8)*46),
-        prosperity:clamp(18+settlementLevel*20+this.hash(cx,cz,9)*30),
-        strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',
-        lastDecisionAt:0,decisionVersion:0
-      };
-      this.chunks.set(chunk.id,chunk);
-      this.createTile(chunk);
+    this.ensureWindowAround(0,0,true);
+  }
+
+  private isHomeChunk(cx:number,cz:number) {
+    return Math.abs(cx)<=this.localRadius&&Math.abs(cz)<=this.localRadius;
+  }
+
+  private createChunkState(cx:number,cz:number):CoarseChunkState {
+    const biome=this.biomeFor(cx,cz);
+    const settlementRoll=this.hash(cx,cz,2);
+    const settlementLevel=settlementRoll>.86?2:settlementRoll>.62?1:0;
+    const population=settlementLevel===0?Math.floor(this.hash(cx,cz,3)*4):Math.floor(5+this.hash(cx,cz,3)*(settlementLevel===2?26:12));
+    const bias=(biome==='wetlands'||biome==='plains')?12:biome==='dryland'?-14:0;
+    return {
+      id:`chunk_${cx}_${cz}`,cx,cz,biome,settlementLevel,population,
+      food:clamp(42+bias+this.hash(cx,cz,4)*42),
+      wood:clamp(35+(biome==='forest'?35:0)+this.hash(cx,cz,5)*34),
+      water:clamp(42+(biome==='wetlands'?35:biome==='dryland'?-25:0)+this.hash(cx,cz,6)*38),
+      ecology:clamp(48+this.hash(cx,cz,7)*42-settlementLevel*7),
+      danger:clamp(10+this.hash(cx,cz,8)*46),
+      prosperity:clamp(18+settlementLevel*20+this.hash(cx,cz,9)*30),
+      strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',
+      lastDecisionAt:0,decisionVersion:0
+    };
+  }
+
+  ensureChunk(cx:number,cz:number) {
+    if(this.isHomeChunk(cx,cz))return undefined;
+    const id=`chunk_${cx}_${cz}`;
+    let chunk=this.chunks.get(id);
+    if(!chunk){
+      chunk=this.createChunkState(cx,cz);
+      this.chunks.set(id,chunk);
     }
+    return chunk;
+  }
+
+  ensureWindowAround(x:number,z:number,force=false) {
+    const cx=Math.floor((x+this.chunkSize/2)/this.chunkSize);
+    const cz=Math.floor((z+this.chunkSize/2)/this.chunkSize);
+    if(!force&&cx===this.activeCenterCx&&cz===this.activeCenterCz)return false;
+    this.activeCenterCx=cx;this.activeCenterCz=cz;
+
+    const desired=new Set<string>();
+    for(let dz=-this.radius;dz<=this.radius;dz++) for(let dx=-this.radius;dx<=this.radius;dx++){
+      const tx=cx+dx,tz=cz+dz;
+      if(this.isHomeChunk(tx,tz))continue;
+      const chunk=this.ensureChunk(tx,tz);
+      if(!chunk)continue;
+      desired.add(chunk.id);
+      if(!this.tiles.has(chunk.id))this.createTile(chunk);
+    }
+
+    for(const id of [...this.activeChunkIds]){
+      if(desired.has(id)||this.materialized.has(id))continue;
+      this.removeVisualChunk(id);
+    }
+    this.activeChunkIds.clear();
+    for(const id of desired)this.activeChunkIds.add(id);
+    return true;
+  }
+
+  restoreKnownChunks(saved:CoarseChunkState[]) {
+    for(const state of saved){
+      if(!state||typeof state.id!=='string')continue;
+      this.chunks.set(state.id,structuredClone(state));
+    }
+    for(const id of this.activeChunkIds){
+      const chunk=this.chunks.get(id);
+      if(!chunk)continue;
+      if(!this.tiles.has(id))this.createTile(chunk);
+      else this.refreshMarker(chunk);
+    }
+  }
+
+  activeBounds() {
+    const span=(this.radius+.5)*this.chunkSize;
+    const centerX=(Number.isFinite(this.activeCenterCx)?this.activeCenterCx:0)*this.chunkSize;
+    const centerZ=(Number.isFinite(this.activeCenterCz)?this.activeCenterCz:0)*this.chunkSize;
+    return {minX:centerX-span,maxX:centerX+span,minZ:centerZ-span,maxZ:centerZ+span};
   }
 
   private colorForBiome(biome:ChunkBiome) {
@@ -114,6 +178,7 @@ export class CoarseWorldRuntime {
   }
 
   private createTile(chunk:CoarseChunkState) {
+    if(this.tiles.has(chunk.id))return;
     const material=new THREE.MeshStandardMaterial({
       color:this.colorForBiome(chunk.biome),roughness:1,metalness:0
     });
@@ -129,6 +194,31 @@ export class CoarseWorldRuntime {
     this.root.add(marker);
     this.markers.set(chunk.id,marker);
     this.refreshMarker(chunk);
+  }
+
+  private removeVisualChunk(chunkId:string) {
+    const tile=this.tiles.get(chunkId);
+    if(tile){
+      this.root.remove(tile);
+      tile.geometry.dispose();
+      const material=tile.material;
+      if(Array.isArray(material))material.forEach(x=>x.dispose());else material.dispose();
+      this.tiles.delete(chunkId);
+    }
+    const marker=this.markers.get(chunkId);
+    if(marker){
+      marker.traverse(object=>{
+        const mesh=object as THREE.Mesh;
+        if(mesh.isMesh){
+          mesh.geometry?.dispose();
+          const material=mesh.material;
+          if(Array.isArray(material))material.forEach(x=>x.dispose());else material?.dispose();
+        }
+      });
+      this.root.remove(marker);
+      this.markers.delete(chunkId);
+    }
+    this.activeChunkIds.delete(chunkId);
   }
 
   private refreshMarker(chunk:CoarseChunkState) {
@@ -255,8 +345,8 @@ export class CoarseWorldRuntime {
   }
 
   private regionId(cx:number,cz:number) {
-    const rx=Math.floor((cx+this.radius)/3);
-    const rz=Math.floor((cz+this.radius)/3);
+    const rx=Math.floor(cx/3);
+    const rz=Math.floor(cz/3);
     return `region_${rx}_${rz}`;
   }
 
@@ -293,7 +383,10 @@ export class CoarseWorldRuntime {
 
   private async requestRegions(ctx:UpdateContext) {
     this.regionPending=true;
-    const regions=this.aggregateRegions().slice(0,8);
+    const regions=this.aggregateRegions().sort((a,b)=>{
+      const score=(r:RegionState)=>(this.regionPolicies.has(r.id)?0:1000)+(100-r.food)+(100-r.water)+r.danger+(100-r.ecology)*.5;
+      return score(b)-score(a);
+    }).slice(0,8);
     const body:RegionDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,regions};
     try{
       const response=await fetch('/api/world/regions/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -311,7 +404,7 @@ export class CoarseWorldRuntime {
   private async requestWorld(ctx:UpdateContext) {
     this.worldPending=true;
     const regions=this.aggregateRegions();
-    const regionDecisions=regions.map(region=>this.regionPolicies.get(region.id)).filter((x):x is RegionDecision=>Boolean(x));
+    const regionDecisions=regions.map(region=>this.regionPolicies.get(region.id)).filter((x):x is RegionDecision=>Boolean(x)).slice(0,16);
     const body:WorldDecisionRequest={
       day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,
       summary:this.worldSummary(regions),regions:regionDecisions
@@ -364,11 +457,10 @@ export class CoarseWorldRuntime {
     }
   }
 
-  get worldHalf() { return (this.radius + .5) * this.chunkSize; }
-
   chunkAtWorld(x:number,z:number) {
     const cx=Math.floor((x+this.chunkSize/2)/this.chunkSize);
     const cz=Math.floor((z+this.chunkSize/2)/this.chunkSize);
+    if(this.isHomeChunk(cx,cz))return undefined;
     return this.chunks.get(`chunk_${cx}_${cz}`);
   }
 
@@ -404,6 +496,8 @@ export class CoarseWorldRuntime {
       lastSource:this.lastSource,
       lastBatchSize:this.lastBatchSize,
       materializedChunks:this.materialized.size,
+      activeChunks:this.activeChunkIds.size,
+      activeCenter:`${Number.isFinite(this.activeCenterCx)?this.activeCenterCx:0},${Number.isFinite(this.activeCenterCz)?this.activeCenterCz:0}`,
       recentFlowCount:this.recentFlowLog.length,
       lastFlowSummary:this.recentFlowLog.length?this.describeFlow(this.recentFlowLog[this.recentFlowLog.length-1]!):'—',
       regionDecisions:this.regionPolicies.size,

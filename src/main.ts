@@ -770,9 +770,8 @@ class TownGame {
       const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);dir.y=0;dir.normalize();
       const right=new THREE.Vector3(-dir.z,0,dir.x);const move=dir.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
       const old=this.camera.position.clone(),nx=old.x+move.x,nz=old.z+move.z;
-      const worldHalf=this.coarseWorld.worldHalf;
-      if(!this.isBlockedWorld(nx,old.z))this.camera.position.x=clamp(nx,-worldHalf+.6,worldHalf-.6);
-      if(!this.isBlockedWorld(this.camera.position.x,nz))this.camera.position.z=clamp(nz,-worldHalf+.6,worldHalf-.6);
+      if(!this.isBlockedWorld(nx,old.z))this.camera.position.x=nx;
+      if(!this.isBlockedWorld(this.camera.position.x,nz))this.camera.position.z=nz;
     }
     this.camera.position.y=1.7;
     this.playerPosition.x=this.camera.position.x;this.playerPosition.z=this.camera.position.z;
@@ -787,7 +786,9 @@ class TownGame {
       const forward=this.orbit.target.clone().sub(this.camera.position);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
       const right=new THREE.Vector3(-forward.z,0,forward.x);const move=forward.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
       const old=this.orbit.target.clone();this.orbit.target.add(move);
-      const worldHalf=this.coarseWorld.worldHalf;this.orbit.target.x=clamp(this.orbit.target.x,-worldHalf,worldHalf);this.orbit.target.z=clamp(this.orbit.target.z,-worldHalf,worldHalf);
+      const bounds=this.coarseWorld.activeBounds();
+      this.orbit.target.x=clamp(this.orbit.target.x,bounds.minX,bounds.maxX);
+      this.orbit.target.z=clamp(this.orbit.target.z,bounds.minZ,bounds.maxZ);
       const actual=this.orbit.target.clone().sub(old);this.camera.position.add(actual);
     }
     const spin=(this.keys.has('KeyQ')?1:0)-(this.keys.has('KeyE')?1:0);
@@ -859,10 +860,8 @@ class TownGame {
     this.camera.position.z=this.playerPosition.z;
     this.camera.position.y=1.7;
 
-    for(const saved of snapshot.coarseChunks||[]){
-      const current=this.coarseWorld.chunks.get(saved.id);
-      if(current)Object.assign(current,structuredClone(saved));
-    }
+    this.coarseWorld.restoreKnownChunks(snapshot.coarseChunks||[]);
+    this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z,true);
 
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
@@ -919,6 +918,7 @@ class TownGame {
 
   updateFineChunkMaterialization() {
     if(this.cameraMode!=='firstPerson')return;
+    this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z);
     const chunk=this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z);
     const targetId=chunk?.id;
     if(targetId===this.activeFineChunkId)return;
@@ -1549,7 +1549,7 @@ class TownGame {
 
   updateUi() {
     const world=this.coarseWorld.status();
-    ui.world.textContent=`远区 ${world.chunks} chunks · 细化 ${world.materializedChunks} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 💧${this.playerInventory.water} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
@@ -1640,13 +1640,12 @@ class TownGame {
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 
   randomPassableNear(p:Vec2,radius:number,chunkId?:string):Vec2 {
-    const h=this.coarseWorld.worldHalf;
     const chunk=chunkId?this.coarseWorld.chunks.get(chunkId):undefined;
     const half=this.coarseWorld.chunkSize/2-1;
-    const minX=chunk?chunk.cx*this.coarseWorld.chunkSize-half:-h+1;
-    const maxX=chunk?chunk.cx*this.coarseWorld.chunkSize+half:h-1;
-    const minZ=chunk?chunk.cz*this.coarseWorld.chunkSize-half:-h+1;
-    const maxZ=chunk?chunk.cz*this.coarseWorld.chunkSize+half:h-1;
+    const minX=chunk?chunk.cx*this.coarseWorld.chunkSize-half:Number.NEGATIVE_INFINITY;
+    const maxX=chunk?chunk.cx*this.coarseWorld.chunkSize+half:Number.POSITIVE_INFINITY;
+    const minZ=chunk?chunk.cz*this.coarseWorld.chunkSize-half:Number.NEGATIVE_INFINITY;
+    const maxZ=chunk?chunk.cz*this.coarseWorld.chunkSize+half:Number.POSITIVE_INFINITY;
     for(let i=0;i<60;i++){
       const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,minX,maxX));
       const z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,minZ,maxZ));
@@ -1657,8 +1656,9 @@ class TownGame {
 
   findPath(start:Vec2,end:Vec2):Vec2[] {
     const s={x:Math.round(start.x),z:Math.round(start.z)},g={x:Math.round(end.x),z:Math.round(end.z)};
-    const worldHalf=this.coarseWorld.worldHalf;
-    const passable=(x:number,z:number)=>Math.abs(x)<worldHalf&&Math.abs(z)<worldHalf&&(!this.blocked.has(keyOf(x,z))||(x===g.x&&z===g.z));
+    const margin=Math.max(24,Math.abs(g.x-s.x)+Math.abs(g.z-s.z)+12);
+    const minX=Math.min(s.x,g.x)-margin,maxX=Math.max(s.x,g.x)+margin,minZ=Math.min(s.z,g.z)-margin,maxZ=Math.max(s.z,g.z)+margin;
+    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&(!this.blocked.has(keyOf(x,z))||(x===g.x&&z===g.z));
     const open=[s],came=new Map<string,string>(),cost=new Map<string,number>([[keyOf(s.x,s.z),0]]);const goalKey=keyOf(g.x,g.z);let found=false;
     while(open.length&&cost.size<9000){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
     if(!found)return[];const rev:Vec2[]=[];let k=goalKey;while(k!==keyOf(s.x,s.z)){const [x,z]=k.split(',').map(Number);rev.push({x,z});const prev=came.get(k);if(!prev)break;k=prev;}return rev.reverse();

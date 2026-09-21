@@ -22,10 +22,6 @@ export interface FlowContext {
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const round=(v:number)=>Math.round(v*1000)/1000;
 
-function neighbors(a:CoarseChunkState,b:CoarseChunkState){
-  return Math.abs(a.cx-b.cx)+Math.abs(a.cz-b.cz)===1;
-}
-
 function pairId(a:CoarseChunkState,b:CoarseChunkState){
   return a.id<b.id?`${a.id}|${b.id}`:`${b.id}|${a.id}`;
 }
@@ -64,52 +60,55 @@ function resourceFlow(
 
 export function planConservedFlows(chunks:Iterable<CoarseChunkState>,ctx:FlowContext):WorldFlowRecord[] {
   const list=[...chunks];
+  const byCoord=new Map(list.map(chunk=>[`${chunk.cx},${chunk.cz}`,chunk]));
   const materialized=ctx.materialized??new Set<string>();
   const flows:WorldFlowRecord[]=[];
 
-  for(let i=0;i<list.length;i++){
-    const a=list[i]!;
-    if(materialized.has(a.id))continue;
-    for(let j=i+1;j<list.length;j++){
-      const b=list[j]!;
-      if(materialized.has(b.id)||!neighbors(a,b))continue;
+  const processPair=(a:CoarseChunkState,b:CoarseChunkState)=>{
+    if(materialized.has(a.id)||materialized.has(b.id))return;
 
-      const aPressure=migrationPressure(a),bPressure=migrationPressure(b);
-      const aAttract=attraction(a),bAttract=attraction(b);
-      let source:CoarseChunkState|undefined,target:CoarseChunkState|undefined;
-      if(aPressure>bPressure+12&&bAttract>aAttract+8){source=a;target=b;}
-      else if(bPressure>aPressure+12&&aAttract>bAttract+8){source=b;target=a;}
+    const aPressure=migrationPressure(a),bPressure=migrationPressure(b);
+    const aAttract=attraction(a),bAttract=attraction(b);
+    let source:CoarseChunkState|undefined,target:CoarseChunkState|undefined;
+    if(aPressure>bPressure+12&&bAttract>aAttract+8){source=a;target=b;}
+    else if(bPressure>aPressure+12&&aAttract>bAttract+8){source=b;target=a;}
 
-      if(source&&target&&source.population>1){
-        const policyScale=source.migrationPolicy==='evacuate'?1.8:source.migrationPolicy==='release'?1.0:.45;
-        const amount=round(Math.min(source.population*.025,1.25,Math.max(.08,(Math.abs(aPressure-bPressure)-8)*.012))*policyScale);
-        if(amount>0){
-          flows.push({
-            id:`${ctx.day}:${Math.floor(ctx.minuteOfDay)}:${pairId(a,b)}:migration`,
-            kind:'migration',fromChunkId:source.id,toChunkId:target.id,amount,day:ctx.day,minuteOfDay:ctx.minuteOfDay,
-            reason:`${source.migrationPolicy}_to_${target.migrationPolicy}`
-          });
-        }
-      }
-
-      for(const flow of [
-        resourceFlow('food_trade','food',a,b,ctx),
-        resourceFlow('wood_trade','wood',a,b,ctx),
-        resourceFlow('water_trade','water',a,b,ctx)
-      ]) if(flow)flows.push(flow);
-
-      let ecoSource=a,ecoTarget=b;
-      if(b.ecology>a.ecology){ecoSource=b;ecoTarget=a;}
-      const ecoGap=ecoSource.ecology-ecoTarget.ecology;
-      if(ecoGap>30&&ecoSource.ecology>65&&ecoTarget.ecology<52){
-        const amount=round(Math.min(.55,(ecoGap-20)*.012));
-        if(amount>0)flows.push({
-          id:`${ctx.day}:${Math.floor(ctx.minuteOfDay)}:${pairId(a,b)}:ecology`,
-          kind:'ecology_spread',fromChunkId:ecoSource.id,toChunkId:ecoTarget.id,amount,day:ctx.day,minuteOfDay:ctx.minuteOfDay,
-          reason:'biological_spread'
-        });
-      }
+    if(source&&target&&source.population>1){
+      const policyScale=source.migrationPolicy==='evacuate'?1.8:source.migrationPolicy==='release'?1.0:.45;
+      const amount=round(Math.min(source.population*.025,1.25,Math.max(.08,(Math.abs(aPressure-bPressure)-8)*.012))*policyScale);
+      if(amount>0)flows.push({
+        id:`${ctx.day}:${Math.floor(ctx.minuteOfDay)}:${pairId(a,b)}:migration`,
+        kind:'migration',fromChunkId:source.id,toChunkId:target.id,amount,day:ctx.day,minuteOfDay:ctx.minuteOfDay,
+        reason:`${source.migrationPolicy}_to_${target.migrationPolicy}`
+      });
     }
+
+    for(const flow of [
+      resourceFlow('food_trade','food',a,b,ctx),
+      resourceFlow('wood_trade','wood',a,b,ctx),
+      resourceFlow('water_trade','water',a,b,ctx)
+    ]) if(flow)flows.push(flow);
+
+    let ecoSource=a,ecoTarget=b;
+    if(b.ecology>a.ecology){ecoSource=b;ecoTarget=a;}
+    const ecoGap=ecoSource.ecology-ecoTarget.ecology;
+    if(ecoGap>30&&ecoSource.ecology>65&&ecoTarget.ecology<52){
+      const amount=round(Math.min(.55,(ecoGap-20)*.012));
+      if(amount>0)flows.push({
+        id:`${ctx.day}:${Math.floor(ctx.minuteOfDay)}:${pairId(a,b)}:ecology`,
+        kind:'ecology_spread',fromChunkId:ecoSource.id,toChunkId:ecoTarget.id,amount,day:ctx.day,minuteOfDay:ctx.minuteOfDay,
+        reason:'biological_spread'
+      });
+    }
+  };
+
+  // Only visit east/south edges. This is O(n) in known chunks instead of O(n²).
+  for(const a of list){
+    if(materialized.has(a.id))continue;
+    const east=byCoord.get(`${a.cx+1},${a.cz}`);
+    const south=byCoord.get(`${a.cx},${a.cz+1}`);
+    if(east)processPair(a,east);
+    if(south)processPair(a,south);
   }
   return flows;
 }
