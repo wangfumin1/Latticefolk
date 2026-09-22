@@ -2,8 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {
-  CoarseChunkState, PersistedFineChunk, WorldPersistenceMeta, WorldPersistenceSnapshot,
-  NpcState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeState, WildlifeTraits, WorldObjectState
+  CoarseChunkState, PersistedFineChunk, PersistedWildlifeTransfer, WorldPersistenceMeta, WorldPersistenceSnapshot,
+  NpcState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeMigrationEvent, WildlifeState, WildlifeTraits, WorldObjectState
 } from '../src/types.js';
 import { computeEvolutionStatistics } from '../src/world/evolution.js';
 
@@ -68,6 +68,7 @@ export class WorldPersistence {
         birth_habitat_json TEXT,
         death_habitat_json TEXT,
         habitat_exposure_json TEXT,
+        migration_history_json TEXT,
         origin TEXT NOT NULL DEFAULT 'founder',
         offspring_count INTEGER NOT NULL DEFAULT 0,
         reproductive_success INTEGER NOT NULL DEFAULT 0,
@@ -77,6 +78,12 @@ export class WorldPersistence {
       CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_species_generation ON wildlife_lineage(species,generation);
       CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_mother ON wildlife_lineage(mother_id);
       CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_father ON wildlife_lineage(father_id);
+
+      CREATE TABLE IF NOT EXISTS wildlife_transfers (
+        entity_id TEXT PRIMARY KEY,
+        transfer_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
     const fineColumns=this.db.prepare("PRAGMA table_info(fine_chunks)").all() as Array<{name:string}>;
     if(!fineColumns.some(column=>column.name==='wildlife_json')){
@@ -94,6 +101,9 @@ export class WorldPersistence {
     }
     if(!lineageColumns.some(column=>column.name==='habitat_exposure_json')){
       this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN habitat_exposure_json TEXT");
+    }
+    if(!lineageColumns.some(column=>column.name==='migration_history_json')){
+      this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN migration_history_json TEXT");
     }
   }
 
@@ -118,8 +128,8 @@ export class WorldPersistence {
     const upsertLineage=this.db.prepare(`
       INSERT INTO wildlife_lineage(
         entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,origin,offspring_count,reproductive_success,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,origin,offspring_count,reproductive_success,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(entity_id) DO UPDATE SET
         species=excluded.species,
         mother_id=COALESCE(wildlife_lineage.mother_id,excluded.mother_id),
@@ -135,11 +145,17 @@ export class WorldPersistence {
         birth_habitat_json=COALESCE(wildlife_lineage.birth_habitat_json,excluded.birth_habitat_json),
         death_habitat_json=COALESCE(wildlife_lineage.death_habitat_json,excluded.death_habitat_json),
         habitat_exposure_json=COALESCE(excluded.habitat_exposure_json,wildlife_lineage.habitat_exposure_json),
+        migration_history_json=COALESCE(excluded.migration_history_json,wildlife_lineage.migration_history_json),
         origin=CASE WHEN wildlife_lineage.origin='reproduction' OR excluded.origin='reproduction' THEN 'reproduction' ELSE 'founder' END,
         offspring_count=MAX(wildlife_lineage.offspring_count,excluded.offspring_count),
         reproductive_success=MAX(wildlife_lineage.reproductive_success,excluded.reproductive_success),
         updated_at=excluded.updated_at
     `);
+    const upsertTransfer=this.db.prepare(`
+      INSERT INTO wildlife_transfers(entity_id,transfer_json,updated_at) VALUES(?,?,?)
+      ON CONFLICT(entity_id) DO UPDATE SET transfer_json=excluded.transfer_json,updated_at=excluded.updated_at
+    `);
+    const deleteTransfer=this.db.prepare('DELETE FROM wildlife_transfers WHERE entity_id = ?');
     const deleteChunk=this.db.prepare('DELETE FROM coarse_chunks WHERE id = ?');
     const deleteFine=this.db.prepare('DELETE FROM fine_chunks WHERE chunk_id = ?');
 
@@ -168,9 +184,17 @@ export class WorldPersistence {
           record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,
           record.birthHabitat?JSON.stringify(record.birthHabitat):null,record.deathHabitat?JSON.stringify(record.deathHabitat):null,
           record.habitatExposure?JSON.stringify(record.habitatExposure):null,
+          record.migrationHistory?JSON.stringify(record.migrationHistory):null,
           record.origin==='reproduction'?'reproduction':'founder',record.offspringCount,
           record.reproductiveSuccess?1:0,savedAt
         );
+      }
+
+      const transferIds=new Set((data.wildlifeTransfers||[]).map(transfer=>transfer.entityId));
+      const existingTransfers=this.db.prepare('SELECT entity_id FROM wildlife_transfers').all() as Array<{entity_id:string}>;
+      for(const row of existingTransfers)if(!transferIds.has(row.entity_id))deleteTransfer.run(row.entity_id);
+      for(const transfer of data.wildlifeTransfers||[]){
+        upsertTransfer.run(transfer.entityId,JSON.stringify(transfer),savedAt);
       }
     });
 
@@ -185,15 +209,16 @@ export class WorldPersistence {
     const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
     const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
+    const transferRows=this.db.prepare('SELECT transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{transfer_json:string}>;
     const lineageRows=this.db.prepare(`
       SELECT entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,origin,offspring_count,reproductive_success
+             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,origin,offspring_count,reproductive_success
       FROM wildlife_lineage ORDER BY birth_day,entity_id
     `).all() as Array<{
       entity_id:string;species:WildlifeLineageRecord['species'];mother_id:string|null;father_id:string|null;
       birth_day:number;death_day:number|null;death_reason:WildlifeLineageRecord['deathReason']|null;generation:number;
       birth_chunk:string;death_chunk:string|null;traits_at_birth_json:string;traits_at_death_json:string|null;
-      birth_habitat_json:string|null;death_habitat_json:string|null;habitat_exposure_json:string|null;origin:'founder'|'reproduction';
+      birth_habitat_json:string|null;death_habitat_json:string|null;habitat_exposure_json:string|null;migration_history_json:string|null;origin:'founder'|'reproduction';
       offspring_count:number;reproductive_success:number;
     }>;
 
@@ -204,6 +229,9 @@ export class WorldPersistence {
       objectStates:parse<WorldObjectState[]>(row.object_json,[]),
       wildlifeStates:parse<WildlifeState[]>(row.wildlife_json,[])
     }));
+    const wildlifeTransfers=transferRows
+      .map(row=>parse<PersistedWildlifeTransfer|null>(row.transfer_json,null))
+      .filter((value):value is PersistedWildlifeTransfer=>Boolean(value));
     const wildlifeLineage:WildlifeLineageRecord[]=lineageRows.map(row=>({
       entityId:row.entity_id,
       species:row.species,
@@ -220,6 +248,7 @@ export class WorldPersistence {
       birthHabitat:row.birth_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.birth_habitat_json,undefined):undefined,
       deathHabitat:row.death_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.death_habitat_json,undefined):undefined,
       habitatExposure:row.habitat_exposure_json?parse<WildlifeHabitatExposure|undefined>(row.habitat_exposure_json,undefined):undefined,
+      migrationHistory:row.migration_history_json?parse<WildlifeMigrationEvent[]>(row.migration_history_json,[]):undefined,
       origin:row.origin==='reproduction'?'reproduction':'founder',
       offspringCount:Number(row.offspring_count)||0,
       reproductiveSuccess:Boolean(row.reproductive_success)
@@ -236,6 +265,7 @@ export class WorldPersistence {
       homeNpcs:homeRow?parse<NpcState[]>(homeRow.npc_json,[]):[],
       homeObjects:homeRow?parse<WorldObjectState[]>(homeRow.object_json,[]):[],
       wildlifeLineage,
+      wildlifeTransfers,
       savedAt:Number(metaRow.saved_at)||undefined
     };
   }
@@ -250,7 +280,8 @@ export class WorldPersistence {
     const coarse=(this.db.prepare('SELECT COUNT(*) AS n FROM coarse_chunks').get() as {n:number}).n;
     const fine=(this.db.prepare('SELECT COUNT(*) AS n FROM fine_chunks').get() as {n:number}).n;
     const lineage=(this.db.prepare('SELECT COUNT(*) AS n FROM wildlife_lineage').get() as {n:number}).n;
-    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,coarseChunks:coarse,fineChunks:fine,lineageRecords:lineage };
+    const transfers=(this.db.prepare('SELECT COUNT(*) AS n FROM wildlife_transfers').get() as {n:number}).n;
+    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,coarseChunks:coarse,fineChunks:fine,lineageRecords:lineage,pendingWildlifeTransfers:transfers };
   }
 
   clear() {
@@ -260,6 +291,7 @@ export class WorldPersistence {
       this.db.prepare('DELETE FROM fine_chunks').run();
       this.db.prepare('DELETE FROM home_state').run();
       this.db.prepare('DELETE FROM wildlife_lineage').run();
+      this.db.prepare('DELETE FROM wildlife_transfers').run();
     });
     tx();
     return {ok:true};

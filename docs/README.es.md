@@ -30,6 +30,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 - Archivo genealógico duradero y observabilidad evolutiva: los ancestros sobreviven a la muerte y descarga del chunk en SQLite; se distinguen fundadores de nacimientos reproductivos y se miden causas de muerte, descendencia, éxito reproductivo y medias/varianzas/tendencias de rasgos por generación en God View.
 - Evidencia de presión selectiva por bioma: el linaje conserva el hábitat de origen/muerte y God View muestra diferencias normalizadas entre reproductores y cohorte, consistencia entre generaciones y tamaño de muestra sin presentar correlación como causalidad.
 - Exposición de hábitat durante la vida observada: solo se acumula mientras el individuo existe en simulación fine, con medias ambientales ponderadas por tiempo, duración por bioma/chunk y transiciones observadas; los intervalos coarse no se inventan como historia individual y God View compara bioma de origen con bioma dominante observado.
+- Migración fine con identidad persistente: los individuos nombrados solo pueden migrar a chunks adyacentes legales y conservan entity ID, padres, generación, traits, embarazo e historial de hábitat; la simulación determinista controla capacidad de carga, conservación coarse, peso representativo, tránsito persistente y provenance.
 
 ## Inicio rápido
 
@@ -53,7 +54,7 @@ God View también es estrictamente un observador externo y no aparece en la perc
 
 ## Hoja de ruta
 
-✅ coarse↔fine → ✅ SQLite → ✅ flujos conservados → ✅ decisiones Region / World → ✅ streaming dinámico → ✅ asentamientos procedurales semánticos → ✅ cadenas de producción → ✅ primera ecología de ciclo vital → ✅ genealogía duradera / estadísticas evolutivas → ✅ observabilidad de presión selectiva y adaptación por bioma → ✅ exposición de hábitat observada durante la vida → **migración fine con identidad, competencia de nicho y selección por enfermedad** → ecología ampliada → física.
+✅ coarse↔fine → ✅ SQLite → ✅ flujos conservados → ✅ decisiones Region / World → ✅ streaming dinámico → ✅ asentamientos procedurales semánticos → ✅ cadenas de producción → ✅ primera ecología de ciclo vital → ✅ genealogía duradera / estadísticas evolutivas → ✅ observabilidad de presión selectiva y adaptación por bioma → ✅ exposición de hábitat observada durante la vida → ✅ migración fine con identidad → **competencia de nicho, movimiento estacional, transmisión de enfermedades y más especies** → ecología ampliada → física.
 
 Consulta [Roadmap](roadmap.md), [Architecture](architecture.md) y [Decision providers](decision-providers.md).
 

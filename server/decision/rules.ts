@@ -186,7 +186,14 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     let action:WildlifeAction='wander';
     let targetObjectId:string|undefined;
     let targetWildlifeId:string|undefined;
+    let targetChunkId:string|undefined;
     let reasonCode='wildlife_wander';
+    const habitatScore=(x:typeof entry.world.currentHabitat)=>
+      x.ecology*.28+x.food*.25+x.water*.20+(100-x.danger)*.17+(1-Math.min(1.5,x.density))*10-x.settlementLevel*2;
+    const currentHabitat=entry.world.currentHabitat;
+    const migrationTarget=[...entry.world.nearbyChunks]
+      .sort((a,b)=>habitatScore(b)-habitatScore(a)||a.id.localeCompare(b.id))[0];
+    const migrationPressure=currentHabitat.density>=.9||currentHabitat.ecology<38||currentHabitat.water<30||currentHabitat.food<34||currentHabitat.danger>70;
 
     if(animal.species!=='fox'&&nearbyFox&&entry.allowedActions.includes('flee')){
       action='flee';targetWildlifeId=nearbyFox.id;reasonCode='predator_nearby';
@@ -209,6 +216,8 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
       action='rest';reasonCode='disease_recovery';
     }else if(animal.energy<=24&&entry.allowedActions.includes('rest')){
       action='rest';reasonCode='low_energy';
+    }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&habitatScore(migrationTarget)>=habitatScore(currentHabitat)+8){
+      action='migrate';targetChunkId=migrationTarget.id;reasonCode='habitat_migration';
     }else if(animal.ageDays>90&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
       action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';
     }else if(entry.allowedActions.includes('forage')){
@@ -218,7 +227,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     }
 
     if(!entry.allowedActions.includes(action))action=entry.allowedActions[0]||'rest';
-    return {wildlifeId:animal.id,source:'fallback',action,targetObjectId,targetWildlifeId,confidence:.55,reasonCode};
+    return {wildlifeId:animal.id,source:'fallback',action,targetObjectId,targetWildlifeId,targetChunkId,confidence:.55,reasonCode};
   });
   return {source:'fallback',decisions};
 }

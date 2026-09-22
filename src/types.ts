@@ -245,7 +245,7 @@ export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate'
 export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
 export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'fox';
-export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate';
+export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate' | 'migrate';
 export type WorldSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 
 export interface PlantBiomassState {
@@ -302,6 +302,16 @@ export type WildlifeSelectionSignal = 'insufficient' | 'weak' | 'persistent';
 
 export type WildlifeDeathReason = 'predation' | 'starvation' | 'dehydration' | 'disease' | 'senescence' | 'other';
 
+export interface WildlifeMigrationEvent {
+  fromChunkId: string;
+  toChunkId: string;
+  day: number;
+  fromBiome: ChunkBiome;
+  toBiome: ChunkBiome;
+  representedPopulation: number;
+  reason: 'behavioral_migration';
+}
+
 export interface WildlifeLineageRecord {
   entityId: string;
   species: WildlifeSpecies;
@@ -318,6 +328,7 @@ export interface WildlifeLineageRecord {
   birthHabitat?: WildlifeHabitatSnapshot;
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
+  migrationHistory?: WildlifeMigrationEvent[];
   origin: 'founder' | 'reproduction';
   offspringCount: number;
   reproductiveSuccess: boolean;
@@ -393,6 +404,7 @@ export interface WildlifeState {
   currentAction: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;
+  targetChunkId?: string;
   lastDecisionAt: number;
   birthDay: number;
   diseaseLoad?: number;
@@ -401,6 +413,22 @@ export interface WildlifeState {
   pregnantById?: string;
   pregnantUntilDay?: number;
   lastBirthDay?: number;
+  /** Coarse population represented by this named fine individual after identity-preserving migration. */
+  representedPopulation?: number;
+}
+
+export interface WildlifeMigrationCandidate {
+  id: string;
+  biome: ChunkBiome;
+  distance: number;
+  ecology: number;
+  food: number;
+  water: number;
+  danger: number;
+  settlementLevel: number;
+  population: number;
+  carryingCapacity: number;
+  density: number;
 }
 
 export interface WildlifeDecisionRequest {
@@ -409,6 +437,8 @@ export interface WildlifeDecisionRequest {
     gameTime: string;
     minuteOfDay: number;
     weather: string;
+    currentHabitat: WildlifeMigrationCandidate;
+    nearbyChunks: WildlifeMigrationCandidate[];
     nearbyResources: Array<{ id:string; tags:string[]; distance:number; resourceAmount?:number }>;
     nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; sex:'female'|'male'; ageDays:number; distance:number; health:number; currentAction:WildlifeAction; mateAvailable:boolean }>;
   };
@@ -420,6 +450,7 @@ export interface WildlifeDecisionResponse {
   action: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;
+  targetChunkId?: string;
   confidence: number;
   reasonCode: string;
 }
@@ -569,6 +600,15 @@ export interface WorldDecisionResponse {
 }
 
 
+export interface PersistedWildlifeTransfer {
+  entityId: string;
+  state: WildlifeState;
+  fromChunkId: string;
+  toChunkId: string;
+  representedPopulation: number;
+  transferredDay: number;
+}
+
 export interface PersistedFineChunk {
   chunkId: string;
   npcStates: NpcState[];
@@ -592,5 +632,6 @@ export interface WorldPersistenceSnapshot {
   homeNpcs: NpcState[];
   homeObjects: WorldObjectState[];
   wildlifeLineage?: WildlifeLineageRecord[];
+  wildlifeTransfers?: PersistedWildlifeTransfer[];
   savedAt?: number;
 }
