@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
-import { computeEvolutionStatistics, lineageAncestors } from './world/evolution';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -936,6 +936,7 @@ class TownGame {
     this.persistenceSaveInFlight=true;
     this.lastPersistenceSaveAt=now();
     try{
+      this.flushWildlifeHabitatExposure();
       const snapshot=this.buildWorldSnapshot();
       const response=await fetch('/api/world/state',{
         method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
@@ -951,6 +952,7 @@ class TownGame {
   flushWorldBeacon() {
     if(!this.persistenceReady)return;
     try{
+      this.flushWildlifeHabitatExposure();
       const payload=JSON.stringify(this.buildWorldSnapshot());
       navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
     }catch{}
@@ -1089,6 +1091,7 @@ class TownGame {
     const archived=this.wildlifeLineage.get(state.id);
     if(archived?.deathDay!==undefined)return false;
     this.ensureWildlifeLineage(state);
+    this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
@@ -1192,6 +1195,7 @@ class TownGame {
     const diseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
     for(const id of runtime.wildlifeIds){
       const animal=this.wildlife.get(id);if(!animal)continue;
+      this.endWildlifeHabitatObservation(animal.state);
       wildlifeStates.push(structuredClone(animal.state));
       currentWildlifeCounts[animal.state.species]=(currentWildlifeCounts[animal.state.species]||0)+1;
       diseaseTotals[animal.state.species]=(diseaseTotals[animal.state.species]||0)+(animal.state.diseaseLoad||0);
@@ -1280,6 +1284,7 @@ class TownGame {
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
       s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
+      this.recordWildlifeHabitatExposure(s);
     }
     if(!this.aiPaused&&!this.wildlifeDecisionPending&&this.wildlife.size&&now()>=this.nextWildlifeBatchAt){
       void this.requestWildlifeBatch();
@@ -1546,6 +1551,47 @@ class TownGame {
     };
   }
 
+  flushWildlifeHabitatExposure() {
+    for(const animal of this.wildlife.values()){
+      if(!animal.removed)this.recordWildlifeHabitatExposure(animal.state,true);
+    }
+  }
+
+  beginWildlifeHabitatObservation(state:WildlifeState) {
+    const record=this.ensureWildlifeLineage(state);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    if(!habitat)return;
+    const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,0);
+    exposure.lastObservedDay=this.day+this.minuteOfDay/1440;
+    exposure.lastChunk=state.chunkId;
+    exposure.lastBiome=habitat.biome;
+    record.habitatExposure=exposure;
+  }
+
+  recordWildlifeHabitatExposure(state:WildlifeState,force=false) {
+    const record=this.ensureWildlifeLineage(state);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    if(!habitat)return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    if(!record.habitatExposure||record.habitatExposure.lastObservedDay===undefined){
+      this.beginWildlifeHabitatObservation(state);
+      return;
+    }
+    const elapsed=Math.max(0,currentDay-record.habitatExposure.lastObservedDay);
+    const sameChunk=record.habitatExposure.lastChunk===state.chunkId;
+    if(elapsed<=0||(!force&&sameChunk&&elapsed<.02))return;
+    const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,elapsed);
+    exposure.lastObservedDay=currentDay;
+    record.habitatExposure=exposure;
+    this.lineageEpoch++;
+  }
+
+  endWildlifeHabitatObservation(state:WildlifeState) {
+    this.recordWildlifeHabitatExposure(state,true);
+    const exposure=this.wildlifeLineage.get(state.id)?.habitatExposure;
+    if(exposure)exposure.lastObservedDay=undefined;
+  }
+
   ensureWildlifeLineage(state:WildlifeState) {
     const existing=this.wildlifeLineage.get(state.id);
     if(existing){
@@ -1611,6 +1657,7 @@ class TownGame {
 
   removeWildlife(animal:WildlifeRuntime,reason:WildlifeDeathReason) {
     if(animal.removed)return;
+    this.recordWildlifeHabitatExposure(animal.state,true);
     const currentDay=this.day+this.minuteOfDay/1440;
     const record=this.ensureWildlifeLineage(animal.state);
     if(record.deathDay===undefined){
@@ -1619,6 +1666,7 @@ class TownGame {
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
       record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId);
+      if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
     animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
@@ -2226,10 +2274,17 @@ class TownGame {
         <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
         ${entry.biomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
-            <b>${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
+            <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
             <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+          </div>`).join('')}
+        ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
+            <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
+            <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
@@ -2240,6 +2295,7 @@ class TownGame {
       <div class="evo-lineage">
         <b>${i18n.t('evolution.lineage')}</b> · ${this.escape(selected.entityId)} · G${selected.generation} · offspring ${selected.offspringCount}
         <div>${ancestors.length?ancestors.map(record=>`${this.escape(record.entityId)} (G${record.generation}${record.deathDay!==undefined?' †':''})`).join(' ← '):i18n.t('evolution.noAncestors')}</div>
+        ${selected.habitatExposure?`<div>${i18n.t('evolution.exposure')} ${selected.habitatExposure.observedDays.toFixed(2)}d · ${i18n.t('evolution.dominantBiome')} ${this.escape(dominantWildlifeExposureBiome(selected.habitatExposure)||'—')} · ${i18n.t('evolution.transitions')} ${selected.habitatExposure.observedTransitions}</div>`:''}
         ${selectedStats?.cohorts.length?`<div class="evo-cohorts">${selectedStats.cohorts.slice(-6).map(cohort=>`G${cohort.generation}: n=${cohort.population}, μw=${trait(cohort.traitMean.wariness)}, var=${trait(cohort.traitVariance.wariness)}`).join('<br>')}</div>`:''}
       </div>`:'';
 

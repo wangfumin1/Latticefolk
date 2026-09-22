@@ -34,6 +34,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},
       birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
+      habitatExposure:{
+        observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53},
+        biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:0,lastChunk:'chunk_2_-1',lastBiome:'plains'
+      },
       origin:'founder',offspringCount:1,reproductiveSuccess:true
     }]
   };
@@ -47,6 +51,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
   assert.equal(loaded.wildlifeLineage?.[0]?.birthHabitat?.biome,'plains');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.biomeDays.plains,1.5);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
 
@@ -93,6 +99,10 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
       entityId:'rabbit_child',species:'rabbit',motherId:'rabbit_mother',fatherId:'rabbit_father',
       birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
       birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
+      habitatExposure:{
+        observedDays:.5,habitatMean:{ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
+        biomeDays:{forest:.5},chunkDays:{chunk_0_0:.5},observedTransitions:0,lastChunk:'chunk_0_0',lastBiome:'forest'
+      },
       origin:'reproduction',offspringCount:0,reproductiveSuccess:false
     }]
   };
@@ -100,6 +110,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   const migrated=store.load()?.wildlifeLineage?.[0];
   assert.equal(migrated?.origin,'reproduction');
   assert.equal(migrated?.birthHabitat?.biome,'forest');
+  assert.equal(migrated?.habitatExposure?.observedDays,.5);
+  assert.equal(migrated?.habitatExposure?.lastBiome,'forest');
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
