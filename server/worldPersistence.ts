@@ -272,7 +272,8 @@ export class WorldPersistence {
 
   evolutionStats() {
     const snapshot=this.load();
-    return computeEvolutionStatistics(snapshot?.wildlifeLineage||[]);
+    const asOfDay=snapshot?snapshot.meta.day+snapshot.meta.minuteOfDay/1440:undefined;
+    return computeEvolutionStatistics(snapshot?.wildlifeLineage||[],asOfDay);
   }
 
   stats() {

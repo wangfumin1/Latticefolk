@@ -383,6 +383,40 @@ export interface WildlifeGenerationCohortStats {
   traitVariance: WildlifeTraits;
 }
 
+export type WildlifeFitnessExposureDimension = 'competitionPressure' | 'seasonalSuitability' | 'diseasePressure';
+export type WildlifeFitnessBand = 'low' | 'medium' | 'high';
+
+export interface WildlifeFitnessBandStats {
+  band: WildlifeFitnessBand;
+  population: number;
+  eligiblePopulation: number;
+  living: number;
+  deaths: number;
+  breeders: number;
+  breederRate: number;
+  offspringMean: number;
+  lifespanMean: number;
+  exposureMean: number;
+  traitMean: WildlifeTraits;
+  breederTraitMean: WildlifeTraits;
+  selectionDifferential: WildlifeTraits;
+}
+
+export interface WildlifeHabitatFitnessStats {
+  dimension: WildlifeFitnessExposureDimension;
+  sampleSize: number;
+  reproductionEligibleSamples: number;
+  lifespanSamples: number;
+  observedExposureDaysMean: number;
+  exposureMean: number;
+  breederExposureMean: number | null;
+  nonBreederExposureMean: number | null;
+  reproductionAssociation: number | null;
+  offspringAssociation: number | null;
+  lifespanAssociation: number | null;
+  bands: WildlifeFitnessBandStats[];
+}
+
 export interface WildlifeBiomeSelectionStats {
   basis: 'origin' | 'lifetime';
   biome: ChunkBiome;
@@ -423,6 +457,7 @@ export interface WildlifeEvolutionStats {
   cohorts: WildlifeGenerationCohortStats[];
   biomeSelection: WildlifeBiomeSelectionStats[];
   lifetimeBiomeSelection: WildlifeBiomeSelectionStats[];
+  exposureFitness: WildlifeHabitatFitnessStats[];
 }
 
 export interface WildlifeState {

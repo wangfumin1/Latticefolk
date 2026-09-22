@@ -120,3 +120,9 @@ Wildlife disease now propagates through several explicit mechanisms instead of o
 Fine animals also exchange disease pressure through actual nearby contacts, making identity-preserving migration and predator/prey proximity relevant to disease history. God View can inspect aggregate disease pressure and the strongest transmission direction, and lineage exposure retains observed disease pressure for future selection analysis.
 
 The next ecology step is additional species/predators plus explicit fitness-by-habitat analysis that combines competition, seasonal suitability, disease exposure, survival and reproductive success.
+
+## Implemented milestone: fitness-by-habitat evidence
+
+Evolution observability now links measured lifetime environment to concrete outcomes. For competition, seasonal suitability and disease pressure, God View can inspect whether higher exposure is associated with reproduction, offspring count or lifespan, and compare breeder rates and trait differentials across low/medium/high exposure cohorts. Living juveniles are right-censored until they have had a reproductive opportunity, while juvenile deaths remain completed fitness outcomes; insufficient or zero-variance samples are shown as unavailable rather than as a false zero correlation. This is a measurable bridge from community ecology to lineage success without presenting correlation as proof of selection causality.
+
+The next ecology expansion is additional species and predators. Their new trophic relationships should feed the same evidence layer so future worlds can measure predator pressure, prey specialization, niche displacement and multi-species adaptation across many generations.

@@ -11,6 +11,7 @@ import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
+import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -180,6 +181,7 @@ class TownGame {
   wildlifeTransfers = new Map<string,PersistedWildlifeTransfer>();
   lineageEpoch = 0;
   evolutionCacheEpoch = -1;
+  evolutionCacheDay = -1;
   evolutionCache: WildlifeEvolutionStats[] = [];
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
@@ -1778,12 +1780,7 @@ class TownGame {
   }
 
   wildlifeLifeHistory(species:WildlifeSpecies) {
-    return ({
-      rabbit:{adultAge:90,maxAge:2200,gestationDays:5,birthCooldown:8,litterMin:1,litterMax:3},
-      deer:{adultAge:300,maxAge:5200,gestationDays:18,birthCooldown:32,litterMin:1,litterMax:1},
-      boar:{adultAge:260,maxAge:4300,gestationDays:12,birthCooldown:24,litterMin:1,litterMax:2},
-      fox:{adultAge:240,maxAge:1900,gestationDays:8,birthCooldown:20,litterMin:1,litterMax:2}
-    } as const)[species];
+    return getWildlifeLifeHistory(species);
   }
 
   deterministicUnit(key:string) {
@@ -1947,9 +1944,12 @@ class TownGame {
   }
 
   evolutionStatistics() {
-    if(this.evolutionCacheEpoch!==this.lineageEpoch){
-      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values());
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const eligibilityDay=Math.floor(currentDay);
+    if(this.evolutionCacheEpoch!==this.lineageEpoch||this.evolutionCacheDay!==eligibilityDay){
+      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values(),currentDay);
       this.evolutionCacheEpoch=this.lineageEpoch;
+      this.evolutionCacheDay=eligibilityDay;
     }
     return this.evolutionCache;
   }
@@ -2572,6 +2572,18 @@ class TownGame {
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
             <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${Number(selection.habitatMean.diseasePressure||0).toFixed(0)}</div>
           </div>`).join('')}
+        ${entry.exposureFitness.filter(fitness=>fitness.sampleSize>=3).map(fitness=>{
+          const label=fitness.dimension==='competitionPressure'?i18n.t('evolution.competition'):fitness.dimension==='seasonalSuitability'?i18n.t('evolution.seasonalSuitability'):i18n.t('evolution.diseasePressure');
+          const band=(name:'low'|'medium'|'high')=>fitness.bands.find(x=>x.band===name);
+          const low=band('low'),mid=band('medium'),high=band('high');
+          return `
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.fitness')} · ${label}</b> · n=${fitness.sampleSize} · eligible ${fitness.reproductionEligibleSamples} · dead ${fitness.lifespanSamples} · obs ${fitness.observedExposureDaysMean.toFixed(2)}d
+            <div>r(reproduce) ${fitness.reproductionAssociation===null?'—':fitness.reproductionAssociation.toFixed(2)} · r(offspring) ${fitness.offspringAssociation===null?'—':fitness.offspringAssociation.toFixed(2)} · r(lifespan) ${fitness.lifespanAssociation===null?'—':fitness.lifespanAssociation.toFixed(2)}</div>
+            <div class="evo-traits">${i18n.t('evolution.low')} ${low?.eligiblePopulation||0}/${percent(low?.breederRate||0)} · ${i18n.t('evolution.medium')} ${mid?.eligiblePopulation||0}/${percent(mid?.breederRate||0)} · ${i18n.t('evolution.high')} ${high?.eligiblePopulation||0}/${percent(high?.breederRate||0)}</div>
+            <div class="evo-traits">breeder μ ${fitness.breederExposureMean===null?'—':fitness.breederExposureMean.toFixed(1)} · non-breeder μ ${fitness.nonBreederExposureMean===null?'—':fitness.nonBreederExposureMean.toFixed(1)}</div>
+          </div>`;
+        }).join('')}
       </div>`).join('');
 
     const selected=this.selectedEntity?.type==='wildlife'?this.wildlifeLineage.get(this.selectedEntity.id):undefined;
