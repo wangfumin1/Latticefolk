@@ -90,35 +90,39 @@ function normalizedDifferential(difference:WildlifeTraits,records:WildlifeLineag
 }
 
 function consistencyAcrossGenerations(records:WildlifeLineageRecord[],overall:WildlifeTraits) {
-  const out=zeroTraits();
+  const ratio=zeroTraits();
+  const comparable=zeroTraits();
   const generations=[...new Set(records.map(record=>record.generation))];
   for(const trait of TRAITS){
     const expected=Math.sign(overall[trait]);
-    if(expected===0){out[trait]=0;continue;}
-    let comparable=0,same=0;
+    if(expected===0)continue;
+    let same=0;
     for(const generation of generations){
       const cohort=records.filter(record=>record.generation===generation);
       const breeders=cohort.filter(record=>record.offspringCount>0);
       if(cohort.length<2||!breeders.length)continue;
       const diff=traitMean(breeders)[trait]-traitMean(cohort)[trait];
       if(Math.abs(diff)<=1e-9)continue;
-      comparable++;
+      comparable[trait]++;
       if(Math.sign(diff)===expected)same++;
     }
-    out[trait]=comparable?same/comparable:0;
+    ratio[trait]=comparable[trait]?same/comparable[trait]:0;
   }
-  return out;
+  return {ratio,comparable};
 }
 
 function signalForTrait(
   population:number,
   breeders:number,
   generations:number,
+  comparableGenerations:number,
   normalized:number,
-  consistency:number
+  consistency:number,
+  traitTrend:number
 ):WildlifeSelectionSignal {
-  if(population<6||breeders<2||generations<2)return 'insufficient';
-  if(Math.abs(normalized)>=.20&&consistency>=.67)return 'persistent';
+  if(population<6||breeders<2||generations<2||comparableGenerations<2)return 'insufficient';
+  const aligned=Math.sign(normalized)!==0&&Math.sign(normalized)===Math.sign(traitTrend);
+  if(Math.abs(normalized)>=.20&&consistency>=.67&&aligned)return 'persistent';
   return 'weak';
 }
 
@@ -132,11 +136,15 @@ function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionS
     const differential=subtractTraits(breederAverage,average);
     const normalized=normalizedDifferential(differential,cohortRecords,average);
     const consistency=consistencyAcrossGenerations(cohortRecords,differential);
+    const trend=traitTrend(cohortRecords);
     const generations=[...new Set(cohortRecords.map(record=>record.generation))];
     const dead=cohortRecords.filter(record=>record.deathDay!==undefined);
     const signal={} as Record<keyof WildlifeTraits,WildlifeSelectionSignal>;
     for(const trait of TRAITS){
-      signal[trait]=signalForTrait(cohortRecords.length,breeders.length,generations.length,normalized[trait],consistency[trait]);
+      signal[trait]=signalForTrait(
+        cohortRecords.length,breeders.length,generations.length,consistency.comparable[trait],
+        normalized[trait],consistency.ratio[trait],trend[trait]
+      );
     }
     return {
       biome,
@@ -151,8 +159,9 @@ function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionS
       breederTraitMean:breederAverage,
       selectionDifferential:differential,
       normalizedSelectionDifferential:normalized,
-      selectionConsistency:consistency,
-      traitTrendPerGeneration:traitTrend(cohortRecords),
+      selectionConsistency:consistency.ratio,
+      comparableSelectionGenerations:consistency.comparable,
+      traitTrendPerGeneration:trend,
       signal
     };
   }).sort((a,b)=>b.population-a.population||a.biome.localeCompare(b.biome));
