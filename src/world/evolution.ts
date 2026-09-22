@@ -7,8 +7,8 @@ const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
-const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0});
-const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass'];
+const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0});
+const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure'];
 const MIN_LIFETIME_EXPOSURE_DAYS=.02;
 
 export function accumulateWildlifeHabitatExposure(
@@ -23,7 +23,9 @@ export function accumulateWildlifeHabitatExposure(
   const habitatMean={...(exposure?.habitatMean||zeroHabitat())};
   if(days>0&&totalDays>0){
     for(const key of HABITAT_KEYS){
-      habitatMean[key]=(habitatMean[key]*previousDays+habitat[key]*days)/totalDays;
+      const previous=Number(habitatMean[key]||0);
+      const current=Number(habitat[key]||0);
+      habitatMean[key]=(previous*previousDays+current*days)/totalDays;
     }
   }
   const biomeDays={...(exposure?.biomeDays||{})};
@@ -114,7 +116,8 @@ function habitatMean(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):
       water:mean(habitats.map(value=>value.water)),
       danger:mean(habitats.map(value=>value.danger)),
       settlementLevel:mean(habitats.map(value=>value.settlementLevel)),
-      plantBiomass:mean(habitats.map(value=>value.plantBiomass))
+      plantBiomass:mean(habitats.map(value=>value.plantBiomass)),
+      competitionPressure:mean(habitats.map(value=>Number(value.competitionPressure||0)))
     };
   }
   const out=zeroHabitat();
@@ -123,7 +126,7 @@ function habitatMean(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):
   if(total<=0)return out;
   for(const record of weighted){
     const exposure=record.habitatExposure!;
-    for(const key of HABITAT_KEYS)out[key]+=exposure.habitatMean[key]*exposure.observedDays/total;
+    for(const key of HABITAT_KEYS)out[key]=Number(out[key]||0)+Number(exposure.habitatMean[key]||0)*exposure.observedDays/total;
   }
   return out;
 }
