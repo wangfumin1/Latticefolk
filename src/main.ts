@@ -1592,14 +1592,22 @@ class TownGame {
     const targetPopulation=target.wildlife?.find(population=>population.species===state.species);
     if(!sourcePopulation||!targetPopulation)return false;
 
+    const fixedWeight=sourceRuntime.fixedWildlifeWeights.get(state.id)||state.representedPopulation||0;
+    const initialFineCount=sourceRuntime.initialWildlifeCounts[state.species]||0;
+    const freeCapacity=Math.max(0,targetPopulation.carryingCapacity-targetPopulation.count);
+    if(freeCapacity<=.05)return false;
+
     state.position={x:animal.mesh.position.x,z:animal.mesh.position.z};
     this.endWildlifeHabitatObservation(state);
-    const initialFineCount=sourceRuntime.initialWildlifeCounts[state.species]||0;
-    const representedPopulation=applyFineWildlifePopulationTransfer(sourcePopulation,targetPopulation,state,initialFineCount);
+    const representedPopulation=applyFineWildlifePopulationTransfer(
+      sourcePopulation,targetPopulation,state,initialFineCount,fixedWeight>0?fixedWeight:undefined,freeCapacity
+    );
     if(representedPopulation<=0){this.beginWildlifeHabitatObservation(state);return false;}
 
     sourceRuntime.wildlifeIds=sourceRuntime.wildlifeIds.filter(id=>id!==state.id);
-    sourceRuntime.initialWildlifeCounts[state.species]=Math.max(0,initialFineCount-1);
+    sourceRuntime.initialWildlifeIds.delete(state.id);
+    if(fixedWeight>0)sourceRuntime.fixedWildlifeWeights.delete(state.id);
+    else sourceRuntime.initialWildlifeCounts[state.species]=Math.max(0,initialFineCount-1);
     const currentDay=this.day+this.minuteOfDay/1440;
     const lineage=this.ensureWildlifeLineage(state);
     lineage.migrationHistory??=[];
@@ -1619,6 +1627,7 @@ class TownGame {
     transferredState.chunkId=target.id;
     transferredState.position={x:animal.mesh.position.x,z:animal.mesh.position.z};
     transferredState.energy=clamp(transferredState.energy-10,0,100);
+    transferredState.representedPopulation=representedPopulation;
     transferredState.currentAction='wander';
     transferredState.targetObjectId=undefined;
     transferredState.targetWildlifeId=undefined;
@@ -1637,7 +1646,8 @@ class TownGame {
     if(targetRuntime){
       if(this.spawnWildlife(structuredClone(transferredState))){
         targetRuntime.wildlifeIds.push(state.id);
-        targetRuntime.initialWildlifeCounts[state.species]=(targetRuntime.initialWildlifeCounts[state.species]||0)+1;
+        targetRuntime.initialWildlifeIds.add(state.id);
+        targetRuntime.fixedWildlifeWeights.set(state.id,representedPopulation);
       }else this.wildlifeTransfers.set(state.id,transfer);
     }else this.wildlifeTransfers.set(state.id,transfer);
     if(this.selectedEntity?.type==='wildlife'&&this.selectedEntity.id===state.id)this.selectedEntity=undefined;
