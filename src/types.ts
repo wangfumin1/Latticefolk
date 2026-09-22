@@ -413,6 +413,8 @@ export interface WildlifeState {
   pregnantById?: string;
   pregnantUntilDay?: number;
   lastBirthDay?: number;
+  /** Coarse population represented by this named fine individual after identity-preserving migration. */
+  representedPopulation?: number;
 }
 
 export interface WildlifeMigrationCandidate {
