@@ -1042,11 +1042,20 @@ class TownGame {
       runtime.npcIds.push(state.id);
     }
 
-    const pendingTransfers=[...this.wildlifeTransfers.values()].filter(transfer=>transfer.toChunkId===chunk.id);
+    const pendingTransfers=[...this.wildlifeTransfers.values()]
+      .filter(transfer=>transfer.toChunkId===chunk.id)
+      .sort((a,b)=>a.transferredDay-b.transferredDay||a.entityId.localeCompare(b.entityId));
     const pendingReplacement=new Map<WildlifeSpecies,number>();
     if(!cached){
+      const remainingBySpecies=new Map<WildlifeSpecies,number>();
+      for(const population of chunk.wildlife||[])remainingBySpecies.set(population.species,Math.max(0,population.count));
       for(const transfer of pendingTransfers){
-        pendingReplacement.set(transfer.state.species,(pendingReplacement.get(transfer.state.species)||0)+1);
+        const species=transfer.state.species;
+        const remaining=remainingBySpecies.get(species)||0;
+        const effective=Math.min(Math.max(0,transfer.representedPopulation),remaining);
+        if(effective<=.01)continue;
+        pendingReplacement.set(species,(pendingReplacement.get(species)||0)+1);
+        remainingBySpecies.set(species,remaining-effective);
       }
     }
 
