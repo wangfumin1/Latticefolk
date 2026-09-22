@@ -27,6 +27,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 - Diálogo escrito previamente con recuperación local y selección de líneas o fragmentos.
 - UI y corpus en chino simplificado, inglés, japonés y español.
 - Recursos low-poly CC0 de Quaternius.
+- Archivo genealógico duradero y observabilidad evolutiva: los ancestros sobreviven a la muerte y descarga del chunk en SQLite; se distinguen fundadores de nacimientos reproductivos y se miden causas de muerte, descendencia, éxito reproductivo y medias/varianzas/tendencias de rasgos por generación en God View.
 
 ## Inicio rápido
 
@@ -50,7 +51,7 @@ God View también es estrictamente un observador externo y no aparece en la perc
 
 ## Hoja de ruta
 
-✅ Materialización coarse↔fine → ✅ persistencia SQLite → ✅ flujos conservados entre chunks → **decisiones Region / World** → decisiones Region/World → streaming dinámico → generación procedural → cadenas de producción → ecología → ciclo vital/reproducción/herencia/evolución → física completa.
+✅ coarse↔fine → ✅ SQLite → ✅ flujos conservados → ✅ decisiones Region / World → ✅ streaming dinámico → ✅ asentamientos procedurales semánticos → ✅ cadenas de producción → ✅ primera ecología de ciclo vital → ✅ genealogía duradera / estadísticas evolutivas → **observabilidad de presión selectiva y adaptación por bioma** → ecología ampliada → física.
 
 Consulta [Roadmap](roadmap.md), [Architecture](architecture.md) y [Decision providers](decision-providers.md).
 

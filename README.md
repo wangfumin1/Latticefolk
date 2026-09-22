@@ -51,6 +51,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Deterministic production chains**: NPCs and players share the same conserved recipe graph, currently including grain → flour → bread and wood → plank → tool.
 - **Persistent wildlife ecology**: rabbits, deer, boar, and foxes exist as coarse populations and fine persistent individuals with needs, hunting/fleeing, migration, reproduction, inheritable traits, and batched Jev behavior decisions.
 - **Plant biomass and lifecycle ecology**: seasonal grass/shrub/fruit/crop biomass, trophic flows, disease pressure, pregnancy/litters, senescence, parent IDs, and inherited mutation connect habitat to multi-generation life.
+- **Durable evolution observability**: dead and living wildlife share a persistent ancestry archive with founder/reproductive birth provenance, death causes, lifetime offspring counts, per-generation trait mean/variance/trends, reproductive-success metrics, lineage traversal, and a God View observatory.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.

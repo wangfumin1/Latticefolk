@@ -58,6 +58,10 @@ app.get('/api/world/state', (_req, res) => {
   res.json({ snapshot:worldStore.load(), stats:worldStore.stats() });
 });
 
+app.get('/api/world/evolution', (_req, res) => {
+  res.json({ species:worldStore.evolutionStats(), persistence:worldStore.stats() });
+});
+
 app.post('/api/world/state', (req, res) => {
   try {
     const body=req.body as WorldPersistenceSnapshot;

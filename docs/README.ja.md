@@ -21,6 +21,7 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 - 完全な authored line または fragment 組み合わせによる会話。
 - 简体中文 / English / 日本語 / Español の UI・会話コーパス。
 - Quaternius の CC0 low-poly assets。
+- 永続的な野生動物系譜と進化観測。死亡・unload 後も祖先記録を SQLite に保持し、founder と実際の繁殖出生を区別、死亡原因・子孫数・繁殖成功率・世代別 trait 平均/分散/傾向を God View から確認できます。
 
 ## 起動
 
@@ -44,7 +45,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine chunk materialization → ✅ SQLite 永続化 → ✅ chunk 間の人口・資源・交易・生態フロー → **Region / World decision** → Region/World decision → dynamic streaming → procedural settlement/environment → 生産とインタラクション → 生態系 → 生命周期・繁殖・遺伝・進化 → physics。
+✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → **selection pressure / biome adaptation observability** → richer ecology → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 

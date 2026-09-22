@@ -8,10 +8,11 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
+import { computeEvolutionStatistics, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -36,6 +37,7 @@ app.innerHTML = `
   <div id="inventory"></div>
 </div>
 <div id="npcPanel" class="panel compact"></div>
+<div id="evolutionPanel" class="panel evolution hidden"></div>
 <div id="log" class="panel log"></div>
 <div id="admin" class="panel admin hidden">
   <div class="panel-title">${i18n.t('console.title')} <span>${i18n.t('console.close')}</span></div>
@@ -90,6 +92,7 @@ const ui = {
   prompt: document.querySelector<HTMLDivElement>('#prompt')!,
   inv: document.querySelector<HTMLDivElement>('#inventory')!,
   npc: document.querySelector<HTMLDivElement>('#npcPanel')!,
+  evolution: document.querySelector<HTMLDivElement>('#evolutionPanel')!,
   log: document.querySelector<HTMLDivElement>('#log')!,
   admin: document.querySelector<HTMLDivElement>('#admin')!,
   adminStatus: document.querySelector<HTMLDivElement>('#adminStatus')!,
@@ -169,6 +172,10 @@ class TownGame {
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
+  wildlifeLineage = new Map<string,WildlifeLineageRecord>();
+  lineageEpoch = 0;
+  evolutionCacheEpoch = -1;
+  evolutionCache: WildlifeEvolutionStats[] = [];
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
@@ -867,7 +874,8 @@ class TownGame {
       coarseChunks:[...this.coarseWorld.chunks.values()].map(x=>structuredClone(x)),
       fineChunks:[...fine.values()],
       homeNpcs,
-      homeObjects
+      homeObjects,
+      wildlifeLineage:[...this.wildlifeLineage.values()].map(record=>structuredClone(record))
     };
   }
 
@@ -884,6 +892,15 @@ class TownGame {
 
     this.coarseWorld.restoreKnownChunks(snapshot.coarseChunks||[]);
     this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z,true);
+
+    this.wildlifeLineage.clear();
+    for(const record of snapshot.wildlifeLineage||[]){
+      const normalized=structuredClone(record);
+      normalized.origin=normalized.origin==='reproduction'?'reproduction':(normalized.motherId||normalized.fatherId?'reproduction':'founder');
+      this.wildlifeLineage.set(normalized.entityId,normalized);
+    }
+    this.lineageEpoch++;
+    this.reconcileLineageOffspring();
 
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
@@ -1015,9 +1032,10 @@ class TownGame {
       for(const saved of cached.wildlifeStates){
         const state=structuredClone(saved);
         state.chunkId=chunk.id;
-        this.spawnWildlife(state);
-        runtime.wildlifeIds.push(state.id);
-        runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        if(this.spawnWildlife(state)){
+          runtime.wildlifeIds.push(state.id);
+          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        }
       }
     }else{
       for(const p of plan.wildlife){
@@ -1029,9 +1047,10 @@ class TownGame {
           sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
           lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
         };
-        this.spawnWildlife(state);
-        runtime.wildlifeIds.push(state.id);
-        runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        if(this.spawnWildlife(state)){
+          runtime.wildlifeIds.push(state.id);
+          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        }
       }
     }
 
@@ -1067,12 +1086,16 @@ class TownGame {
   }
 
   spawnWildlife(state:WildlifeState) {
+    const archived=this.wildlifeLineage.get(state.id);
+    if(archived?.deathDay!==undefined)return false;
+    this.ensureWildlifeLineage(state);
     const g=this.makeProceduralAnimal(state);
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
     this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
+    return true;
   }
 
   makeProceduralAnimal(state:WildlifeState) {
@@ -1252,7 +1275,7 @@ class TownGame {
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
       s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
-      if(s.health<=0){this.removeWildlife(animal,'自然死亡');continue;}
+      if(s.health<=0){this.removeWildlife(animal,this.classifyWildlifeDeath(s));continue;}
 
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
@@ -1404,7 +1427,7 @@ class TownGame {
           other.state.health=clamp(other.state.health-damage,0,100);
           s.hunger=clamp(s.hunger-(other.state.species==='rabbit'?48:30),0,100);
           s.energy=clamp(s.energy-8,0,100);
-          if(other.state.health<=0)this.removeWildlife(other,'被捕食');
+          if(other.state.health<=0)this.removeWildlife(other,'predation');
         }
         break;
       case 'seek_mate':
@@ -1446,13 +1469,14 @@ class TownGame {
     if(currentDay<s.pregnantUntilDay)return;
     const father=this.wildlife.get(s.pregnantById);
     const fatherState=father?.state;
+    const fatherLineage=this.wildlifeLineage.get(s.pregnantById);
     const life=this.wildlifeLifeHistory(s.species);
     const population=this.coarseWorld.chunks.get(s.chunkId)?.wildlife?.find(x=>x.species===s.species);
     const current=[...this.wildlife.values()].filter(x=>x.state.chunkId===s.chunkId&&x.state.species===s.species&&!x.removed).length;
     const room=population?Math.max(0,Math.ceil(population.carryingCapacity*.45)-current):life.litterMax;
     const litter=Math.min(room,life.litterMin+Math.floor(this.deterministicUnit(`${s.id}:litter:${this.day}`)*(life.litterMax-life.litterMin+1)));
-    const fatherTraits=fatherState?.traits??s.traits;
-    const fatherGeneration=fatherState?.generation??s.generation;
+    const fatherTraits=fatherState?.traits??fatherLineage?.traitsAtDeath??fatherLineage?.traitsAtBirth??s.traits;
+    const fatherGeneration=fatherState?.generation??fatherLineage?.generation??s.generation;
     for(let i=0;i<litter;i++){
       const generation=Math.max(s.generation,fatherGeneration)+1;
       const id=`${s.chunkId}_wild_${s.species}_g${generation}_${this.day}_${Math.floor(this.minuteOfDay)}_${i}_${this.wildlife.size}`;
@@ -1465,11 +1489,14 @@ class TownGame {
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-        generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:this.day,
-        diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??s.pregnantById
+        generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
+        diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??fatherLineage?.entityId??s.pregnantById
       };
-      this.spawnWildlife(baby);
-      const runtime=this.materializedChunks.get(s.chunkId);if(runtime)runtime.wildlifeIds.push(id);
+      if(this.spawnWildlife(baby)){
+        const runtime=this.materializedChunks.get(s.chunkId);if(runtime)runtime.wildlifeIds.push(id);
+        this.recordWildlifeOffspring(s.id);
+        this.recordWildlifeOffspring(baby.fatherId);
+      }
     }
     s.pregnantById=undefined;s.pregnantUntilDay=undefined;s.lastBirthDay=currentDay;
     s.energy=clamp(s.energy-18,0,100);s.hunger=clamp(s.hunger+16,0,100);
@@ -1504,10 +1531,83 @@ class TownGame {
     return ((a+b)/2)*(1+mutation);
   }
 
-  removeWildlife(animal:WildlifeRuntime,reason:string) {
+  ensureWildlifeLineage(state:WildlifeState) {
+    const existing=this.wildlifeLineage.get(state.id);
+    if(existing)return existing;
+    const record:WildlifeLineageRecord={
+      entityId:state.id,
+      species:state.species,
+      motherId:state.motherId,
+      fatherId:state.fatherId,
+      birthDay:state.birthDay,
+      generation:state.generation,
+      birthChunk:state.chunkId,
+      traitsAtBirth:structuredClone(state.traits),
+      origin:state.motherId||state.fatherId?'reproduction':'founder',
+      offspringCount:0,
+      reproductiveSuccess:false
+    };
+    this.wildlifeLineage.set(record.entityId,record);
+    this.lineageEpoch++;
+    return record;
+  }
+
+  recordWildlifeOffspring(parentId?:string) {
+    if(!parentId)return;
+    const parent=this.wildlifeLineage.get(parentId);
+    if(!parent)return;
+    parent.offspringCount++;
+    parent.reproductiveSuccess=true;
+    this.lineageEpoch++;
+  }
+
+  reconcileLineageOffspring() {
+    const counts=new Map<string,number>();
+    for(const record of this.wildlifeLineage.values()){
+      if(record.motherId)counts.set(record.motherId,(counts.get(record.motherId)||0)+1);
+      if(record.fatherId)counts.set(record.fatherId,(counts.get(record.fatherId)||0)+1);
+    }
+    let changed=false;
+    for(const record of this.wildlifeLineage.values()){
+      const known=counts.get(record.entityId)||0;
+      if(known>record.offspringCount){
+        record.offspringCount=known;
+        record.reproductiveSuccess=known>0;
+        changed=true;
+      }
+    }
+    if(changed)this.lineageEpoch++;
+  }
+
+  classifyWildlifeDeath(state:WildlifeState):WildlifeDeathReason {
+    if(state.hunger>=95&&state.hunger>=state.thirst)return 'starvation';
+    if(state.thirst>=95)return 'dehydration';
+    if((state.diseaseLoad||0)>=60)return 'disease';
+    if(state.ageDays>=this.wildlifeLifeHistory(state.species).maxAge*.72)return 'senescence';
+    return 'other';
+  }
+
+  removeWildlife(animal:WildlifeRuntime,reason:WildlifeDeathReason) {
     if(animal.removed)return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const record=this.ensureWildlifeLineage(animal.state);
+    if(record.deathDay===undefined){
+      record.deathDay=currentDay;
+      record.deathReason=reason;
+      record.deathChunk=animal.state.chunkId;
+      record.traitsAtDeath=structuredClone(animal.state.traits);
+      this.lineageEpoch++;
+    }
     animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
-    this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${reason}。`);
+    this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${i18n.t(`evolution.death.${reason}`)}。`);
+  }
+
+  evolutionStatistics() {
+    if(this.evolutionCacheEpoch!==this.lineageEpoch){
+      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values());
+      this.evolutionCacheEpoch=this.lineageEpoch;
+    }
+    return this.evolutionCache;
   }
 
   wildlifeName(species:WildlifeSpecies) {
@@ -1994,11 +2094,13 @@ class TownGame {
       if(a){
         const s=a.state;
         ui.npc.classList.remove('hidden');
-        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>`;
+        const lineage=this.wildlifeLineage.get(s.id);
+        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>`;
       }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
     } else ui.npc.classList.add('hidden');
+    this.renderEvolutionPanel();
     ui.log.innerHTML=this.logs.slice(-7).map(x=>`<div>${this.escape(x)}</div>`).join('');
   }
 
@@ -2070,6 +2172,53 @@ class TownGame {
   }
 
   async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true);}catch{ui.decision.textContent=i18n.t('backend.offline');}}
+
+  coarseWildlifePopulation(species:WildlifeSpecies) {
+    let total=0;
+    for(const chunk of this.coarseWorld.chunks.values()){
+      total+=chunk.wildlife?.find(population=>population.species===species)?.count||0;
+    }
+    return total;
+  }
+
+  renderEvolutionPanel() {
+    if(this.cameraMode!=='god'){
+      ui.evolution.classList.add('hidden');
+      return;
+    }
+    ui.evolution.classList.remove('hidden');
+    const stats=this.evolutionStatistics();
+    const active=stats.filter(entry=>entry.historicalPopulation>0);
+    const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
+    const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
+    const cards=active.map(entry=>`
+      <div class="evo-card">
+        <div class="evo-head"><b>${this.escape(this.wildlifeName(entry.species))}</b><span>world ~${this.coarseWildlifePopulation(entry.species).toFixed(0)}</span></div>
+        <div>${i18n.t('evolution.tracked')} ${entry.livingPopulation}/${entry.historicalPopulation} · G${entry.generationMean.toFixed(1)}→G${entry.generationMax}</div>
+        <div>${i18n.t('evolution.births')} ${entry.births} · ${i18n.t('evolution.deaths')} ${entry.deaths} · ${i18n.t('evolution.lifespan')} ${entry.lifespanMean.toFixed(1)}d</div>
+        <div>${i18n.t('evolution.reproduction')} ${percent(entry.survivalToReproductionRate)} · offspring ${entry.offspringMean.toFixed(2)} · successful ${entry.reproductiveSuccess.toFixed(2)}</div>
+        <div class="evo-traits">μ speed ${trait(entry.traitMean.speed)} · size ${trait(entry.traitMean.size)} · fertility ${trait(entry.traitMean.fertility)} · wariness ${trait(entry.traitMean.wariness)}</div>
+        <div class="evo-traits">σ² speed ${trait(entry.traitVariance.speed)} · size ${trait(entry.traitVariance.size)} · fertility ${trait(entry.traitVariance.fertility)} · wariness ${trait(entry.traitVariance.wariness)}</div>
+        <div class="evo-traits">Δ/G speed ${trait(entry.traitTrendPerGeneration.speed)} · size ${trait(entry.traitTrendPerGeneration.size)} · fertility ${trait(entry.traitTrendPerGeneration.fertility)} · wariness ${trait(entry.traitTrendPerGeneration.wariness)}</div>
+        <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
+      </div>`).join('');
+
+    const selected=this.selectedEntity?.type==='wildlife'?this.wildlifeLineage.get(this.selectedEntity.id):undefined;
+    const selectedStats=selected?stats.find(entry=>entry.species===selected.species):undefined;
+    const ancestors=selected?lineageAncestors(this.wildlifeLineage,selected.entityId,3):[];
+    const ancestry=selected?`
+      <div class="evo-lineage">
+        <b>${i18n.t('evolution.lineage')}</b> · ${this.escape(selected.entityId)} · G${selected.generation} · offspring ${selected.offspringCount}
+        <div>${ancestors.length?ancestors.map(record=>`${this.escape(record.entityId)} (G${record.generation}${record.deathDay!==undefined?' †':''})`).join(' ← '):i18n.t('evolution.noAncestors')}</div>
+        ${selectedStats?.cohorts.length?`<div class="evo-cohorts">${selectedStats.cohorts.slice(-6).map(cohort=>`G${cohort.generation}: n=${cohort.population}, μw=${trait(cohort.traitMean.wariness)}, var=${trait(cohort.traitVariance.wariness)}`).join('<br>')}</div>`:''}
+      </div>`:'';
+
+    const top=[...this.wildlifeLineage.values()].filter(record=>record.offspringCount>0)
+      .sort((a,b)=>b.offspringCount-a.offspringCount||b.generation-a.generation).slice(0,4);
+    const leaders=top.length?`<div class="evo-lineage"><b>${i18n.t('evolution.topLineages')}</b><div>${top.map(record=>`${this.escape(record.entityId)} · ${this.escape(this.wildlifeName(record.species))} · G${record.generation} · ${record.offspringCount}`).join('<br>')}</div></div>`:'';
+
+    ui.evolution.innerHTML=`<div class="evo-title">${i18n.t('evolution.title')} <span>${this.wildlifeLineage.size}</span></div>${cards||`<div class="small">${i18n.t('evolution.empty')}</div>`}${ancestry}${leaders}`;
+  }
 
   worldSeason(){
     return (['spring','summer','autumn','winter'] as const)[Math.floor(Math.max(0,this.day-1)/30)%4]!;
