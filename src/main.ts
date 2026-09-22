@@ -1503,9 +1503,9 @@ class TownGame {
       },
       allowedActions:this.wildlifeAllowedActions(animal.state).filter(action=>{
         if(action==='drink')return nearbyResources.some(x=>x.tags.includes('water'));
-        if(action==='hunt')return nearbyWildlife.some(x=>['rabbit','deer'].includes(x.species));
+        if(action==='hunt')return nearbyWildlife.some(x=>wildlifeCanPredate(animal.state.species,x.species));
         if(action==='seek_mate')return nearbyWildlife.some(x=>x.species===animal.state.species&&x.sex!==animal.state.sex&&x.mateAvailable);
-        if(action==='flee')return animal.state.species!=='fox'&&nearbyWildlife.some(x=>x.species==='fox'&&x.distance<8);
+        if(action==='flee')return nearbyWildlife.some(x=>wildlifeCanPredate(x.species,animal.state.species)&&x.distance<8);
         if(action==='migrate')return migration.nearby.length>0;
         return true;
       })
@@ -1590,9 +1590,14 @@ class TownGame {
 
   findWildlifeTarget(animal:WildlifeRuntime,action:WildlifeAction) {
     const candidates=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed);
-    if(action==='hunt')return candidates.filter(x=>['rabbit','deer'].includes(x.state.species)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    if(action==='hunt')return candidates
+      .filter(x=>wildlifeCanPredate(animal.state.species,x.state.species))
+      .sort((a,b)=>{
+        const score=(x:WildlifeRuntime)=>wildlifePreyPreference(animal.state.species,x.state.species)/Math.max(1,dist(animal.state.position,x.state.position));
+        return score(b)-score(a)||dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position);
+      })[0];
     if(action==='seek_mate')return candidates.filter(x=>x.state.species===animal.state.species&&x.state.sex!==animal.state.sex&&x.state.ageDays>=this.wildlifeLifeHistory(x.state.species).adultAge&&!(x.state.sex==='female'&&x.state.pregnantUntilDay&&x.state.pregnantUntilDay>this.day+this.minuteOfDay/1440)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
-    if(action==='flee')return candidates.filter(x=>x.state.species==='fox').sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    if(action==='flee')return candidates.filter(x=>wildlifeCanPredate(x.state.species,animal.state.species)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
     return undefined;
   }
 
@@ -1618,10 +1623,13 @@ class TownGame {
       case 'flee':
         s.energy=clamp(s.energy-10,0,100);break;
       case 'hunt':
-        if(other&&dist(s.position,other.state.position)<=2.3){
-          const damage=s.species==='fox'?(other.state.species==='rabbit'?100:45):25;
+        if(other&&wildlifeCanPredate(s.species,other.state.species)&&dist(s.position,other.state.position)<=2.3){
+          const predator=wildlifeSpeciesProfile(s.species);
+          const prey=wildlifeSpeciesProfile(other.state.species);
+          const preference=wildlifePreyPreference(s.species,other.state.species);
+          const damage=predator.fineAttackDamage*Math.max(.35,preference);
           other.state.health=clamp(other.state.health-damage,0,100);
-          s.hunger=clamp(s.hunger-(other.state.species==='rabbit'?48:30),0,100);
+          s.hunger=clamp(s.hunger-Math.min(60,24+prey.fine.size*30),0,100);
           s.energy=clamp(s.energy-8,0,100);
           if(other.state.health<=0)this.removeWildlife(other,'predation');
         }
