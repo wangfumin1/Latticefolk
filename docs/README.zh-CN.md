@@ -27,6 +27,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - 简体中文、English、日本語、Español UI 与语料支持。
 - Quaternius CC0 低多边形角色、建筑和道具素材。
 - 野生动物永久谱系与进化观测：死亡或卸载后的祖先仍保存在 SQLite；区分 founder 与真实繁殖出生，统计死亡原因、后代数、繁殖成功率、代际 trait 均值/方差/趋势，并在 God View 中查看谱系和进化数据。
+- biome 选择压力观测：谱系记录出生/死亡环境，God View 按 biome 展示繁殖者相对 cohort 的标准化 trait 差值、跨代同向一致性、样本量及“样本不足/弱信号/持续信号”，不把相关性直接写成因果。
 
 ## 本地运行
 
@@ -63,7 +64,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → **环境选择压力与 biome adaptation 可观测性** → 更完整生态 → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → **更完整的迁徙暴露、生态位竞争与疾病选择压力** → 更完整生态 → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 
