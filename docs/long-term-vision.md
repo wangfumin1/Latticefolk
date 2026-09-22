@@ -94,3 +94,9 @@ The next ecology step expands exposure history beyond origin/death snapshots: mi
 Lineages now retain more than two endpoint snapshots. While a named animal is actually running in fine simulation, Latticefolk accumulates observed habitat duration and time-weighted environmental conditions, including biome/chunk exposure and observed transitions. Coarse intervals remain aggregate-only and are not retroactively invented as individual history.
 
 This enables a second adaptation view based on the dominant biome actually observed during an individual's fine-sim lifetime, alongside the existing origin-biome analysis. The next step is to create identity-preserving fine migration/transfer semantics and then add niche competition, seasonal movement, richer disease transmission, and additional species.
+
+## Implemented milestone: identity-preserving fine migration
+
+Named fine wildlife can cross into adjacent chunks without being destroyed and regenerated as unrelated procedural animals. The same entity ID, ancestry, inherited traits, pregnancy state and observed habitat history survive the transfer. The provider only selects a legal migration intention/destination; deterministic simulation performs carrying-capacity validation, representative population conservation, entry placement, energy cost, persistence and lineage provenance.
+
+Unmaterialized destinations use a durable transit queue rather than a fake visited fine snapshot. Migrants retain their coarse representative weight after arrival, so later mortality or onward migration remains quantitatively consistent. The next ecological phase can build on this identity continuity for niche competition, seasonal movement, disease transmission and richer predator/prey networks.
