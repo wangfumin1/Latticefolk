@@ -2572,6 +2572,18 @@ class TownGame {
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
             <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${Number(selection.habitatMean.diseasePressure||0).toFixed(0)}</div>
           </div>`).join('')}
+        ${entry.exposureFitness.filter(fitness=>fitness.sampleSize>=3).map(fitness=>{
+          const label=fitness.dimension==='competitionPressure'?i18n.t('evolution.competition'):fitness.dimension==='seasonalSuitability'?i18n.t('evolution.seasonalSuitability'):i18n.t('evolution.diseasePressure');
+          const band=(name:'low'|'medium'|'high')=>fitness.bands.find(x=>x.band===name);
+          const low=band('low'),mid=band('medium'),high=band('high');
+          return `
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.fitness')} · ${label}</b> · n=${fitness.sampleSize} · obs ${fitness.observedExposureDaysMean.toFixed(2)}d
+            <div>r(reproduce) ${fitness.reproductionAssociation.toFixed(2)} · r(offspring) ${fitness.offspringAssociation.toFixed(2)} · r(lifespan) ${fitness.lifespanAssociation.toFixed(2)}</div>
+            <div class="evo-traits">${i18n.t('evolution.low')} ${low?.population||0}/${percent(low?.breederRate||0)} · ${i18n.t('evolution.medium')} ${mid?.population||0}/${percent(mid?.breederRate||0)} · ${i18n.t('evolution.high')} ${high?.population||0}/${percent(high?.breederRate||0)}</div>
+            <div class="evo-traits">breeder μ ${fitness.breederExposureMean.toFixed(1)} · non-breeder μ ${fitness.nonBreederExposureMean.toFixed(1)}</div>
+          </div>`;
+        }).join('')}
       </div>`).join('');
 
     const selected=this.selectedEntity?.type==='wildlife'?this.wildlifeLineage.get(this.selectedEntity.id):undefined;
