@@ -1785,10 +1785,11 @@ class TownGame {
     return ((a+b)/2)*(1+mutation);
   }
 
-  wildlifeHabitatSnapshot(chunkId:string) {
+  wildlifeHabitatSnapshot(chunkId:string,species?:WildlifeSpecies) {
     const chunk=this.coarseWorld.chunks.get(chunkId);
     if(!chunk)return undefined;
     const plants=chunk.plants;
+    const population=species?chunk.wildlife?.find(entry=>entry.species===species):undefined;
     return {
       biome:chunk.biome,
       ecology:chunk.ecology,
@@ -1796,7 +1797,8 @@ class TownGame {
       water:chunk.water,
       danger:chunk.danger,
       settlementLevel:chunk.settlementLevel,
-      plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology
+      plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology,
+      competitionPressure:population?.competitionPressure||0
     };
   }
 
@@ -1808,7 +1810,7 @@ class TownGame {
 
   beginWildlifeHabitatObservation(state:WildlifeState) {
     const record=this.ensureWildlifeLineage(state);
-    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId,state.species);
     if(!habitat)return;
     const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,0);
     exposure.lastObservedDay=this.day+this.minuteOfDay/1440;
@@ -1819,7 +1821,7 @@ class TownGame {
 
   recordWildlifeHabitatExposure(state:WildlifeState,force=false) {
     const record=this.ensureWildlifeLineage(state);
-    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId,state.species);
     if(!habitat)return;
     const currentDay=this.day+this.minuteOfDay/1440;
     if(!record.habitatExposure||record.habitatExposure.lastObservedDay===undefined){
@@ -1845,7 +1847,7 @@ class TownGame {
     const existing=this.wildlifeLineage.get(state.id);
     if(existing){
       if(!existing.birthHabitat){
-        existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId);
+        existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId,existing.species);
         if(existing.birthHabitat)this.lineageEpoch++;
       }
       return existing;
@@ -1859,7 +1861,7 @@ class TownGame {
       generation:state.generation,
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
-      birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId),
+      birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
       reproductiveSuccess:false
@@ -1914,7 +1916,7 @@ class TownGame {
       record.deathReason=reason;
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
-      record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId);
+      record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId,animal.state.species);
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
@@ -2539,14 +2541,14 @@ class TownGame {
             <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
           </div>`).join('')}
         ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
             <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
