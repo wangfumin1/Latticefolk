@@ -191,13 +191,18 @@ test('fitness-by-habitat quantifies outcome associations across exposure bands',
   const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
   const disease=rabbit.exposureFitness.find(entry=>entry.dimension==='diseasePressure')!;
   assert.equal(disease.sampleSize,9);
-  assert.ok(disease.reproductionAssociation<0);
-  assert.ok(disease.offspringAssociation<0);
-  assert.ok(disease.lifespanAssociation<0);
+  assert.notEqual(disease.reproductionAssociation,null);
+  assert.notEqual(disease.offspringAssociation,null);
+  assert.notEqual(disease.lifespanAssociation,null);
+  assert.notEqual(disease.breederExposureMean,null);
+  assert.notEqual(disease.nonBreederExposureMean,null);
+  assert.ok(disease.reproductionAssociation!<0);
+  assert.ok(disease.offspringAssociation!<0);
+  assert.ok(disease.lifespanAssociation!<0);
   assert.equal(disease.bands.find(band=>band.band==='low')?.population,3);
   assert.equal(disease.bands.find(band=>band.band==='low')?.breederRate,1);
   assert.equal(disease.bands.find(band=>band.band==='high')?.breederRate,0);
-  assert.ok(disease.breederExposureMean<disease.nonBreederExposureMean);
+  assert.ok(disease.breederExposureMean!<disease.nonBreederExposureMean!);
 });
 
 
