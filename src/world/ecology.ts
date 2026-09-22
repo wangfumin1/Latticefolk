@@ -289,7 +289,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     const droughtPenalty=chunk.water<25?.006:0;
     const humanPressure=chunk.settlementLevel*.0012+Math.max(0,chunk.danger-65)*.00012;
     const diseaseMortality=(pop.diseaseLoad||0)*.000045;
-    const growthRate=pop.species==='rabbit'?.010:pop.species==='fox'?.0032:.0050;
+    const growthRate=wildlifeSpeciesProfile(pop.species).growthRate;
     const natural=growthRate*pop.count*(1-density)*dt;
     const losses=(rainPenalty+droughtPenalty+humanPressure+diseaseMortality)*pop.count*dt;
     mortalityReturn+=Math.max(0,losses);
@@ -300,21 +300,49 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     pop.health=clamp(pop.health+(habitatHealth-pop.health)*Math.min(.10,dt*.003));
   }
 
-  const rabbits=populations.find(x=>x.species==='rabbit')!;
-  const foxes=populations.find(x=>x.species==='fox')!;
-  const deer=populations.find(x=>x.species==='deer')!;
-  const boar=populations.find(x=>x.species==='boar')!;
-
   const beforeHerbivory=plantTotal(ensurePlantBiomass(chunk));
-  consumePlants(chunk,'rabbit',rabbits.count*.008*dt);
-  consumePlants(chunk,'deer',deer.count*.018*dt);
-  consumePlants(chunk,'boar',boar.count*.020*dt);
+  for(const population of populations){
+    const profile=wildlifeSpeciesProfile(population.species);
+    if(profile.plantConsumptionRate<=0||wildlifePlantDietTotal(population.species)<=0)continue;
+    consumePlants(chunk,population.species,population.count*profile.plantConsumptionRate*dt);
+  }
   const herbivory=Math.max(0,beforeHerbivory-plantTotal(ensurePlantBiomass(chunk)));
 
-  const preyAvailable=rabbits.count+deer.count*.25;
-  const predation=Math.min(rabbits.count,foxes.count*Math.min(.015,preyAvailable*.0007)*dt);
-  rabbits.count=Math.max(0,round(rabbits.count-predation));
-  foxes.health=clamp(foxes.health+(predation>0?.07:-.05)*dt);
+  const predationProposals:Array<{predator:CoarseWildlifePopulation;prey:CoarseWildlifePopulation;amount:number}>=[];
+  for(const predator of populations){
+    const profile=wildlifeSpeciesProfile(predator.species);
+    if(!wildlifeIsPredator(predator.species)||profile.predationRate<=0||predator.count<=0)continue;
+    const prey=populations.filter(candidate=>candidate.count>0&&wildlifeCanPredate(predator.species,candidate.species));
+    const weightedAvailable=prey.reduce((sum,candidate)=>sum+candidate.count*wildlifePreyPreference(predator.species,candidate.species),0);
+    if(weightedAvailable<=0)continue;
+    const killBudget=predator.count*profile.predationRate*dt;
+    for(const candidate of prey){
+      const weighted=candidate.count*wildlifePreyPreference(predator.species,candidate.species);
+      if(weighted<=0)continue;
+      predationProposals.push({predator,prey:candidate,amount:killBudget*weighted/weightedAvailable});
+    }
+  }
+
+  let predation=0;
+  const predatorKills=new Map<WildlifeSpecies,number>();
+  for(const prey of populations){
+    const proposals=predationProposals.filter(proposal=>proposal.prey===prey);
+    const proposed=proposals.reduce((sum,proposal)=>sum+proposal.amount,0);
+    if(proposed<=0)continue;
+    const scale=Math.min(1,prey.count/proposed);
+    let preyLoss=0;
+    for(const proposal of proposals){
+      const actual=proposal.amount*scale;
+      preyLoss+=actual;
+      predatorKills.set(proposal.predator.species,(predatorKills.get(proposal.predator.species)||0)+actual);
+    }
+    prey.count=Math.max(0,round(prey.count-preyLoss));
+    predation+=preyLoss;
+  }
+  for(const predator of populations.filter(population=>wildlifeIsPredator(population.species))){
+    const kills=predatorKills.get(predator.species)||0;
+    predator.health=clamp(predator.health+(kills>0?.07:-.05)*dt);
+  }
 
   const p=ensurePlantBiomass(chunk);
   const plantAverage=(p.grass+p.shrub+p.fruit+p.crop)/4;
