@@ -27,6 +27,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Biome-linked selection-pressure observability with persisted habitat snapshots, breeder-vs-cohort trait differentials, normalized effect sizes, cross-generation directional consistency, cautious signal classification, and God View habitat evidence.
 - Observed lifetime habitat exposure for fine wildlife with time-weighted ecology/food/water/danger/plant conditions, biome/chunk exposure days, observed transition counts, persistent SQLite storage, and lifetime-dominant-biome selection views.
 - Identity-preserving fine wildlife migration with bounded adjacent-chunk targets, deterministic carrying-capacity checks, conserved coarse population transfer, per-entity representative weights, durable transit queue, migration provenance, and God-safe flee semantics.
+- Deterministic wildlife niche competition with fixed resource-use profiles, pairwise niche overlap, density-derived competition pressure, bounded carrying-capacity penalties, God View observability, and competition exposure preserved in lineage habitat evidence.
 
 ### Changed
 
