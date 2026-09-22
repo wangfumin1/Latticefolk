@@ -19,6 +19,7 @@ The database and its WAL/SHM sidecars are ignored by Git. It is runtime state, n
 | Coarse world | every coarse chunk's population, resources, ecology, danger, prosperity, settlement level, provider-selected policy, and decision version |
 | Visited fine chunks | resident identities/state, memories, relationships, inventory, object storage, resource depletion, and persistent wildlife individuals/traits |
 | Center town | NPC and interactive-object state |
+| Wildlife ancestry | durable birth/death/parent/trait/reproductive records for living and dead individuals |
 
 The save format is currently `version: 1`.
 
@@ -28,8 +29,9 @@ The save format is currently `version: 1`.
 - `coarse_chunks`
 - `fine_chunks` — NPC JSON, object JSON, and wildlife JSON
 - `home_state`
+- `wildlife_lineage` — append-preserving ancestry/lifecycle archive independent of fine-chunk entity presence
 
-Writes use a single SQLite transaction so one logical snapshot cannot partially update only some simulation layers. SQLite runs with WAL journaling and `synchronous=NORMAL`.
+Writes use a single SQLite transaction so one logical snapshot cannot partially update only some simulation layers. `wildlife_lineage` is intentionally not pruned when an incoming snapshot omits an old individual: once observed, ancestry and terminal death facts remain durable. SQLite runs with WAL journaling and `synchronous=NORMAL`.
 
 ## Runtime behavior
 
@@ -48,8 +50,8 @@ This is intentionally separate from procedural generation: generation answers �
 ## Current limitations
 
 - No historical save slots or rollback UI yet.
-- Schema migration beyond snapshot v1 is not implemented yet.
-- Cross-chunk transactions are the next simulation milestone; persistence currently records state after those systems mutate it.
+- Snapshot payloads remain version 1 while SQLite receives small backward-compatible additive migrations for fine wildlife and lineage metadata.
+- Historical save slots, rollback, and export/import tooling are not implemented yet.
 - Jev runtime budget settings remain configuration/runtime-control state and are not part of the world save.
 
 When the schema begins to stabilize, migrations and explicit backup/export tooling should replace destructive development-time compatibility handling.
@@ -58,3 +60,7 @@ When the schema begins to stabilize, migrations and explicit backup/export tooli
 ### Wildlife schema extension
 
 The wildlife milestone adds a `wildlife_json` column to `fine_chunks`. Existing SQLite databases are upgraded at startup with a backward-compatible column migration and default empty wildlife arrays; no manual reset is required.
+
+### Wildlife lineage archive
+
+`wildlife_lineage` stores `entity_id`, species, parents, birth/death day and chunk, normalized death reason, generation, traits at birth/death, founder-vs-reproduction origin, offspring count, and reproductive-success state. Parent records survive entity death and fine-chunk unloading, so later generations can still traverse ancestry. The server exposes deterministic aggregate statistics at `GET /api/world/evolution`; no Decision Provider call is involved in lineage or statistics.
