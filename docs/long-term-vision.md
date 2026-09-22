@@ -75,3 +75,10 @@ The next ecology milestone introduces explicit plant biomass and trophic energy 
 The first ecology layer now has renewable plant biomass, seasonal productivity, herbivory/predation flow, disease pressure, local resource regeneration, pregnancy, birth cooldowns, litter sizes, senescence, parental IDs, and inherited mutation. This is sufficient for genuine generational turnover rather than one-shot spawned animals.
 
 The next requirement is durable ancestry and statistical observability: lineages must survive ancestor death/unloading, and long-running worlds need per-species generation counts, trait means/variance, births, deaths, and selection trends that can be inspected without inferring them from currently living entities.
+
+
+## Implemented milestone: durable ancestry and measurable evolution
+
+Wildlife ancestry now survives death, unloading, and later sparse saves in an independent SQLite lineage archive. Founders are distinguished from actual reproductive births; terminal deaths carry normalized causes; parents accumulate offspring counts; and per-species/per-generation cohorts expose trait means, variance, trends, lifespan, mortality, and reproductive success. God View can inspect these metrics and selected-animal ancestry without turning the observer into a world entity.
+
+The next evolution milestone is environmental selection observability: connect lineage outcomes to biome and habitat conditions, measure survival-to-reproduction under those pressures, and expose enough evidence to distinguish persistent selection from random drift.
