@@ -896,6 +896,7 @@ class TownGame {
     this.wildlifeLineage.clear();
     for(const record of snapshot.wildlifeLineage||[])this.wildlifeLineage.set(record.entityId,structuredClone(record));
     this.lineageEpoch++;
+    this.reconcileLineageOffspring();
 
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
@@ -1525,10 +1526,82 @@ class TownGame {
     return ((a+b)/2)*(1+mutation);
   }
 
-  removeWildlife(animal:WildlifeRuntime,reason:string) {
+  ensureWildlifeLineage(state:WildlifeState) {
+    const existing=this.wildlifeLineage.get(state.id);
+    if(existing)return existing;
+    const record:WildlifeLineageRecord={
+      entityId:state.id,
+      species:state.species,
+      motherId:state.motherId,
+      fatherId:state.fatherId,
+      birthDay:state.birthDay,
+      generation:state.generation,
+      birthChunk:state.chunkId,
+      traitsAtBirth:structuredClone(state.traits),
+      offspringCount:0,
+      reproductiveSuccess:false
+    };
+    this.wildlifeLineage.set(record.entityId,record);
+    this.lineageEpoch++;
+    return record;
+  }
+
+  recordWildlifeOffspring(parentId?:string) {
+    if(!parentId)return;
+    const parent=this.wildlifeLineage.get(parentId);
+    if(!parent)return;
+    parent.offspringCount++;
+    parent.reproductiveSuccess=true;
+    this.lineageEpoch++;
+  }
+
+  reconcileLineageOffspring() {
+    const counts=new Map<string,number>();
+    for(const record of this.wildlifeLineage.values()){
+      if(record.motherId)counts.set(record.motherId,(counts.get(record.motherId)||0)+1);
+      if(record.fatherId)counts.set(record.fatherId,(counts.get(record.fatherId)||0)+1);
+    }
+    let changed=false;
+    for(const record of this.wildlifeLineage.values()){
+      const known=counts.get(record.entityId)||0;
+      if(known>record.offspringCount){
+        record.offspringCount=known;
+        record.reproductiveSuccess=known>0;
+        changed=true;
+      }
+    }
+    if(changed)this.lineageEpoch++;
+  }
+
+  classifyWildlifeDeath(state:WildlifeState):WildlifeDeathReason {
+    if(state.hunger>=95&&state.hunger>=state.thirst)return 'starvation';
+    if(state.thirst>=95)return 'dehydration';
+    if((state.diseaseLoad||0)>=60)return 'disease';
+    if(state.ageDays>=this.wildlifeLifeHistory(state.species).maxAge*.72)return 'senescence';
+    return 'other';
+  }
+
+  removeWildlife(animal:WildlifeRuntime,reason:WildlifeDeathReason) {
     if(animal.removed)return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const record=this.ensureWildlifeLineage(animal.state);
+    if(record.deathDay===undefined){
+      record.deathDay=currentDay;
+      record.deathReason=reason;
+      record.deathChunk=animal.state.chunkId;
+      record.traitsAtDeath=structuredClone(animal.state.traits);
+      this.lineageEpoch++;
+    }
     animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
-    this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${reason}。`);
+    this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${i18n.t(`evolution.death.${reason}`)}。`);
+  }
+
+  evolutionStatistics() {
+    if(this.evolutionCacheEpoch!==this.lineageEpoch){
+      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values());
+      this.evolutionCacheEpoch=this.lineageEpoch;
+    }
+    return this.evolutionCache;
   }
 
   wildlifeName(species:WildlifeSpecies) {
