@@ -1,12 +1,56 @@
 import type {
   WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeGenerationCohortStats,
-  WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 
 const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
+const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0});
+const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass'];
+const MIN_LIFETIME_EXPOSURE_DAYS=.02;
+
+export function accumulateWildlifeHabitatExposure(
+  exposure:WildlifeHabitatExposure|undefined,
+  habitat:WildlifeHabitatSnapshot,
+  chunkId:string,
+  observedDays:number
+):WildlifeHabitatExposure {
+  const days=Math.max(0,observedDays);
+  const previousDays=Math.max(0,exposure?.observedDays||0);
+  const totalDays=previousDays+days;
+  const habitatMean={...(exposure?.habitatMean||zeroHabitat())};
+  if(days>0&&totalDays>0){
+    for(const key of HABITAT_KEYS){
+      habitatMean[key]=(habitatMean[key]*previousDays+habitat[key]*days)/totalDays;
+    }
+  }
+  const biomeDays={...(exposure?.biomeDays||{})};
+  const chunkDays={...(exposure?.chunkDays||{})};
+  if(days>0){
+    biomeDays[habitat.biome]=(biomeDays[habitat.biome]||0)+days;
+    chunkDays[chunkId]=(chunkDays[chunkId]||0)+days;
+  }
+  const transitioned=days>0&&Boolean(exposure?.lastChunk)&&exposure?.lastChunk!==chunkId;
+  return {
+    observedDays:totalDays,
+    habitatMean,
+    biomeDays,
+    chunkDays,
+    observedTransitions:(exposure?.observedTransitions||0)+(transitioned?1:0),
+    lastObservedDay:exposure?.lastObservedDay,
+    lastChunk:chunkId,
+    lastBiome:habitat.biome
+  };
+}
+
+export function dominantWildlifeExposureBiome(exposure?:WildlifeHabitatExposure) {
+  if(!exposure||exposure.observedDays<MIN_LIFETIME_EXPOSURE_DAYS)return undefined;
+  return (Object.entries(exposure.biomeDays) as Array<[WildlifeHabitatSnapshot['biome'],number]>)
+    .filter(([,days])=>days>0)
+    .sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0];
+}
 
 function mean(values:number[]) {
   return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:0;
@@ -61,16 +105,27 @@ function cohort(generation:number,records:WildlifeLineageRecord[]):WildlifeGener
 }
 
 
-function habitatMean(records:WildlifeLineageRecord[]):Omit<WildlifeHabitatSnapshot,'biome'> {
-  const habitats=records.map(record=>record.birthHabitat).filter((value):value is WildlifeHabitatSnapshot=>Boolean(value));
-  return {
-    ecology:mean(habitats.map(value=>value.ecology)),
-    food:mean(habitats.map(value=>value.food)),
-    water:mean(habitats.map(value=>value.water)),
-    danger:mean(habitats.map(value=>value.danger)),
-    settlementLevel:mean(habitats.map(value=>value.settlementLevel)),
-    plantBiomass:mean(habitats.map(value=>value.plantBiomass))
-  };
+function habitatMean(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):Omit<WildlifeHabitatSnapshot,'biome'> {
+  if(basis==='origin'){
+    const habitats=records.map(record=>record.birthHabitat).filter((value):value is WildlifeHabitatSnapshot=>Boolean(value));
+    return {
+      ecology:mean(habitats.map(value=>value.ecology)),
+      food:mean(habitats.map(value=>value.food)),
+      water:mean(habitats.map(value=>value.water)),
+      danger:mean(habitats.map(value=>value.danger)),
+      settlementLevel:mean(habitats.map(value=>value.settlementLevel)),
+      plantBiomass:mean(habitats.map(value=>value.plantBiomass))
+    };
+  }
+  const out=zeroHabitat();
+  const weighted=records.filter(record=>(record.habitatExposure?.observedDays||0)>0);
+  const total=weighted.reduce((sum,record)=>sum+(record.habitatExposure?.observedDays||0),0);
+  if(total<=0)return out;
+  for(const record of weighted){
+    const exposure=record.habitatExposure!;
+    for(const key of HABITAT_KEYS)out[key]+=exposure.habitatMean[key]*exposure.observedDays/total;
+  }
+  return out;
 }
 
 function subtractTraits(a:WildlifeTraits,b:WildlifeTraits) {
@@ -126,10 +181,11 @@ function signalForTrait(
   return 'weak';
 }
 
-function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionStats[] {
-  const biomes=[...new Set(records.map(record=>record.birthHabitat?.biome).filter((value):value is NonNullable<WildlifeLineageRecord['birthHabitat']>['biome']=>Boolean(value)))];
+function biomeSelection(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):WildlifeBiomeSelectionStats[] {
+  const biomeFor=(record:WildlifeLineageRecord)=>basis==='origin'?record.birthHabitat?.biome:dominantWildlifeExposureBiome(record.habitatExposure);
+  const biomes=[...new Set(records.map(biomeFor).filter((value):value is WildlifeHabitatSnapshot['biome']=>Boolean(value)))];
   return biomes.map(biome=>{
-    const cohortRecords=records.filter(record=>record.birthHabitat?.biome===biome);
+    const cohortRecords=records.filter(record=>biomeFor(record)===biome);
     const breeders=cohortRecords.filter(record=>record.offspringCount>0);
     const average=traitMean(cohortRecords);
     const breederAverage=breeders.length?traitMean(breeders):zeroTraits();
@@ -147,6 +203,7 @@ function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionS
       );
     }
     return {
+      basis,
       biome,
       population:cohortRecords.length,
       breeders:breeders.length,
@@ -154,7 +211,8 @@ function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionS
       breederRate:cohortRecords.length?breeders.length/cohortRecords.length:0,
       offspringMean:mean(cohortRecords.map(record=>record.offspringCount)),
       lifespanMean:mean(dead.map(record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))),
-      habitatMean:habitatMean(cohortRecords),
+      observedExposureDaysMean:mean(cohortRecords.map(record=>record.habitatExposure?.observedDays||0)),
+      habitatMean:habitatMean(cohortRecords,basis),
       traitMean:average,
       breederTraitMean:breederAverage,
       selectionDifferential:differential,
@@ -197,7 +255,8 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       reproductiveSuccess:mean(breeders.map(record=>record.offspringCount)),
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
       cohorts:generations.map(generation=>cohort(generation,speciesRecords.filter(record=>record.generation===generation))),
-      biomeSelection:biomeSelection(speciesRecords)
+      biomeSelection:biomeSelection(speciesRecords,'origin'),
+      lifetimeBiomeSelection:biomeSelection(speciesRecords,'lifetime')
     };
   });
 }
