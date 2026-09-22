@@ -1472,7 +1472,7 @@ class TownGame {
     }else if(decision.action==='migrate'){
       const source=this.coarseWorld.chunks.get(s.chunkId);
       const candidates=this.wildlifeMigrationCandidates(s).nearby;
-      const chosen=candidates.find(candidate=>candidate.id===decision.targetChunkId)??candidates[0];
+      const chosen=candidates.find(candidate=>candidate.id===decision.targetChunkId);
       const destination=chosen?this.coarseWorld.chunks.get(chosen.id):undefined;
       if(source&&destination){
         s.targetChunkId=destination.id;
@@ -1537,6 +1537,10 @@ class TownGame {
         break;
       case 'seek_mate':
         if(other&&dist(s.position,other.state.position)<=2.5)this.tryWildlifeReproduction(animal,other);
+        break;
+      case 'migrate':
+        if(s.targetChunkId&&this.completeFineWildlifeMigration(animal,s.targetChunkId))return;
+        s.energy=clamp(s.energy-2,0,100);
         break;
       case 'wander':
         s.energy=clamp(s.energy-2,0,100);break;
