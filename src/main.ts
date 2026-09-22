@@ -8,11 +8,12 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
+import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -173,6 +174,7 @@ class TownGame {
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
   wildlifeLineage = new Map<string,WildlifeLineageRecord>();
+  wildlifeTransfers = new Map<string,PersistedWildlifeTransfer>();
   lineageEpoch = 0;
   evolutionCacheEpoch = -1;
   evolutionCache: WildlifeEvolutionStats[] = [];
@@ -875,7 +877,8 @@ class TownGame {
       fineChunks:[...fine.values()],
       homeNpcs,
       homeObjects,
-      wildlifeLineage:[...this.wildlifeLineage.values()].map(record=>structuredClone(record))
+      wildlifeLineage:[...this.wildlifeLineage.values()].map(record=>structuredClone(record)),
+      wildlifeTransfers:[...this.wildlifeTransfers.values()].map(transfer=>structuredClone(transfer))
     };
   }
 
@@ -901,6 +904,12 @@ class TownGame {
     }
     this.lineageEpoch++;
     this.reconcileLineageOffspring();
+
+    this.wildlifeTransfers.clear();
+    for(const transfer of snapshot.wildlifeTransfers||[]){
+      if(!transfer?.entityId||!transfer?.state||!transfer.toChunkId)continue;
+      this.wildlifeTransfers.set(transfer.entityId,structuredClone(transfer));
+    }
 
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
