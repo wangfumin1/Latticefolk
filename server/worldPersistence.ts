@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {
   CoarseChunkState, PersistedFineChunk, WorldPersistenceMeta, WorldPersistenceSnapshot,
-  NpcState, WildlifeState, WorldObjectState
+  NpcState, WildlifeLineageRecord, WildlifeState, WildlifeTraits, WorldObjectState
 } from '../src/types.js';
+import { computeEvolutionStatistics } from '../src/world/evolution.js';
 
 type Row = Record<string, unknown>;
 
@@ -50,6 +51,28 @@ export class WorldPersistence {
         object_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS wildlife_lineage (
+        entity_id TEXT PRIMARY KEY,
+        species TEXT NOT NULL,
+        mother_id TEXT,
+        father_id TEXT,
+        birth_day REAL NOT NULL,
+        death_day REAL,
+        death_reason TEXT,
+        generation INTEGER NOT NULL,
+        birth_chunk TEXT NOT NULL,
+        death_chunk TEXT,
+        traits_at_birth_json TEXT NOT NULL,
+        traits_at_death_json TEXT,
+        offspring_count INTEGER NOT NULL DEFAULT 0,
+        reproductive_success INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_species_generation ON wildlife_lineage(species,generation);
+      CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_mother ON wildlife_lineage(mother_id);
+      CREATE INDEX IF NOT EXISTS idx_wildlife_lineage_father ON wildlife_lineage(father_id);
     `);
     const fineColumns=this.db.prepare("PRAGMA table_info(fine_chunks)").all() as Array<{name:string}>;
     if(!fineColumns.some(column=>column.name==='wildlife_json')){
