@@ -88,3 +88,7 @@ Coarse niche competition is part of each `CoarseChunkState`, so it is persisted 
 ### Wildlife disease pressure persistence
 
 Coarse disease transmission state is embedded in `CoarseChunkState` and persists inside `coarse_chunks.state_json`: environmental pressure, species pressure, local contact, cross-species contact, migration-import pressure, and strongest transmission pair. Each coarse species population may also carry `importedDiseasePressure`, which decays deterministically after arrival. Fine lineage habitat JSON may include optional `diseasePressure`; lifetime exposure time-weights it. All fields are additive JSON state, so existing saves remain loadable without a SQLite table migration.
+
+### Derived fitness evidence
+
+Fitness-by-habitat statistics are intentionally **not** stored as authoritative SQLite rows. The durable facts remain lineage records, offspring/death outcomes, and observation-bounded habitat exposure. Competition/season/disease correlations and low/mid/high exposure cohorts are recomputed deterministically from those facts by `src/world/evolution.ts` and through `GET /api/world/evolution`. This prevents stale aggregate statistics from diverging from the underlying lineage archive.
