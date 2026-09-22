@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
-import { applyWildlifeMigration, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
+import { applyWildlifeMigration, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -132,4 +132,40 @@ test('competition state remains valid through repeated ecology simulation',()=>{
   assert.ok(a.nicheCompetition);
   assert.ok(Number.isFinite(a.nicheCompetition!.meanPressure));
   assert.ok(a.wildlife!.every(p=>Number.isFinite(p.carryingCapacity)&&Number.isFinite(p.competitionPressure||0)&&p.count>=0));
+});
+
+
+test('seasonal habitat suitability changes deterministically by species and biome',()=>{
+  const forest=chunk('chunk_season_forest',10,{biome:'forest',ecology:82,food:74,water:72,danger:18});
+  ensurePlantBiomass(forest);
+  const deerSummer=seasonalHabitatSuitability(forest,'deer',31);
+  const deerAutumn=seasonalHabitatSuitability(forest,'deer',61);
+  assert.ok(deerAutumn>deerSummer);
+  assert.equal(deerAutumn,seasonalHabitatSuitability(forest,'deer',61));
+});
+
+test('seasonal pull can reverse deer migration direction while conserving population',()=>{
+  const forest=chunk('chunk_season_a',11,{biome:'forest',ecology:82,food:74,water:72,danger:18});
+  const hills=chunk('chunk_season_b',12,{biome:'hills',ecology:82,food:74,water:72,danger:18});
+  ensureWildlifePopulations(forest);ensureWildlifePopulations(hills);
+  for(const species of ['rabbit','boar','fox'] as const){
+    forest.wildlife!.find(p=>p.species===species)!.count=0;
+    hills.wildlife!.find(p=>p.species===species)!.count=0;
+  }
+  const deerForest=forest.wildlife!.find(p=>p.species==='deer')!;
+  const deerHills=hills.wildlife!.find(p=>p.species==='deer')!;
+  deerForest.count=Math.min(deerForest.carryingCapacity*.55,8);
+  deerHills.count=Math.min(deerHills.carryingCapacity*.55,8);
+  deerForest.diseaseLoad=0;deerHills.diseaseLoad=0;
+
+  const summer=planWildlifeMigration([forest,hills],new Set(),31).find(move=>move.species==='deer');
+  const autumn=planWildlifeMigration([forest,hills],new Set(),61).find(move=>move.species==='deer');
+  assert.ok(summer);
+  assert.ok(autumn);
+  assert.notEqual(summer!.fromChunkId,autumn!.fromChunkId);
+
+  const totalBefore=deerForest.count+deerHills.count;
+  applyWildlifeMigration(new Map([[forest.id,forest],[hills.id,hills]]),[autumn!]);
+  const totalAfter=deerForest.count+deerHills.count;
+  assert.ok(Math.abs(totalAfter-totalBefore)<.002);
 });
