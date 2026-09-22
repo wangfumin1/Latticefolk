@@ -69,7 +69,7 @@ The wildlife milestone adds a `wildlife_json` column to `fine_chunks`. Existing 
 
 ### Habitat snapshots for selection analysis
 
-Lineage rows now optionally persist `birth_habitat_json`, `death_habitat_json`, and `habitat_exposure_json`. Birth/death snapshots contain biome, ecology, food, water, danger, settlement level, and aggregate plant biomass; lifetime exposure additionally stores observed days, time-weighted habitat means, per-biome/per-chunk observed duration, and observed transition count. Existing databases receive additive column migrations. For reproduced offspring, the origin snapshot is the actual birth habitat; for legacy/founder individuals it is the first habitat observed by the upgraded simulation, so downstream analysis keeps that provenance limitation explicit.
+Lineage rows now optionally persist `birth_habitat_json`, `death_habitat_json`, and `habitat_exposure_json`. Birth/death snapshots contain biome, ecology, food, water, danger, settlement level, aggregate plant biomass, and optional species-specific niche competition pressure; lifetime exposure additionally stores observed days, time-weighted habitat means (including competition pressure when available), per-biome/per-chunk observed duration, and observed transition count. Existing databases receive additive column migrations. For reproduced offspring, the origin snapshot is the actual birth habitat; for legacy/founder individuals it is the first habitat observed by the upgraded simulation, so downstream analysis keeps that provenance limitation explicit.
 
 ### Observed lifetime exposure
 
@@ -80,3 +80,7 @@ Lifetime exposure is deliberately observation-bounded. While an individual is ma
 Fine wildlife migration is persisted separately from `fine_chunks`. A migrant already changes the authoritative coarse source/destination population through a conserved deterministic transfer, while its named fine identity is stored in `wildlife_transfers` until the destination is materialized. This avoids treating an unvisited destination as if it already had a complete fine snapshot.
 
 Each transfer stores the full `WildlifeState`, source/destination chunk IDs, simulation day, and `representedPopulation`. That representative weight is also carried by the migrated state after arrival so later death or onward migration folds back by the same coarse quantity rather than by a generic fine-entity scale. Completing/materializing a transfer and pruning the queue occur in the same world-snapshot transaction on the next save.
+
+### Niche competition persistence
+
+Coarse niche competition is part of each `CoarseChunkState`, so it is persisted automatically inside `coarse_chunks.state_json` with the rest of the authoritative aggregate ecology. Species-level `competitionPressure` is also stored on coarse wildlife populations. Fine lineage habitat JSON can carry `competitionPressure`; because it is an optional additive field, older saves remain loadable without a schema migration.

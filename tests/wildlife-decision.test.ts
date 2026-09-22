@@ -5,7 +5,7 @@ import type { WildlifeDecisionBatchRequest, WildlifeMigrationCandidate, Wildlife
 
 const habitat=(patch:Partial<WildlifeMigrationCandidate>={}):WildlifeMigrationCandidate=>({
   id:'chunk_2_2',biome:'plains',distance:0,ecology:70,food:65,water:70,danger:20,settlementLevel:0,
-  population:8,carryingCapacity:20,density:.4,...patch
+  population:8,carryingCapacity:20,density:.4,competitionPressure:10,...patch
 });
 const world=(patch:Partial<WildlifeDecisionBatchRequest['requests'][number]['world']>={})=>({
   gameTime:'09:00',minuteOfDay:540,weather:'clear',currentHabitat:habitat(),nearbyChunks:[],
@@ -73,6 +73,23 @@ test('wildlife fallback chooses bounded adjacent migration target under habitat 
       nearbyChunks:[
         habitat({id:'chunk_3_2',distance:24,biome:'forest',population:7,carryingCapacity:22,density:.32,ecology:82,food:72,water:70,danger:18}),
         habitat({id:'chunk_2_3',distance:24,biome:'dryland',population:14,carryingCapacity:18,density:.78,ecology:42,food:38,water:28,danger:45})
+      ]
+    }),
+    allowedActions:['migrate','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'migrate');
+  assert.equal(d.targetChunkId,'chunk_3_2');
+});
+
+
+test('wildlife fallback can migrate away from severe niche competition',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({hunger:25,thirst:25,energy:75,health:85,ageDays:160}),
+    world:world({
+      currentHabitat:habitat({density:.55,competitionPressure:78,ecology:70,food:68,water:72,danger:20}),
+      nearbyChunks:[
+        habitat({id:'chunk_3_2',distance:24,biome:'forest',density:.35,competitionPressure:12,ecology:76,food:70,water:72,danger:18})
       ]
     }),
     allowedActions:['migrate','wander','rest']

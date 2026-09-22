@@ -240,3 +240,11 @@ The deterministic executor re-validates adjacency, source/destination species po
 A migrant into an unmaterialized chunk enters a separate `wildlife_transfers` queue rather than `fine_chunks`. This is important: a transit identity is not a complete visited-chunk snapshot. When the destination later materializes, one procedural representative is replaced by the named migrant where possible. Migrated identities retain a fixed `representedPopulation` weight, so death and onward migration fold back using the same coarse quantity; ordinary fine representatives continue to use the existing bounded representative scale.
 
 Fine-born individuals are not allowed to migrate until they have been folded into a chunk baseline and later rematerialized. This prevents a birth that has not yet entered coarse accounting from being transferred as if its represented population already existed. God View remains observer-only: wildlife flee logic no longer falls back to the player/camera position when no real predator target exists.
+
+## Deterministic wildlife niche competition
+
+Coarse wildlife now models explicit inter-species competition instead of relying only on independent plant consumption. Each species has a fixed simulation-owned resource-use profile across grass, shrub, fruit, crop, prey, and space. Pairwise niche overlap is derived deterministically from those profiles; current competitor density then produces species-specific competition pressure.
+
+Competition never comes from the Decision Provider. The simulation computes a species' fundamental carrying capacity from biome affinity, ecology, forage, water, danger, and settlement pressure, then applies a bounded competition penalty of at most 32%. Density-dependent growth, health and migration therefore respond to the effective capacity while remaining numerically bounded. The strongest current pair and mean pressure are exposed through coarse-world status and God View.
+
+Competition also enters evolution observability. Fine wildlife habitat snapshots include the species-specific coarse competition pressure at the time of observation, and lifetime habitat exposure keeps its time-weighted mean. Legacy lineage records without this field remain valid and are interpreted as zero observed competition for that historical snapshot rather than retroactively inventing data.

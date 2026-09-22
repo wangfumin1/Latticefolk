@@ -30,6 +30,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - biome 选择压力观测：谱系记录出生/死亡环境，God View 按 biome 展示繁殖者相对 cohort 的标准化 trait 差值、跨代同向一致性、样本量及“样本不足/弱信号/持续信号”，不把相关性直接写成因果。
 - 生命周期 habitat 暴露：个体只在实际 fine simulation 期间累计环境暴露天数、时间加权 ecology/food/water/danger、biome/chunk 时长和已观测迁移；coarse 时段不会伪造为命名个体轨迹，并可在 God View 对比出生 biome 与 lifetime dominant biome 的选择证据。
 - 可保留身份的 fine wildlife migration：命名个体只能迁往合法相邻 chunk，保留 entity ID、父母、代数、traits、妊娠和 habitat history；确定性模拟负责 carrying capacity、coarse 数量守恒、代表权重、transit persistence 与迁徙 provenance。
+- 确定性生态位竞争：兔/鹿/野猪/狐狸使用固定资源 profile 计算 pairwise niche overlap，并结合其他物种密度形成 competition pressure；压力会有界降低有效 carrying capacity、影响健康，并进入 God View 与 lineage habitat exposure。
 
 ## 本地运行
 
@@ -66,7 +67,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → **生态位竞争、季节迁徙驱动、疾病传播与更多物种** → 更完整生态 → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → ✅ 生态位竞争 → **季节迁徙驱动、疾病传播与更多物种** → 更完整生态 → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 

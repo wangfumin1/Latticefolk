@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
-import { applyWildlifeMigration, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
+import { applyWildlifeMigration, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -83,4 +83,53 @@ test('trophic flux records plant production, herbivory and predation as bounded 
   assert.ok((a.trophicFlux?.herbivory||0)>0);
   assert.ok((a.trophicFlux?.predation||0)>=0);
   assert.ok((a.trophicFlux?.mortalityReturn||0)>=0);
+});
+
+
+test('shared herbivore niches create deterministic competition pressure and reduce effective capacity',()=>{
+  const a=chunk('chunk_compete',7,{biome:'forest',ecology:88,water:84,food:78});
+  const populations=ensureWildlifePopulations(a);
+  for(const p of populations)p.count=0;
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  rabbit.count=8;
+  computeWildlifeNicheCompetition(a,populations);
+  const lowPressure=rabbit.competitionPressure||0;
+  const lowCapacity=rabbit.carryingCapacity;
+
+  const deer=populations.find(p=>p.species==='deer')!;
+  const boar=populations.find(p=>p.species==='boar')!;
+  deer.count=14;
+  boar.count=10;
+  computeWildlifeNicheCompetition(a,populations);
+
+  assert.ok((rabbit.competitionPressure||0)>lowPressure);
+  assert.ok(rabbit.carryingCapacity<lowCapacity);
+  assert.ok((a.nicheCompetition?.strongestPair?.pressure||0)>0);
+  assert.ok(a.nicheCompetition?.strongestPair?.speciesA);
+  assert.ok(a.nicheCompetition?.strongestPair?.speciesB);
+});
+
+test('niche partitioning keeps fox competition lower than crowded plant consumers',()=>{
+  const a=chunk('chunk_partition',8,{biome:'plains',ecology:90,water:88,food:82});
+  const populations=ensureWildlifePopulations(a);
+  for(const p of populations){
+    if(p.species==='rabbit')p.count=30;
+    else if(p.species==='deer')p.count=14;
+    else if(p.species==='boar')p.count=11;
+    else p.count=5;
+  }
+  const state=computeWildlifeNicheCompetition(a,populations);
+  assert.ok(state.speciesPressure.rabbit>state.speciesPressure.fox);
+  assert.ok(state.speciesPressure.deer>state.speciesPressure.fox);
+  assert.ok(Object.values(state.speciesPressure).every(value=>value>=0&&value<=100));
+  assert.ok(populations.every(p=>p.carryingCapacity>=0&&(p.competitionPressure||0)>=0&&(p.competitionPressure||0)<=100));
+});
+
+test('competition state remains valid through repeated ecology simulation',()=>{
+  const a=chunk('chunk_competition_tick',9,{biome:'wetlands',ecology:84,water:94,food:76});
+  ensureWildlifePopulations(a);
+  for(let i=0;i<20;i++)simulateWildlife(a,20,i%3===0?'rain':'clear',25);
+  assert.ok(a.nicheCompetition);
+  assert.ok(Number.isFinite(a.nicheCompetition!.meanPressure));
+  assert.ok(a.wildlife!.every(p=>Number.isFinite(p.carryingCapacity)&&Number.isFinite(p.competitionPressure||0)&&p.count>=0));
 });

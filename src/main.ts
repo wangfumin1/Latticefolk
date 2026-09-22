@@ -1430,7 +1430,8 @@ class TownGame {
       settlementLevel:chunk.settlementLevel,
       population:count,
       carryingCapacity,
-      density:carryingCapacity>0?count/carryingCapacity:2
+      density:carryingCapacity>0?count/carryingCapacity:2,
+      competitionPressure:population?.competitionPressure||0
     };
   }
 
@@ -1452,7 +1453,7 @@ class TownGame {
     const fallbackCurrent:WildlifeMigrationCandidate={
       id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
       ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
-      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2
+      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0
     };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
@@ -1785,10 +1786,11 @@ class TownGame {
     return ((a+b)/2)*(1+mutation);
   }
 
-  wildlifeHabitatSnapshot(chunkId:string) {
+  wildlifeHabitatSnapshot(chunkId:string,species?:WildlifeSpecies) {
     const chunk=this.coarseWorld.chunks.get(chunkId);
     if(!chunk)return undefined;
     const plants=chunk.plants;
+    const population=species?chunk.wildlife?.find(entry=>entry.species===species):undefined;
     return {
       biome:chunk.biome,
       ecology:chunk.ecology,
@@ -1796,7 +1798,8 @@ class TownGame {
       water:chunk.water,
       danger:chunk.danger,
       settlementLevel:chunk.settlementLevel,
-      plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology
+      plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology,
+      competitionPressure:population?.competitionPressure||0
     };
   }
 
@@ -1808,7 +1811,7 @@ class TownGame {
 
   beginWildlifeHabitatObservation(state:WildlifeState) {
     const record=this.ensureWildlifeLineage(state);
-    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId,state.species);
     if(!habitat)return;
     const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,0);
     exposure.lastObservedDay=this.day+this.minuteOfDay/1440;
@@ -1819,7 +1822,7 @@ class TownGame {
 
   recordWildlifeHabitatExposure(state:WildlifeState,force=false) {
     const record=this.ensureWildlifeLineage(state);
-    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId,state.species);
     if(!habitat)return;
     const currentDay=this.day+this.minuteOfDay/1440;
     if(!record.habitatExposure||record.habitatExposure.lastObservedDay===undefined){
@@ -1845,7 +1848,7 @@ class TownGame {
     const existing=this.wildlifeLineage.get(state.id);
     if(existing){
       if(!existing.birthHabitat){
-        existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId);
+        existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId,existing.species);
         if(existing.birthHabitat)this.lineageEpoch++;
       }
       return existing;
@@ -1859,7 +1862,7 @@ class TownGame {
       generation:state.generation,
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
-      birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId),
+      birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
       reproductiveSuccess:false
@@ -1914,7 +1917,7 @@ class TownGame {
       record.deathReason=reason;
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
-      record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId);
+      record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId,animal.state.species);
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
@@ -2399,7 +2402,7 @@ class TownGame {
 
   updateUi() {
     const world=this.coarseWorld.status();
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
@@ -2415,7 +2418,8 @@ class TownGame {
         const s=a.state;
         ui.npc.classList.remove('hidden');
         const lineage=this.wildlifeLineage.get(s.id);
-        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
+        const coarsePopulation=this.coarseWorld.chunks.get(s.chunkId)?.wildlife?.find(entry=>entry.species===s.species);
+        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
       }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
@@ -2501,6 +2505,18 @@ class TownGame {
     return total;
   }
 
+  coarseWildlifeCompetition(species:WildlifeSpecies) {
+    let weighted=0,total=0;
+    for(const chunk of this.coarseWorld.chunks.values()){
+      const population=chunk.wildlife?.find(entry=>entry.species===species);
+      if(!population)continue;
+      const weight=Math.max(.01,population.count);
+      weighted+=(population.competitionPressure||0)*weight;
+      total+=weight;
+    }
+    return total>0?weighted/total:0;
+  }
+
   renderEvolutionPanel() {
     if(this.cameraMode!=='god'){
       ui.evolution.classList.add('hidden');
@@ -2514,7 +2530,7 @@ class TownGame {
     const cards=active.map(entry=>`
       <div class="evo-card">
         <div class="evo-head"><b>${this.escape(this.wildlifeName(entry.species))}</b><span>world ~${this.coarseWildlifePopulation(entry.species).toFixed(0)}</span></div>
-        <div>${i18n.t('evolution.tracked')} ${entry.livingPopulation}/${entry.historicalPopulation} · G${entry.generationMean.toFixed(1)}→G${entry.generationMax}</div>
+        <div>${i18n.t('evolution.tracked')} ${entry.livingPopulation}/${entry.historicalPopulation} · G${entry.generationMean.toFixed(1)}→G${entry.generationMax} · ${i18n.t('evolution.competition')} ${this.coarseWildlifeCompetition(entry.species).toFixed(0)}</div>
         <div>${i18n.t('evolution.births')} ${entry.births} · ${i18n.t('evolution.deaths')} ${entry.deaths} · ${i18n.t('evolution.lifespan')} ${entry.lifespanMean.toFixed(1)}d</div>
         <div>${i18n.t('evolution.reproduction')} ${percent(entry.survivalToReproductionRate)} · offspring ${entry.offspringMean.toFixed(2)} · successful ${entry.reproductiveSuccess.toFixed(2)}</div>
         <div class="evo-traits">μ speed ${trait(entry.traitMean.speed)} · size ${trait(entry.traitMean.size)} · fertility ${trait(entry.traitMean.fertility)} · wariness ${trait(entry.traitMean.wariness)}</div>
@@ -2526,14 +2542,14 @@ class TownGame {
             <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
           </div>`).join('')}
         ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
             <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
