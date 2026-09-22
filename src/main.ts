@@ -1050,6 +1050,7 @@ class TownGame {
       const remainingBySpecies=new Map<WildlifeSpecies,number>();
       for(const population of chunk.wildlife||[])remainingBySpecies.set(population.species,Math.max(0,population.count));
       for(const transfer of pendingTransfers){
+        if(this.wildlifeLineage.get(transfer.entityId)?.deathDay!==undefined)continue;
         const species=transfer.state.species;
         const remaining=remainingBySpecies.get(species)||0;
         const effective=Math.min(Math.max(0,transfer.representedPopulation),remaining);
