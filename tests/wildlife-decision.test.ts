@@ -5,7 +5,7 @@ import type { WildlifeDecisionBatchRequest, WildlifeMigrationCandidate, Wildlife
 
 const habitat=(patch:Partial<WildlifeMigrationCandidate>={}):WildlifeMigrationCandidate=>({
   id:'chunk_2_2',biome:'plains',distance:0,ecology:70,food:65,water:70,danger:20,settlementLevel:0,
-  population:8,carryingCapacity:20,density:.4,competitionPressure:10,...patch
+  population:8,carryingCapacity:20,density:.4,competitionPressure:10,seasonalSuitability:70,...patch
 });
 const world=(patch:Partial<WildlifeDecisionBatchRequest['requests'][number]['world']>={})=>({
   gameTime:'09:00',minuteOfDay:540,weather:'clear',currentHabitat:habitat(),nearbyChunks:[],
@@ -90,6 +90,23 @@ test('wildlife fallback can migrate away from severe niche competition',()=>{
       currentHabitat:habitat({density:.55,competitionPressure:78,ecology:70,food:68,water:72,danger:20}),
       nearbyChunks:[
         habitat({id:'chunk_3_2',distance:24,biome:'forest',density:.35,competitionPressure:12,ecology:76,food:70,water:72,danger:18})
+      ]
+    }),
+    allowedActions:['migrate','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'migrate');
+  assert.equal(d.targetChunkId,'chunk_3_2');
+});
+
+
+test('wildlife fallback can migrate toward seasonally suitable adjacent habitat',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({hunger:20,thirst:20,energy:80,health:90,ageDays:180}),
+    world:world({
+      currentHabitat:habitat({density:.45,competitionPressure:10,seasonalSuitability:10,ecology:72,food:70,water:70,danger:18}),
+      nearbyChunks:[
+        habitat({id:'chunk_3_2',distance:24,biome:'forest',density:.45,competitionPressure:10,seasonalSuitability:90,ecology:72,food:70,water:70,danger:18})
       ]
     }),
     allowedActions:['migrate','wander','rest']
