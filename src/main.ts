@@ -1469,13 +1469,14 @@ class TownGame {
     if(currentDay<s.pregnantUntilDay)return;
     const father=this.wildlife.get(s.pregnantById);
     const fatherState=father?.state;
+    const fatherLineage=this.wildlifeLineage.get(s.pregnantById);
     const life=this.wildlifeLifeHistory(s.species);
     const population=this.coarseWorld.chunks.get(s.chunkId)?.wildlife?.find(x=>x.species===s.species);
     const current=[...this.wildlife.values()].filter(x=>x.state.chunkId===s.chunkId&&x.state.species===s.species&&!x.removed).length;
     const room=population?Math.max(0,Math.ceil(population.carryingCapacity*.45)-current):life.litterMax;
     const litter=Math.min(room,life.litterMin+Math.floor(this.deterministicUnit(`${s.id}:litter:${this.day}`)*(life.litterMax-life.litterMin+1)));
-    const fatherTraits=fatherState?.traits??s.traits;
-    const fatherGeneration=fatherState?.generation??s.generation;
+    const fatherTraits=fatherState?.traits??fatherLineage?.traitsAtDeath??fatherLineage?.traitsAtBirth??s.traits;
+    const fatherGeneration=fatherState?.generation??fatherLineage?.generation??s.generation;
     for(let i=0;i<litter;i++){
       const generation=Math.max(s.generation,fatherGeneration)+1;
       const id=`${s.chunkId}_wild_${s.species}_g${generation}_${this.day}_${Math.floor(this.minuteOfDay)}_${i}_${this.wildlife.size}`;
@@ -1489,7 +1490,7 @@ class TownGame {
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
         generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
-        diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??s.pregnantById
+        diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??fatherLineage?.entityId??s.pregnantById
       };
       if(this.spawnWildlife(baby)){
         const runtime=this.materializedChunks.get(s.chunkId);if(runtime)runtime.wildlifeIds.push(id);
