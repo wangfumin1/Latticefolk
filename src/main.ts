@@ -936,6 +936,7 @@ class TownGame {
     this.persistenceSaveInFlight=true;
     this.lastPersistenceSaveAt=now();
     try{
+      this.flushWildlifeHabitatExposure();
       const snapshot=this.buildWorldSnapshot();
       const response=await fetch('/api/world/state',{
         method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
@@ -951,6 +952,7 @@ class TownGame {
   flushWorldBeacon() {
     if(!this.persistenceReady)return;
     try{
+      this.flushWildlifeHabitatExposure();
       const payload=JSON.stringify(this.buildWorldSnapshot());
       navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
     }catch{}
@@ -1547,6 +1549,12 @@ class TownGame {
       settlementLevel:chunk.settlementLevel,
       plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology
     };
+  }
+
+  flushWildlifeHabitatExposure() {
+    for(const animal of this.wildlife.values()){
+      if(!animal.removed)this.recordWildlifeHabitatExposure(animal.state,true);
+    }
   }
 
   beginWildlifeHabitatObservation(state:WildlifeState) {
