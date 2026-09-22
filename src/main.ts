@@ -6,7 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
-import { seasonalHabitatSuitability } from './world/ecology';
+import { seasonalHabitatSuitability, wildlifeDiseaseSpillover } from './world/ecology';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -1372,9 +1372,23 @@ class TownGame {
       s.energy=clamp(s.energy-dt*.045,0,100);
       const maxAge=this.wildlifeLifeHistory(s.species).maxAge;
       const agePressure=Math.max(0,s.ageDays/maxAge-.72);
-      const nearbyDisease=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed&&x.state.species===s.species&&dist(s.position,x.state.position)<4).map(x=>x.state.diseaseLoad||0);
-      const exposure=nearbyDisease.length?nearbyDisease.reduce((a,b)=>a+b,0)/nearbyDisease.length:0;
-      s.diseaseLoad=clamp((s.diseaseLoad||0)+(exposure-(s.diseaseLoad||0))*dt*.0015-dt*.002,0,100);
+      let contactWeighted=0,contactWeight=0;
+      for(const other of this.wildlife.values()){
+        if(other===animal||other.removed)continue;
+        const d=dist(s.position,other.state.position);
+        if(d>=5.5)continue;
+        const proximity=1-d/5.5;
+        const weight=wildlifeDiseaseSpillover(other.state.species,s.species)*proximity;
+        contactWeighted+=(other.state.diseaseLoad||0)*weight;
+        contactWeight+=weight;
+      }
+      const contactPressure=contactWeight>0?contactWeighted/contactWeight:0;
+      const diseaseState=this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease;
+      const environmentalPressure=(diseaseState?.speciesPressure[s.species]||0)*.55+(diseaseState?.environmentalReservoir||0)*.20;
+      const exposure=clamp(contactPressure*.70+environmentalPressure*.30);
+      const diseaseRate=Math.min(.09,dt*.012);
+      const recovery=(s.energy>45&&s.hunger<70&&s.thirst<70)?.004:0;
+      s.diseaseLoad=clamp((s.diseaseLoad||0)+(exposure-(s.diseaseLoad||0))*diseaseRate-recovery*dt,0,100);
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
       s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
@@ -1433,7 +1447,8 @@ class TownGame {
       carryingCapacity,
       density:carryingCapacity>0?count/carryingCapacity:2,
       competitionPressure:population?.competitionPressure||0,
-      seasonalSuitability:seasonalHabitatSuitability(chunk,state.species,this.day+this.minuteOfDay/1440)
+      seasonalSuitability:seasonalHabitatSuitability(chunk,state.species,this.day+this.minuteOfDay/1440),
+      diseasePressure:chunk.wildlifeDisease?.speciesPressure[state.species]??population?.diseaseLoad??0
     };
   }
 
@@ -1456,7 +1471,8 @@ class TownGame {
       id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
       ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
       settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0,
-      seasonalSuitability:source?seasonalHabitatSuitability(source,animal.state.species,this.day+this.minuteOfDay/1440):0
+      seasonalSuitability:source?seasonalHabitatSuitability(source,animal.state.species,this.day+this.minuteOfDay/1440):0,
+      diseasePressure:source?.wildlifeDisease?.speciesPressure[animal.state.species]||0
     };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
@@ -1803,7 +1819,8 @@ class TownGame {
       settlementLevel:chunk.settlementLevel,
       plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology,
       competitionPressure:population?.competitionPressure||0,
-      seasonalSuitability:species?seasonalHabitatSuitability(chunk,species,this.day+this.minuteOfDay/1440):0
+      seasonalSuitability:species?seasonalHabitatSuitability(chunk,species,this.day+this.minuteOfDay/1440):0,
+      diseasePressure:species?(chunk.wildlifeDisease?.speciesPressure[species]??population?.diseaseLoad??0):0
     };
   }
 
