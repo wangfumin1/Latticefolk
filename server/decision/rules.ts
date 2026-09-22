@@ -182,7 +182,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
   const decisions:WildlifeDecisionResult[]=req.requests.map(entry=>{
     const animal=entry.wildlife;
     const nearbyFox=entry.world.nearbyWildlife.find(x=>x.species==='fox'&&x.distance<5);
-    const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.ageDays>90&&x.distance<8);
+    const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.mateAvailable&&x.distance<8);
     let action:WildlifeAction='wander';
     let targetObjectId:string|undefined;
     let targetWildlifeId:string|undefined;
@@ -205,6 +205,8 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
         targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>tags.includes(tag)))?.id;
         reasonCode='hunger';
       }
+    }else if((animal.diseaseLoad||0)>=65&&entry.allowedActions.includes('rest')){
+      action='rest';reasonCode='disease_recovery';
     }else if(animal.energy<=24&&entry.allowedActions.includes('rest')){
       action='rest';reasonCode='low_energy';
     }else if(animal.ageDays>90&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){

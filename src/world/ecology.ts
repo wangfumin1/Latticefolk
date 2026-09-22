@@ -12,6 +12,11 @@ export interface WildlifeMigration {
 const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 const round=(v:number)=>Math.round(v*1000)/1000;
+const plantTotal=(p:{grass:number;shrub:number;fruit:number;crop:number})=>p.grass+p.shrub+p.fruit+p.crop;
+
+function smooth(previous:number,next:number,weight=.08){
+  return round(previous*(1-weight)+Math.max(0,next)*weight);
+}
 
 const BIOME_AFFINITY:Record<WildlifeSpecies,Record<ChunkBiome,number>>={
   rabbit:{plains:1,forest:.82,hills:.65,wetlands:.72,dryland:.35},
@@ -141,9 +146,12 @@ function consumePlants(chunk:CoarseChunkState,species:WildlifeSpecies,amount:num
 }
 
 export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:string,day=1){
+  const plantsBefore=plantTotal(ensurePlantBiomass(chunk));
   simulatePlantBiomass(chunk,seconds,weather,day);
+  const primaryProduction=Math.max(0,plantTotal(ensurePlantBiomass(chunk))-plantsBefore);
   const populations=ensureWildlifePopulations(chunk);
   const dt=Math.min(30,Math.max(0,seconds));
+  let mortalityReturn=0;
 
   for(const pop of populations){
     pop.carryingCapacity=capacity(chunk,pop.species);
@@ -160,6 +168,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     const growthRate=pop.species==='rabbit'?.010:pop.species==='fox'?.0032:.0050;
     const natural=growthRate*pop.count*(1-density)*dt;
     const losses=(rainPenalty+droughtPenalty+humanPressure+diseaseMortality)*pop.count*dt;
+    mortalityReturn+=Math.max(0,losses);
     pop.count=Math.max(0,round(pop.count+natural-losses));
 
     const forage=plantFoodIndex(chunk,pop.species);
@@ -172,9 +181,11 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const deer=populations.find(x=>x.species==='deer')!;
   const boar=populations.find(x=>x.species==='boar')!;
 
+  const beforeHerbivory=plantTotal(ensurePlantBiomass(chunk));
   consumePlants(chunk,'rabbit',rabbits.count*.008*dt);
   consumePlants(chunk,'deer',deer.count*.018*dt);
   consumePlants(chunk,'boar',boar.count*.020*dt);
+  const herbivory=Math.max(0,beforeHerbivory-plantTotal(ensurePlantBiomass(chunk)));
 
   const preyAvailable=rabbits.count+deer.count*.25;
   const predation=Math.min(rabbits.count,foxes.count*Math.min(.015,preyAvailable*.0007)*dt);
@@ -184,6 +195,13 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const p=ensurePlantBiomass(chunk);
   const plantAverage=(p.grass+p.shrub+p.fruit+p.crop)/4;
   chunk.ecology=clamp(chunk.ecology+(plantAverage-chunk.ecology)*.0008*dt+(chunk.ecologyPolicy==='recover'?.015:0)*dt);
+
+  const flux=chunk.trophicFlux??{primaryProduction:0,herbivory:0,predation:0,mortalityReturn:0};
+  flux.primaryProduction=smooth(flux.primaryProduction,primaryProduction);
+  flux.herbivory=smooth(flux.herbivory,herbivory);
+  flux.predation=smooth(flux.predation,predation);
+  flux.mortalityReturn=smooth(flux.mortalityReturn,mortalityReturn+predation*.12);
+  chunk.trophicFlux=flux;
 }
 
 export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>):WildlifeMigration[]{

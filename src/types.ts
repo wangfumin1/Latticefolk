@@ -129,6 +129,7 @@ export interface WorldObjectState {
   capabilities?: InteractionCapability[];
   storage?: InventoryItem[];
   resourceAmount?: number;
+  resourceCapacity?: number;
   respawnAt?: number;
   occupiedBy?: string;
 }
@@ -254,6 +255,13 @@ export interface PlantBiomassState {
   crop: number;
 }
 
+export interface TrophicFluxState {
+  primaryProduction: number;
+  herbivory: number;
+  predation: number;
+  mortalityReturn: number;
+}
+
 export interface CoarseWildlifePopulation {
   species: WildlifeSpecies;
   count: number;
@@ -290,6 +298,9 @@ export interface WildlifeState {
   diseaseLoad?: number;
   motherId?: string;
   fatherId?: string;
+  pregnantById?: string;
+  pregnantUntilDay?: number;
+  lastBirthDay?: number;
 }
 
 export interface WildlifeDecisionRequest {
@@ -299,7 +310,7 @@ export interface WildlifeDecisionRequest {
     minuteOfDay: number;
     weather: string;
     nearbyResources: Array<{ id:string; tags:string[]; distance:number; resourceAmount?:number }>;
-    nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; sex:'female'|'male'; ageDays:number; distance:number; health:number; currentAction:WildlifeAction }>;
+    nearbyWildlife: Array<{ id:string; species:WildlifeSpecies; sex:'female'|'male'; ageDays:number; distance:number; health:number; currentAction:WildlifeAction; mateAvailable:boolean }>;
   };
   allowedActions: WildlifeAction[];
 }
@@ -343,6 +354,7 @@ export interface CoarseChunkState {
   migrationPolicy: ChunkMigrationPolicy;
   ecologyPolicy: ChunkEcologyPolicy;
   plants?: PlantBiomassState;
+  trophicFlux?: TrophicFluxState;
   wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;

@@ -12,7 +12,7 @@ test('wildlife fallback prioritizes nearby predator escape',()=>{
   const req:WildlifeDecisionBatchRequest={requests:[{
     wildlife:animal(),
     world:{gameTime:'09:00',minuteOfDay:540,weather:'clear',nearbyResources:[],nearbyWildlife:[
-      {id:'fox_1',species:'fox',sex:'male',ageDays:500,distance:3,health:80,currentAction:'hunt'}
+      {id:'fox_1',species:'fox',sex:'male',ageDays:500,distance:3,health:80,currentAction:'hunt',mateAvailable:true}
     ]},
     allowedActions:['flee','wander','graze','rest']
   }]};
@@ -30,4 +30,27 @@ test('wildlife fallback prioritizes water under severe thirst',()=>{
   const d=fallbackWildlifeDecisions(req).decisions[0]!;
   assert.equal(d.action,'drink');
   assert.equal(d.targetObjectId,'pond');
+});
+
+
+test('wildlife fallback avoids mating with unavailable partners',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({hunger:20,thirst:20,energy:80}),
+    world:{gameTime:'14:00',minuteOfDay:840,weather:'clear',nearbyResources:[],nearbyWildlife:[
+      {id:'rabbit_m',species:'rabbit',sex:'male',ageDays:180,distance:2,health:85,currentAction:'wander',mateAvailable:false}
+    ]},
+    allowedActions:['seek_mate','wander','rest']
+  }]};
+  assert.notEqual(fallbackWildlifeDecisions(req).decisions[0]?.action,'seek_mate');
+});
+
+test('disease pressure prefers recovery when no emergency need dominates',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({diseaseLoad:82,hunger:35,thirst:35,energy:60}),
+    world:{gameTime:'08:00',minuteOfDay:480,weather:'rain',nearbyResources:[],nearbyWildlife:[]},
+    allowedActions:['rest','wander']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'rest');
+  assert.equal(d.reasonCode,'disease_recovery');
 });

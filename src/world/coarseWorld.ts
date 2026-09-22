@@ -27,6 +27,9 @@ export interface CoarseWorldStatus {
   worldGrowth: string;
   wildlifePopulation: number;
   plantBiomass: number;
+  trophicPrimary: number;
+  trophicHerbivory: number;
+  trophicPredation: number;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -514,6 +517,9 @@ export class CoarseWorldRuntime {
       worldGrowth:this.worldPolicy.growth,
       wildlifePopulation:list.reduce((sum,c)=>sum+wildlifeCount(c),0),
       plantBiomass:list.reduce((sum,c)=>sum+plantBiomassTotal(c),0)/Math.max(1,list.length),
+      trophicPrimary:avg(c=>c.trophicFlux?.primaryProduction||0),
+      trophicHerbivory:avg(c=>c.trophicFlux?.herbivory||0),
+      trophicPredation:avg(c=>c.trophicFlux?.predation||0),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)

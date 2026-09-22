@@ -68,3 +68,19 @@ test('crowding can create wildlife disease pressure without invalid state',()=>{
   assert.ok(a.wildlife!.some(p=>(p.diseaseLoad||0)>4));
   assert.ok(a.wildlife!.every(p=>p.count>=0&&(p.diseaseLoad||0)>=0&&(p.diseaseLoad||0)<=100));
 });
+
+
+test('trophic flux records plant production, herbivory and predation as bounded recent rates',()=>{
+  const a=chunk('chunk_flux',6,{biome:'plains',ecology:88,water:88,food:82});
+  ensurePlantBiomass(a);ensureWildlifePopulations(a);
+  const rabbits=a.wildlife!.find(x=>x.species==='rabbit')!;
+  const foxes=a.wildlife!.find(x=>x.species==='fox')!;
+  rabbits.count=Math.max(8,rabbits.carryingCapacity*.7);
+  foxes.count=Math.max(2,foxes.carryingCapacity*.7);
+  for(let i=0;i<8;i++)simulateWildlife(a,20,'rain',12);
+  assert.ok(a.trophicFlux);
+  assert.ok((a.trophicFlux?.primaryProduction||0)>=0);
+  assert.ok((a.trophicFlux?.herbivory||0)>0);
+  assert.ok((a.trophicFlux?.predation||0)>=0);
+  assert.ok((a.trophicFlux?.mortalityReturn||0)>=0);
+});
