@@ -150,7 +150,7 @@ export class WorldPersistence {
           record.entityId,record.species,record.motherId??null,record.fatherId??null,
           record.birthDay,record.deathDay??null,record.deathReason??null,record.generation,
           record.birthChunk,record.deathChunk??null,JSON.stringify(record.traitsAtBirth),
-          record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,record.origin,record.offspringCount,
+          record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,record.origin==='reproduction'?'reproduction':'founder',record.offspringCount,
           record.reproductiveSuccess?1:0,savedAt
         );
       }
