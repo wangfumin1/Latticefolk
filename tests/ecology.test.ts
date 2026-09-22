@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
+import { wildlifeCanPredate, wildlifeSpeciesProfile } from '../src/world/wildlifeSpecies.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -227,4 +228,40 @@ test('coarse disease dynamics permit cross-species amplification and bounded rec
   for(let i=0;i<12;i++)simulateWildlife(a,20,'clear',45);
   assert.ok((rabbit.diseaseLoad||0)>before);
   assert.ok(populations.every(p=>(p.diseaseLoad||0)>=0&&(p.diseaseLoad||0)<=100));
+});
+
+
+test('expanded wildlife profiles seed mouse and wolf as real coarse populations',()=>{
+  const a=chunk('chunk_expanded_species',17,{biome:'forest',ecology:88,water:82,food:78});
+  const populations=ensureWildlifePopulations(a);
+  assert.ok(populations.find(p=>p.species==='mouse'));
+  assert.ok(populations.find(p=>p.species==='wolf'));
+  assert.ok((populations.find(p=>p.species==='mouse')?.carryingCapacity||0)>0);
+  assert.ok((populations.find(p=>p.species==='wolf')?.carryingCapacity||0)>0);
+  assert.equal(wildlifeSpeciesProfile('wolf').trophicRole,'predator');
+  assert.equal(wildlifeSpeciesProfile('mouse').trophicRole,'herbivore');
+});
+
+test('profiled predator-prey graph distinguishes fox and wolf niches',()=>{
+  assert.equal(wildlifeCanPredate('fox','mouse'),true);
+  assert.equal(wildlifeCanPredate('fox','rabbit'),true);
+  assert.equal(wildlifeCanPredate('fox','boar'),false);
+  assert.equal(wildlifeCanPredate('wolf','deer'),true);
+  assert.equal(wildlifeCanPredate('wolf','boar'),true);
+  assert.equal(wildlifeCanPredate('rabbit','mouse'),false);
+});
+
+test('multiple profiled predators contribute to coarse trophic predation without negative prey',()=>{
+  const a=chunk('chunk_predator_network',18,{biome:'forest',ecology:90,water:82,food:78});
+  const populations=ensureWildlifePopulations(a);
+  for(const p of populations)p.count=0;
+  populations.find(p=>p.species==='mouse')!.count=12;
+  populations.find(p=>p.species==='rabbit')!.count=10;
+  populations.find(p=>p.species==='deer')!.count=6;
+  populations.find(p=>p.species==='boar')!.count=5;
+  populations.find(p=>p.species==='fox')!.count=2;
+  populations.find(p=>p.species==='wolf')!.count=1;
+  simulateWildlife(a,20,'clear',50);
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(populations.every(p=>p.count>=0));
 });
