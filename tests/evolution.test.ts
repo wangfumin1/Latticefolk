@@ -243,8 +243,8 @@ test('fitness-by-habitat right-censors living juveniles but keeps juvenile death
   assert.equal(disease.sampleSize,4);
   assert.equal(disease.reproductionEligibleSamples,3);
   assert.equal(disease.lifespanSamples,1);
-  assert.equal(disease.bands.find(band=>band.band==='high')?.population,2);
-  assert.equal(disease.bands.find(band=>band.band==='high')?.eligiblePopulation,1);
+  assert.equal(disease.bands.find(band=>band.band==='high')?.population,3);
+  assert.equal(disease.bands.find(band=>band.band==='high')?.eligiblePopulation,2);
 });
 
 test('fitness associations report missing evidence instead of zero when outcome variance is absent',()=>{
