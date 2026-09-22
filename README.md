@@ -58,7 +58,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Deterministic niche competition**: fixed species resource profiles and current density produce explicit competition pressure, bounded effective-capacity penalties, God View visibility, and competition-aware lineage habitat evidence.
 - **Seasonal wildlife migration**: species/biome seasonal suitability changes conserved coarse migration pressure and bounded fine migration choices while preserving capacity, population conservation and lineage evidence.
 - **Richer disease transmission**: environmental, same-species, cross-species and migration-import pressures deterministically update wildlife disease load; fine contacts and lineage exposure use the same bounded transmission model.
-- **Fitness-by-habitat evidence**: lifetime competition, seasonal suitability, and disease exposure are correlated with reproduction, offspring count and lifespan, with low/mid/high exposure cohorts and trait differentials visible in God View without causal overclaiming.
+- **Fitness-by-habitat evidence**: lifetime competition, seasonal suitability, and disease exposure are associated with reproduction, offspring count and lifespan using right-censored reproductive eligibility; God View shows total/eligible/dead samples, low/mid/high cohorts and trait differentials without causal overclaiming.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.
