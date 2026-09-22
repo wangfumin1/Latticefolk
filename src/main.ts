@@ -1531,9 +1531,30 @@ class TownGame {
     return ((a+b)/2)*(1+mutation);
   }
 
+  wildlifeHabitatSnapshot(chunkId:string) {
+    const chunk=this.coarseWorld.chunks.get(chunkId);
+    if(!chunk)return undefined;
+    const plants=chunk.plants;
+    return {
+      biome:chunk.biome,
+      ecology:chunk.ecology,
+      food:chunk.food,
+      water:chunk.water,
+      danger:chunk.danger,
+      settlementLevel:chunk.settlementLevel,
+      plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology
+    };
+  }
+
   ensureWildlifeLineage(state:WildlifeState) {
     const existing=this.wildlifeLineage.get(state.id);
-    if(existing)return existing;
+    if(existing){
+      if(!existing.birthHabitat){
+        existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId);
+        if(existing.birthHabitat)this.lineageEpoch++;
+      }
+      return existing;
+    }
     const record:WildlifeLineageRecord={
       entityId:state.id,
       species:state.species,
@@ -1543,6 +1564,7 @@ class TownGame {
       generation:state.generation,
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
+      birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
       reproductiveSuccess:false
@@ -1596,6 +1618,7 @@ class TownGame {
       record.deathReason=reason;
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
+      record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId);
       this.lineageEpoch++;
     }
     animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
