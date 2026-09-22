@@ -266,3 +266,11 @@ The simulation remains authoritative. Coarse `diseaseLoad` moves toward the comp
 Fine wildlife uses the same fixed contact coefficients but computes exposure from actual nearby animals, distance/proximity, coarse background pressure and environmental context. This permits deer→rabbit, rabbit→fox and other bounded cross-species pathways while preserving identity-level health state. No Decision Provider writes disease load, transmission coefficients, mortality or recovery.
 
 Lineage habitat snapshots and lifetime exposure can now include observed species-specific disease pressure. This allows later fitness-by-habitat analysis to compare trait/reproductive outcomes under sustained disease pressure rather than inferring disease only from cause-of-death counts.
+
+## Fitness-by-habitat evidence
+
+The evolution layer now derives explicit outcome evidence from observation-bounded lifetime exposure. For each species it evaluates three currently measured dimensions: **niche competition pressure**, **seasonal habitat suitability**, and **disease transmission pressure**. Only lineage records with actual fine-simulation exposure for a dimension enter that dimension's sample.
+
+For each exposure dimension, the deterministic analysis reports sample size, mean observed exposure duration, mean exposure, breeder versus non-breeder exposure means, Pearson association with binary reproduction, offspring count, and observed lifespan among dead individuals. It also partitions the 0–100 exposure range into low (<33), medium (33–66), and high (≥67) cohorts and reports population, living/dead counts, breeder rate, offspring mean, lifespan mean, trait mean, breeder-trait mean, and breeder-vs-cohort trait differential inside each band.
+
+These statistics deliberately describe association rather than causation. Lifespan association is calculated only among dead individuals and can be censored/selection-biased; reproductive associations can be confounded by generation, migration, correlated habitat dimensions, and incomplete observation coverage. God View shows sample sizes, observed days, correlations, and cohort breeder rates rather than collapsing them into a single opaque adaptation score. No Decision Provider participates in the calculation.
