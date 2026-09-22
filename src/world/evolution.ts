@@ -1,6 +1,7 @@
 import type {
-  WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeGenerationCohortStats,
-  WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeFitnessBandStats, WildlifeFitnessExposureDimension,
+  WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
+  WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 
 const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
@@ -60,6 +61,76 @@ function mean(values:number[]) {
 
 function variance(values:number[],average=mean(values)) {
   return values.length?values.reduce((sum,value)=>sum+(value-average)**2,0)/values.length:0;
+}
+
+function correlation(xs:number[],ys:number[]) {
+  if(xs.length<3||xs.length!==ys.length)return 0;
+  const mx=mean(xs),my=mean(ys);
+  let numerator=0,dx=0,dy=0;
+  for(let i=0;i<xs.length;i++){
+    const a=xs[i]!-mx,b=ys[i]!-my;
+    numerator+=a*b;dx+=a*a;dy+=b*b;
+  }
+  const denom=Math.sqrt(dx*dy);
+  return denom>1e-12?numerator/denom:0;
+}
+
+function fitnessBand(value:number):WildlifeFitnessBandStats['band'] {
+  return value<33?'low':value<67?'medium':'high';
+}
+
+function habitatFitness(records:WildlifeLineageRecord[]):WildlifeHabitatFitnessStats[] {
+  const dimensions:WildlifeFitnessExposureDimension[]=['competitionPressure','seasonalSuitability','diseasePressure'];
+  return dimensions.map(dimension=>{
+    const samples=records.map(record=>{
+      const exposure=record.habitatExposure;
+      const raw=exposure?.habitatMean?.[dimension];
+      return exposure&&exposure.observedDays>=MIN_LIFETIME_EXPOSURE_DAYS&&typeof raw==='number'&&Number.isFinite(raw)
+        ?{record,exposureDays:exposure.observedDays,value:raw}
+        :undefined;
+    }).filter((x):x is {record:WildlifeLineageRecord;exposureDays:number;value:number}=>Boolean(x));
+
+    const breeders=samples.filter(sample=>sample.record.offspringCount>0);
+    const nonBreeders=samples.filter(sample=>sample.record.offspringCount<=0);
+    const dead=samples.filter(sample=>sample.record.deathDay!==undefined);
+    const bands:WildlifeFitnessBandStats[]=(['low','medium','high'] as const).map(band=>{
+      const bandSamples=samples.filter(sample=>fitnessBand(sample.value)===band);
+      const bandRecords=bandSamples.map(sample=>sample.record);
+      const bandBreeders=bandRecords.filter(record=>record.offspringCount>0);
+      const bandDead=bandRecords.filter(record=>record.deathDay!==undefined);
+      const average=traitMean(bandRecords);
+      const breederAverage=bandBreeders.length?traitMean(bandBreeders):zeroTraits();
+      return {
+        band,
+        population:bandRecords.length,
+        living:bandRecords.length-bandDead.length,
+        deaths:bandDead.length,
+        breeders:bandBreeders.length,
+        breederRate:bandRecords.length?bandBreeders.length/bandRecords.length:0,
+        offspringMean:mean(bandRecords.map(record=>record.offspringCount)),
+        lifespanMean:mean(bandDead.map(record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))),
+        exposureMean:mean(bandSamples.map(sample=>sample.value)),
+        traitMean:average,
+        breederTraitMean:breederAverage,
+        selectionDifferential:subtractTraits(breederAverage,average)
+      };
+    });
+    return {
+      dimension,
+      sampleSize:samples.length,
+      observedExposureDaysMean:mean(samples.map(sample=>sample.exposureDays)),
+      exposureMean:mean(samples.map(sample=>sample.value)),
+      breederExposureMean:mean(breeders.map(sample=>sample.value)),
+      nonBreederExposureMean:mean(nonBreeders.map(sample=>sample.value)),
+      reproductionAssociation:correlation(samples.map(sample=>sample.value),samples.map(sample=>sample.record.offspringCount>0?1:0)),
+      offspringAssociation:correlation(samples.map(sample=>sample.value),samples.map(sample=>sample.record.offspringCount)),
+      lifespanAssociation:correlation(
+        dead.map(sample=>sample.value),
+        dead.map(sample=>Math.max(0,(sample.record.deathDay??sample.record.birthDay)-sample.record.birthDay))
+      ),
+      bands
+    };
+  });
 }
 
 function traitMean(records:WildlifeLineageRecord[]) {
@@ -261,7 +332,8 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
       cohorts:generations.map(generation=>cohort(generation,speciesRecords.filter(record=>record.generation===generation))),
       biomeSelection:biomeSelection(speciesRecords,'origin'),
-      lifetimeBiomeSelection:biomeSelection(speciesRecords,'lifetime')
+      lifetimeBiomeSelection:biomeSelection(speciesRecords,'lifetime'),
+      exposureFitness:habitatFitness(speciesRecords)
     };
   });
 }
