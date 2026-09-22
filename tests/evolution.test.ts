@@ -146,3 +146,13 @@ test('lifetime biome selection groups by observed exposure rather than only birt
   assert.equal(rabbit.lifetimeBiomeSelection[0]?.population,9);
   assert.ok((rabbit.lifetimeBiomeSelection[0]?.observedExposureDaysMean||0)>.2);
 });
+
+
+test('lifetime habitat exposure preserves time-weighted niche competition pressure',()=>{
+  const forest={biome:'forest' as const,ecology:80,food:65,water:70,danger:25,settlementLevel:1,plantBiomass:72,competitionPressure:20};
+  const crowded={...forest,competitionPressure:80};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,forest,'chunk_a',1);
+  exposure=accumulateWildlifeHabitatExposure(exposure,crowded,'chunk_a',3);
+  assert.equal(exposure.observedDays,4);
+  assert.equal(exposure.habitatMean.competitionPressure,65);
+});
