@@ -301,6 +301,8 @@ export interface WildlifeHabitatSnapshot {
   plantBiomass: number;
   /** Species-specific coarse niche pressure observed at this habitat snapshot; absent in legacy records. */
   competitionPressure?: number;
+  /** Species-specific seasonal habitat suitability observed at this snapshot; absent in legacy records. */
+  seasonalSuitability?: number;
 }
 
 export interface WildlifeHabitatExposure {
@@ -446,6 +448,7 @@ export interface WildlifeMigrationCandidate {
   carryingCapacity: number;
   density: number;
   competitionPressure: number;
+  seasonalSuitability: number;
 }
 
 export interface WildlifeDecisionRequest {

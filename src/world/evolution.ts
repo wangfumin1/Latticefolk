@@ -7,8 +7,8 @@ const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
-const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0});
-const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure'];
+const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0,seasonalSuitability:0});
+const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure','seasonalSuitability'];
 const MIN_LIFETIME_EXPOSURE_DAYS=.02;
 
 export function accumulateWildlifeHabitatExposure(
@@ -117,7 +117,8 @@ function habitatMean(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):
       danger:mean(habitats.map(value=>value.danger)),
       settlementLevel:mean(habitats.map(value=>value.settlementLevel)),
       plantBiomass:mean(habitats.map(value=>value.plantBiomass)),
-      competitionPressure:mean(habitats.map(value=>Number(value.competitionPressure||0)))
+      competitionPressure:mean(habitats.map(value=>Number(value.competitionPressure||0))),
+      seasonalSuitability:mean(habitats.map(value=>Number(value.seasonalSuitability||0)))
     };
   }
   const out=zeroHabitat();

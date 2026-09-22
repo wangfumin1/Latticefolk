@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
+import { seasonalHabitatSuitability } from './world/ecology';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -1431,7 +1432,8 @@ class TownGame {
       population:count,
       carryingCapacity,
       density:carryingCapacity>0?count/carryingCapacity:2,
-      competitionPressure:population?.competitionPressure||0
+      competitionPressure:population?.competitionPressure||0,
+      seasonalSuitability:seasonalHabitatSuitability(chunk,state.species,this.day+this.minuteOfDay/1440)
     };
   }
 
@@ -1453,7 +1455,8 @@ class TownGame {
     const fallbackCurrent:WildlifeMigrationCandidate={
       id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
       ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
-      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0
+      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0,
+      seasonalSuitability:source?seasonalHabitatSuitability(source,animal.state.species,this.day+this.minuteOfDay/1440):0
     };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
@@ -1799,7 +1802,8 @@ class TownGame {
       danger:chunk.danger,
       settlementLevel:chunk.settlementLevel,
       plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology,
-      competitionPressure:population?.competitionPressure||0
+      competitionPressure:population?.competitionPressure||0,
+      seasonalSuitability:species?seasonalHabitatSuitability(chunk,species,this.day+this.minuteOfDay/1440):0
     };
   }
 
@@ -2542,14 +2546,14 @@ class TownGame {
             <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)}</div>
           </div>`).join('')}
         ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
             <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
