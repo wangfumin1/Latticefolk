@@ -277,6 +277,56 @@ export interface WildlifeTraits {
   wariness: number;
 }
 
+export type WildlifeDeathReason = 'predation' | 'starvation' | 'dehydration' | 'disease' | 'senescence' | 'other';
+
+export interface WildlifeLineageRecord {
+  entityId: string;
+  species: WildlifeSpecies;
+  motherId?: string;
+  fatherId?: string;
+  birthDay: number;
+  deathDay?: number;
+  deathReason?: WildlifeDeathReason;
+  generation: number;
+  birthChunk: string;
+  deathChunk?: string;
+  traitsAtBirth: WildlifeTraits;
+  traitsAtDeath?: WildlifeTraits;
+  offspringCount: number;
+  reproductiveSuccess: boolean;
+}
+
+export interface WildlifeGenerationCohortStats {
+  generation: number;
+  population: number;
+  living: number;
+  deaths: number;
+  meanLifespan: number;
+  offspringMean: number;
+  breederRate: number;
+  traitMean: WildlifeTraits;
+  traitVariance: WildlifeTraits;
+}
+
+export interface WildlifeEvolutionStats {
+  species: WildlifeSpecies;
+  livingPopulation: number;
+  historicalPopulation: number;
+  births: number;
+  deaths: number;
+  generationMean: number;
+  generationMax: number;
+  lifespanMean: number;
+  offspringMean: number;
+  traitMean: WildlifeTraits;
+  traitVariance: WildlifeTraits;
+  traitTrendPerGeneration: WildlifeTraits;
+  mortality: Record<WildlifeDeathReason, number>;
+  reproductiveSuccess: number;
+  survivalToReproductionRate: number;
+  cohorts: WildlifeGenerationCohortStats[];
+}
+
 export interface WildlifeState {
   id: string;
   chunkId: string;
@@ -491,5 +541,6 @@ export interface WorldPersistenceSnapshot {
   fineChunks: PersistedFineChunk[];
   homeNpcs: NpcState[];
   homeObjects: WorldObjectState[];
+  wildlifeLineage?: WildlifeLineageRecord[];
   savedAt?: number;
 }
