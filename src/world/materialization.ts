@@ -1,4 +1,5 @@
 import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
+import { wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
 export type SettlementArchetype =
   | 'wilderness'
@@ -315,15 +316,9 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   }
 
 
-  const speciesBase:Record<WildlifeSpecies,{speed:number;size:number;fertility:number;wariness:number;maxFine:number}>={
-    rabbit:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3},
-    deer:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2},
-    boar:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2},
-    fox:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1}
-  };
   for(const population of chunk.wildlife||[]){
-    const base=speciesBase[population.species];
-    if(!base||population.count<.35)continue;
+    const base=wildlifeSpeciesProfile(population.species).fine;
+    if(population.count<.35)continue;
     const count=Math.min(base.maxFine,Math.max(1,Math.round(population.count/Math.max(2,population.carryingCapacity/Math.max(1,base.maxFine)))));
     for(let i=0;i<count;i++){
       let x=centerX,z=centerZ;
@@ -335,7 +330,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
       wildlife.push({
         id:`${chunk.id}_wild_${population.species}_${i}`,
         species:population.species,x,z,
-        ageDays:Math.floor(20+random()*(population.species==='rabbit'?500:population.species==='fox'?1800:3200)),
+        ageDays:Math.floor(20+random()*base.seedAgeMax),
         sex:random()>.5?'female':'male',
         generation:0,
         traits:{
