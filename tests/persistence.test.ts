@@ -31,7 +31,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
     wildlifeLineage:[{
       entityId:'rabbit_ancestor',species:'rabbit',birthDay:1,deathDay:3.5,deathReason:'predation',generation:0,
       birthChunk:'chunk_2_-1',deathChunk:'chunk_2_-1',traitsAtBirth:{speed:2.1,size:.52,fertility:.82,wariness:.63},
-      traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},origin:'founder',offspringCount:1,reproductiveSuccess:true
+      traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},
+      birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
+      deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
+      origin:'founder',offspringCount:1,reproductiveSuccess:true
     }]
   };
   store.save(snapshot);
@@ -42,6 +45,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
+  assert.equal(loaded.wildlifeLineage?.[0]?.birthHabitat?.biome,'plains');
+  assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
 
@@ -87,11 +92,14 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
     wildlifeLineage:[{
       entityId:'rabbit_child',species:'rabbit',motherId:'rabbit_mother',fatherId:'rabbit_father',
       birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
+      birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
       origin:'reproduction',offspringCount:0,reproductiveSuccess:false
     }]
   };
   store.save(snapshot);
-  assert.equal(store.load()?.wildlifeLineage?.[0]?.origin,'reproduction');
+  const migrated=store.load()?.wildlifeLineage?.[0];
+  assert.equal(migrated?.origin,'reproduction');
+  assert.equal(migrated?.birthHabitat?.biome,'forest');
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
