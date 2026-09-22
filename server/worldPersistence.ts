@@ -65,6 +65,7 @@ export class WorldPersistence {
         death_chunk TEXT,
         traits_at_birth_json TEXT NOT NULL,
         traits_at_death_json TEXT,
+        origin TEXT NOT NULL DEFAULT 'founder',
         offspring_count INTEGER NOT NULL DEFAULT 0,
         reproductive_success INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
@@ -77,6 +78,10 @@ export class WorldPersistence {
     const fineColumns=this.db.prepare("PRAGMA table_info(fine_chunks)").all() as Array<{name:string}>;
     if(!fineColumns.some(column=>column.name==='wildlife_json')){
       this.db.exec("ALTER TABLE fine_chunks ADD COLUMN wildlife_json TEXT NOT NULL DEFAULT '[]'");
+    }
+    const lineageColumns=this.db.prepare("PRAGMA table_info(wildlife_lineage)").all() as Array<{name:string}>;
+    if(!lineageColumns.some(column=>column.name==='origin')){
+      this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN origin TEXT NOT NULL DEFAULT 'founder'");
     }
   }
 
@@ -101,8 +106,8 @@ export class WorldPersistence {
     const upsertLineage=this.db.prepare(`
       INSERT INTO wildlife_lineage(
         entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,offspring_count,reproductive_success,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,origin,offspring_count,reproductive_success,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(entity_id) DO UPDATE SET
         species=excluded.species,
         mother_id=COALESCE(wildlife_lineage.mother_id,excluded.mother_id),
@@ -115,6 +120,7 @@ export class WorldPersistence {
         death_chunk=COALESCE(wildlife_lineage.death_chunk,excluded.death_chunk),
         traits_at_birth_json=wildlife_lineage.traits_at_birth_json,
         traits_at_death_json=COALESCE(wildlife_lineage.traits_at_death_json,excluded.traits_at_death_json),
+        origin=CASE WHEN wildlife_lineage.origin='reproduction' OR excluded.origin='reproduction' THEN 'reproduction' ELSE 'founder' END,
         offspring_count=MAX(wildlife_lineage.offspring_count,excluded.offspring_count),
         reproductive_success=MAX(wildlife_lineage.reproductive_success,excluded.reproductive_success),
         updated_at=excluded.updated_at
@@ -144,7 +150,7 @@ export class WorldPersistence {
           record.entityId,record.species,record.motherId??null,record.fatherId??null,
           record.birthDay,record.deathDay??null,record.deathReason??null,record.generation,
           record.birthChunk,record.deathChunk??null,JSON.stringify(record.traitsAtBirth),
-          record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,record.offspringCount,
+          record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,record.origin,record.offspringCount,
           record.reproductiveSuccess?1:0,savedAt
         );
       }
@@ -163,12 +169,12 @@ export class WorldPersistence {
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
     const lineageRows=this.db.prepare(`
       SELECT entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,offspring_count,reproductive_success
+             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,origin,offspring_count,reproductive_success
       FROM wildlife_lineage ORDER BY birth_day,entity_id
     `).all() as Array<{
       entity_id:string;species:WildlifeLineageRecord['species'];mother_id:string|null;father_id:string|null;
       birth_day:number;death_day:number|null;death_reason:WildlifeLineageRecord['deathReason']|null;generation:number;
-      birth_chunk:string;death_chunk:string|null;traits_at_birth_json:string;traits_at_death_json:string|null;
+      birth_chunk:string;death_chunk:string|null;traits_at_birth_json:string;traits_at_death_json:string|null;origin:'founder'|'reproduction';
       offspring_count:number;reproductive_success:number;
     }>;
 
@@ -192,6 +198,7 @@ export class WorldPersistence {
       deathChunk:row.death_chunk??undefined,
       traitsAtBirth:parse<WildlifeTraits>(row.traits_at_birth_json,{speed:1,size:1,fertility:.5,wariness:.5}),
       traitsAtDeath:row.traits_at_death_json?parse<WildlifeTraits|undefined>(row.traits_at_death_json,undefined):undefined,
+      origin:row.origin==='reproduction'?'reproduction':'founder',
       offspringCount:Number(row.offspring_count)||0,
       reproductiveSuccess:Boolean(row.reproductive_success)
     }));
