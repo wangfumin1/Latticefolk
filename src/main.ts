@@ -1093,17 +1093,27 @@ class TownGame {
   materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
     for(const transfer of transfers){
       if(this.wildlifeTransfers.get(transfer.entityId)!==transfer)continue;
+      const population=chunk.wildlife?.find(entry=>entry.species===transfer.state.species);
+      if(!population||population.count<=0)continue;
+      let alreadyFixed=0;
+      for(const [id,weight] of runtime.fixedWildlifeWeights){
+        if(this.wildlifeLineage.get(id)?.species===transfer.state.species)alreadyFixed+=weight;
+      }
+      const availableWeight=Math.max(0,population.count-alreadyFixed);
+      const effectiveWeight=Math.min(Math.max(0,transfer.representedPopulation),availableWeight);
+      if(effectiveWeight<=.01)continue;
+
       const state=structuredClone(transfer.state);
       state.chunkId=chunk.id;
       state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
       state.position=this.randomPassableNear(state.position,3,chunk.id);
+      state.representedPopulation=effectiveWeight;
       state.currentAction='wander';
       state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
       if(!this.spawnWildlife(state))continue;
       runtime.wildlifeIds.push(state.id);
       runtime.initialWildlifeIds.add(state.id);
-      runtime.fixedWildlifeWeights.set(state.id,Math.max(0,transfer.representedPopulation));
-      state.representedPopulation=Math.max(0,transfer.representedPopulation);
+      runtime.fixedWildlifeWeights.set(state.id,effectiveWeight);
       this.wildlifeTransfers.delete(transfer.entityId);
       this.event(`${this.wildlifeName(state.species)} ${state.id} 已进入 ${chunk.id}。`);
     }
@@ -1235,6 +1245,13 @@ class TownGame {
       agent.mesh.parent?.remove(agent.mesh);
       agent.speechEl.remove();agent.nameEl.remove();
       this.npcs.delete(id);
+    }
+
+    for(const id of [...runtime.wildlifeIds]){
+      const animal=this.wildlife.get(id);
+      if(!animal||animal.removed||animal.state.currentAction!=='migrate'||!animal.state.targetChunkId)continue;
+      const physicalChunk=this.coarseWorld.chunkAtWorld(animal.mesh.position.x,animal.mesh.position.z);
+      if(physicalChunk?.id===animal.state.targetChunkId)this.completeFineWildlifeMigration(animal,animal.state.targetChunkId);
     }
 
     const wildlifeStates:WildlifeState[]=[];
