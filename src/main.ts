@@ -1321,6 +1321,7 @@ class TownGame {
 
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
+      if(animal.removed)continue;
       s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
       this.recordWildlifeHabitatExposure(s);
     }
@@ -1335,7 +1336,8 @@ class TownGame {
     const pos=animal.mesh.position;
     const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){animal.pathIndex++;if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}return;}
-    const speed=animal.state.traits.speed*(animal.state.currentAction==='flee'||animal.state.currentAction==='hunt'?1.18:1);
+    const fastAction=['flee','hunt','migrate'].includes(animal.state.currentAction);
+    const speed=animal.state.traits.speed*(fastAction?1.18:1);
     pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
     animal.mesh.rotation.y=Math.atan2(dx,dz);
   }
@@ -1344,13 +1346,53 @@ class TownGame {
     const actions:WildlifeAction[]=['wander','rest','drink','forage','flee'];
     const life=this.wildlifeLifeHistory(state.species);
     const currentDay=this.day+this.minuteOfDay/1440;
-    if(state.ageDays>=life.adultAge&&!(state.sex==='female'&&state.pregnantUntilDay&&state.pregnantUntilDay>currentDay))actions.push('seek_mate');
+    const pregnant=state.sex==='female'&&Boolean(state.pregnantUntilDay&&state.pregnantUntilDay>currentDay);
+    if(state.ageDays>=life.adultAge&&!pregnant)actions.push('seek_mate');
+    if(state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
     if(state.species==='rabbit'||state.species==='deer'||state.species==='boar')actions.push('graze');
     if(state.species==='fox')actions.push('hunt');
     return actions;
   }
 
+  wildlifeMigrationCandidate(state:WildlifeState,chunk:CoarseChunkState):WildlifeMigrationCandidate {
+    const population=chunk.wildlife?.find(entry=>entry.species===state.species);
+    const carryingCapacity=Math.max(0,population?.carryingCapacity||0);
+    const count=Math.max(0,population?.count||0);
+    return {
+      id:chunk.id,
+      biome:chunk.biome,
+      distance:dist(state.position,{x:chunk.cx*this.coarseWorld.chunkSize,z:chunk.cz*this.coarseWorld.chunkSize}),
+      ecology:chunk.ecology,
+      food:chunk.food,
+      water:chunk.water,
+      danger:chunk.danger,
+      settlementLevel:chunk.settlementLevel,
+      population:count,
+      carryingCapacity,
+      density:carryingCapacity>0?count/carryingCapacity:2
+    };
+  }
+
+  wildlifeMigrationCandidates(state:WildlifeState) {
+    const source=this.coarseWorld.chunks.get(state.chunkId);
+    if(!source)return {current:undefined,nearby:[] as WildlifeMigrationCandidate[]};
+    const current=this.wildlifeMigrationCandidate(state,source);
+    const nearby=[...this.coarseWorld.chunks.values()]
+      .filter(chunk=>areAdjacentChunks(source,chunk))
+      .map(chunk=>this.wildlifeMigrationCandidate(state,chunk))
+      .filter(candidate=>candidate.carryingCapacity>0)
+      .sort((a,b)=>a.distance-b.distance||a.id.localeCompare(b.id));
+    return {current,nearby};
+  }
+
   wildlifeSnapshot(animal:WildlifeRuntime):WildlifeDecisionBatchRequest['requests'][number] {
+    const migration=this.wildlifeMigrationCandidates(animal.state);
+    const source=this.coarseWorld.chunks.get(animal.state.chunkId);
+    const fallbackCurrent:WildlifeMigrationCandidate={
+      id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
+      ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
+      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2
+    };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
       .map(o=>({id:o.state.id,tags:o.state.tags,distance:dist(animal.state.position,o.state.position),resourceAmount:o.state.resourceAmount}))
@@ -1364,11 +1406,16 @@ class TownGame {
       .filter(x=>x.distance<=12).sort((a,b)=>a.distance-b.distance).slice(0,12);
     return {
       wildlife:structuredClone(animal.state),
-      world:{gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,nearbyResources,nearbyWildlife},
+      world:{
+        gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,
+        currentHabitat:migration.current||fallbackCurrent,nearbyChunks:migration.nearby,nearbyResources,nearbyWildlife
+      },
       allowedActions:this.wildlifeAllowedActions(animal.state).filter(action=>{
         if(action==='drink')return nearbyResources.some(x=>x.tags.includes('water'));
         if(action==='hunt')return nearbyWildlife.some(x=>['rabbit','deer'].includes(x.species));
         if(action==='seek_mate')return nearbyWildlife.some(x=>x.species===animal.state.species&&x.sex!==animal.state.sex&&x.mateAvailable);
+        if(action==='flee')return animal.state.species!=='fox'&&nearbyWildlife.some(x=>x.species==='fox'&&x.distance<8);
+        if(action==='migrate')return migration.nearby.length>0;
         return true;
       })
     };
@@ -1401,7 +1448,7 @@ class TownGame {
 
   applyWildlifeDecision(animal:WildlifeRuntime,decision:WildlifeDecisionResult) {
     const s=animal.state;
-    s.currentAction=decision.action;s.targetObjectId=decision.targetObjectId;s.targetWildlifeId=decision.targetWildlifeId;s.lastDecisionAt=Date.now();
+    s.currentAction=decision.action;s.targetObjectId=decision.targetObjectId;s.targetWildlifeId=decision.targetWildlifeId;s.targetChunkId=decision.targetChunkId;s.lastDecisionAt=Date.now();
     animal.path=[];animal.pathIndex=0;animal.actionResolved=false;
     let target:Vec2|undefined;
 
@@ -1413,10 +1460,25 @@ class TownGame {
       if(other){s.targetWildlifeId=other.state.id;target=other.state.position;}
     }else if(decision.action==='flee'){
       const threat=(decision.targetWildlifeId&&this.wildlife.get(decision.targetWildlifeId))||this.findWildlifeTarget(animal,'flee');
-      const from=threat?.state.position||this.playerPosition;
-      let dx=s.position.x-from.x,dz=s.position.z-from.z;
-      if(Math.hypot(dx,dz)<.1){dx=.7;dz=.7;}
-      const length=Math.hypot(dx,dz);target={x:s.position.x+dx/length*8,z:s.position.z+dz/length*8};
+      if(threat){
+        const from=threat.state.position;
+        let dx=s.position.x-from.x,dz=s.position.z-from.z;
+        if(Math.hypot(dx,dz)<.1){dx=.7;dz=.7;}
+        const length=Math.hypot(dx,dz);target=this.randomPassableNear({x:s.position.x+dx/length*8,z:s.position.z+dz/length*8},2,s.chunkId);
+      }else{
+        s.currentAction='wander';
+        target=this.randomPassableNear(s.position,7,s.chunkId);
+      }
+    }else if(decision.action==='migrate'){
+      const source=this.coarseWorld.chunks.get(s.chunkId);
+      const candidates=this.wildlifeMigrationCandidates(s).nearby;
+      const chosen=candidates.find(candidate=>candidate.id===decision.targetChunkId)??candidates[0];
+      const destination=chosen?this.coarseWorld.chunks.get(chosen.id):undefined;
+      if(source&&destination){
+        s.targetChunkId=destination.id;
+        target=fineMigrationEntryPoint(source,destination,this.coarseWorld.chunkSize,s.position);
+      }
+      if(!target){s.currentAction='wander';s.targetChunkId=undefined;target=this.randomPassableNear(s.position,7,s.chunkId);}
     }else if(decision.action==='wander'){
       target=this.randomPassableNear(s.position,7,s.chunkId);
     }
@@ -1481,7 +1543,7 @@ class TownGame {
     }
     animal.actionResolved=true;
     animal.nextDecisionAt=now()+8000+Math.random()*10000;
-    s.targetObjectId=undefined;s.targetWildlifeId=undefined;
+    s.targetObjectId=undefined;s.targetWildlifeId=undefined;s.targetChunkId=undefined;
   }
 
   tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
