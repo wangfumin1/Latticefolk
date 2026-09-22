@@ -1356,8 +1356,9 @@ class TownGame {
     const life=this.wildlifeLifeHistory(state.species);
     const currentDay=this.day+this.minuteOfDay/1440;
     const pregnant=state.sex==='female'&&Boolean(state.pregnantUntilDay&&state.pregnantUntilDay>currentDay);
+    const baseline=this.materializedChunks.get(state.chunkId)?.initialWildlifeIds.has(state.id)??false;
     if(state.ageDays>=life.adultAge&&!pregnant)actions.push('seek_mate');
-    if(state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
+    if(baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
     if(state.species==='rabbit'||state.species==='deer'||state.species==='boar')actions.push('graze');
     if(state.species==='fox')actions.push('hunt');
     return actions;
@@ -1389,7 +1390,7 @@ class TownGame {
     const nearby=[...this.coarseWorld.chunks.values()]
       .filter(chunk=>areAdjacentChunks(source,chunk))
       .map(chunk=>this.wildlifeMigrationCandidate(state,chunk))
-      .filter(candidate=>candidate.carryingCapacity>0)
+      .filter(candidate=>candidate.carryingCapacity>0&&candidate.population<candidate.carryingCapacity-.05)
       .sort((a,b)=>a.distance-b.distance||a.id.localeCompare(b.id));
     return {current,nearby};
   }
