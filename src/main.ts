@@ -181,6 +181,7 @@ class TownGame {
   wildlifeTransfers = new Map<string,PersistedWildlifeTransfer>();
   lineageEpoch = 0;
   evolutionCacheEpoch = -1;
+  evolutionCacheDay = -1;
   evolutionCache: WildlifeEvolutionStats[] = [];
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
@@ -1943,9 +1944,12 @@ class TownGame {
   }
 
   evolutionStatistics() {
-    if(this.evolutionCacheEpoch!==this.lineageEpoch){
-      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values());
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const eligibilityDay=Math.floor(currentDay);
+    if(this.evolutionCacheEpoch!==this.lineageEpoch||this.evolutionCacheDay!==eligibilityDay){
+      this.evolutionCache=computeEvolutionStatistics(this.wildlifeLineage.values(),currentDay);
       this.evolutionCacheEpoch=this.lineageEpoch;
+      this.evolutionCacheDay=eligibilityDay;
     }
     return this.evolutionCache;
   }
@@ -2574,10 +2578,10 @@ class TownGame {
           const low=band('low'),mid=band('medium'),high=band('high');
           return `
           <div class="evo-selection">
-            <b>${i18n.t('evolution.fitness')} · ${label}</b> · n=${fitness.sampleSize} · obs ${fitness.observedExposureDaysMean.toFixed(2)}d
-            <div>r(reproduce) ${fitness.reproductionAssociation.toFixed(2)} · r(offspring) ${fitness.offspringAssociation.toFixed(2)} · r(lifespan) ${fitness.lifespanAssociation.toFixed(2)}</div>
-            <div class="evo-traits">${i18n.t('evolution.low')} ${low?.population||0}/${percent(low?.breederRate||0)} · ${i18n.t('evolution.medium')} ${mid?.population||0}/${percent(mid?.breederRate||0)} · ${i18n.t('evolution.high')} ${high?.population||0}/${percent(high?.breederRate||0)}</div>
-            <div class="evo-traits">breeder μ ${fitness.breederExposureMean.toFixed(1)} · non-breeder μ ${fitness.nonBreederExposureMean.toFixed(1)}</div>
+            <b>${i18n.t('evolution.fitness')} · ${label}</b> · n=${fitness.sampleSize} · eligible ${fitness.reproductionEligibleSamples} · dead ${fitness.lifespanSamples} · obs ${fitness.observedExposureDaysMean.toFixed(2)}d
+            <div>r(reproduce) ${fitness.reproductionAssociation===null?'—':fitness.reproductionAssociation.toFixed(2)} · r(offspring) ${fitness.offspringAssociation===null?'—':fitness.offspringAssociation.toFixed(2)} · r(lifespan) ${fitness.lifespanAssociation===null?'—':fitness.lifespanAssociation.toFixed(2)}</div>
+            <div class="evo-traits">${i18n.t('evolution.low')} ${low?.eligiblePopulation||0}/${percent(low?.breederRate||0)} · ${i18n.t('evolution.medium')} ${mid?.eligiblePopulation||0}/${percent(mid?.breederRate||0)} · ${i18n.t('evolution.high')} ${high?.eligiblePopulation||0}/${percent(high?.breederRate||0)}</div>
+            <div class="evo-traits">breeder μ ${fitness.breederExposureMean===null?'—':fitness.breederExposureMean.toFixed(1)} · non-breeder μ ${fitness.nonBreederExposureMean===null?'—':fitness.nonBreederExposureMean.toFixed(1)}</div>
           </div>`;
         }).join('')}
       </div>`).join('');
