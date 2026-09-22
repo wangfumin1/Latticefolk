@@ -30,7 +30,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
     wildlifeLineage:[{
       entityId:'rabbit_ancestor',species:'rabbit',birthDay:1,deathDay:3.5,deathReason:'predation',generation:0,
       birthChunk:'chunk_2_-1',deathChunk:'chunk_2_-1',traitsAtBirth:{speed:2.1,size:.52,fertility:.82,wariness:.63},
-      traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},offspringCount:1,reproductiveSuccess:true
+      traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},origin:'founder',offspringCount:1,reproductiveSuccess:true
     }]
   };
   store.save(snapshot);
