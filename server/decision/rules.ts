@@ -194,6 +194,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     const migrationTarget=[...entry.world.nearbyChunks]
       .sort((a,b)=>habitatScore(b)-habitatScore(a)||a.id.localeCompare(b.id))[0];
     const migrationPressure=currentHabitat.density>=.9||currentHabitat.competitionPressure>=65||currentHabitat.diseasePressure>=65||currentHabitat.seasonalSuitability<42||currentHabitat.ecology<38||currentHabitat.water<30||currentHabitat.food<34||currentHabitat.danger>70;
+    const diseaseRelief=migrationTarget?currentHabitat.diseasePressure-migrationTarget.diseasePressure:0;
 
     if(animal.species!=='fox'&&nearbyFox&&entry.allowedActions.includes('flee')){
       action='flee';targetWildlifeId=nearbyFox.id;reasonCode='predator_nearby';
@@ -216,7 +217,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
       action='rest';reasonCode='disease_recovery';
     }else if(animal.energy<=24&&entry.allowedActions.includes('rest')){
       action='rest';reasonCode='low_energy';
-    }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&habitatScore(migrationTarget)>=habitatScore(currentHabitat)+8){
+    }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&(habitatScore(migrationTarget)>=habitatScore(currentHabitat)+8||diseaseRelief>=35)){
       action='migrate';targetChunkId=migrationTarget.id;reasonCode='habitat_migration';
     }else if(animal.ageDays>90&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
       action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';
