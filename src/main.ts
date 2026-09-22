@@ -1615,13 +1615,21 @@ class TownGame {
 
     const fixedWeight=sourceRuntime.fixedWildlifeWeights.get(state.id)||state.representedPopulation||0;
     const initialFineCount=sourceRuntime.initialWildlifeCounts[state.species]||0;
+    let sourceFixedTotal=0;
+    for(const [id,weight] of sourceRuntime.fixedWildlifeWeights){
+      if(this.wildlifeLineage.get(id)?.species===state.species)sourceFixedTotal+=weight;
+    }
+    const ordinaryWeight=foldFineWildlifePopulationCount(
+      sourcePopulation.count,initialFineCount,initialFineCount,sourceFixedTotal,sourceFixedTotal
+    ).ordinaryWeight;
+    const requestedWeight=fixedWeight>0?fixedWeight:ordinaryWeight;
     const freeCapacity=Math.max(0,targetPopulation.carryingCapacity-targetPopulation.count);
     if(freeCapacity<=.05)return false;
 
     state.position={x:animal.mesh.position.x,z:animal.mesh.position.z};
     this.endWildlifeHabitatObservation(state);
     const representedPopulation=applyFineWildlifePopulationTransfer(
-      sourcePopulation,targetPopulation,state,initialFineCount,fixedWeight>0?fixedWeight:undefined,freeCapacity
+      sourcePopulation,targetPopulation,state,initialFineCount,requestedWeight,freeCapacity
     );
     if(representedPopulation<=0){this.beginWildlifeHabitatObservation(state);return false;}
 
