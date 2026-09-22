@@ -41,7 +41,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Identity-preserving fine wildlife migration/transfers with bounded adjacent destinations, deterministic capacity/conservation, durable transit identity, and migration provenance.
 - ✅ Deterministic niche competition: species resource-use profiles and density generate pairwise overlap pressure, effective carrying-capacity penalties, God View visibility, and lineage competition exposure.
 - ✅ Seasonal migration drivers: species/biome seasonal suitability can independently create conserved coarse migration pressure and is exposed to bounded fine wildlife decisions and lineage habitat evidence.
-- ⏭ Deeper ecological selection: add richer disease transmission, additional species/predators, and explicit fitness-by-habitat measures.
+- ✅ Richer wildlife disease transmission: environmental, same-species, cross-species, and migration-import pressure are explicit deterministic state and enter fine/lifetime observability.
+- ⏭ Deeper ecological selection: add additional species/predators and explicit fitness-by-habitat measures across competition, season and disease exposure.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

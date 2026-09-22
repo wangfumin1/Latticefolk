@@ -539,7 +539,7 @@ export class JevDecisionProvider implements DecisionProvider {
           type:'choice',
           instructions:'Choose one supplied adjacent chunk only if migrate is selected. Prefer materially safer or less crowded habitat; do not invent destinations.',
           criteria:Object.fromEntries(entry.world.nearbyChunks.slice(0,8).map(x=>[
-            x.id,`${x.biome}; density=${x.density.toFixed(2)}; competition=${x.competitionPressure.toFixed(0)}; seasonal=${x.seasonalSuitability.toFixed(0)}; ecology=${x.ecology.toFixed(0)}; food=${x.food.toFixed(0)}; water=${x.water.toFixed(0)}; danger=${x.danger.toFixed(0)}; settlement=${x.settlementLevel}`
+            x.id,`${x.biome}; density=${x.density.toFixed(2)}; competition=${x.competitionPressure.toFixed(0)}; disease=${x.diseasePressure.toFixed(0)}; seasonal=${x.seasonalSuitability.toFixed(0)}; ecology=${x.ecology.toFixed(0)}; food=${x.food.toFixed(0)}; water=${x.water.toFixed(0)}; danger=${x.danger.toFixed(0)}; settlement=${x.settlementLevel}`
           ]))
         };
       }

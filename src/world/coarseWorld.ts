@@ -3,7 +3,7 @@ import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
   ChunkMigrationPolicy, ChunkEcologyPolicy, CoarseChunkState,
   RegionState, RegionDecision, RegionDecisionRequest, RegionDecisionResponse,
-  WildlifeCompetitionPair, WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
+  WildlifeCompetitionPair, WildlifeDiseasePair, WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
@@ -32,6 +32,8 @@ export interface CoarseWorldStatus {
   trophicPredation: number;
   nicheCompetition: number;
   strongestCompetition: string;
+  wildlifeDiseasePressure: number;
+  strongestDiseaseTransmission: string;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -527,6 +529,12 @@ export class CoarseWorldRuntime {
         const pair=list.map(c=>c.nicheCompetition?.strongestPair).filter((x):x is WildlifeCompetitionPair=>Boolean(x))
           .sort((a,b)=>(b?.pressure||0)-(a?.pressure||0))[0];
         return pair?`${pair.speciesA}/${pair.speciesB} ${pair.pressure.toFixed(0)}`:'—';
+      })(),
+      wildlifeDiseasePressure:avg(c=>c.wildlifeDisease?.meanPressure||0),
+      strongestDiseaseTransmission:(()=>{
+        const pair=list.map(c=>c.wildlifeDisease?.strongestPair).filter((x):x is WildlifeDiseasePair=>Boolean(x))
+          .sort((a,b)=>b.pressure-a.pressure)[0];
+        return pair?`${pair.fromSpecies}→${pair.toSpecies} ${pair.pressure.toFixed(0)}`:'—';
       })(),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),

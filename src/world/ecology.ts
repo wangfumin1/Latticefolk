@@ -1,5 +1,5 @@
 import type {
-  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeSpecies, WorldSeason
+  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifeSpecies, WorldSeason
 } from '../types';
 
 export interface WildlifeMigration {
@@ -67,6 +67,67 @@ function nicheOverlap(a:WildlifeSpecies,b:WildlifeSpecies){
   const sumB=NICHE_AXES.reduce((sum,key)=>sum+pb[key],0);
   const shared=NICHE_AXES.reduce((sum,key)=>sum+Math.min(pa[key]/sumA,pb[key]/sumB),0);
   return clamp(shared,0,1);
+}
+
+export function wildlifeDiseaseContactCoefficient(from:WildlifeSpecies,to:WildlifeSpecies){
+  if(from===to)return 1;
+  const herbivores=new Set<WildlifeSpecies>(['rabbit','deer','boar']);
+  if(herbivores.has(from)&&herbivores.has(to))return .28;
+  if(from==='fox'&&['rabbit','deer'].includes(to))return .42;
+  if(to==='fox'&&['rabbit','deer'].includes(from))return .24;
+  return .16;
+}
+
+export function computeWildlifeDiseasePressure(
+  chunk:CoarseChunkState,
+  populations:CoarseWildlifePopulation[],
+  weather='clear'
+){
+  const environmentalPressure=clamp(
+    (chunk.biome==='wetlands'?18:0)+
+    (weather==='rain'?12:weather==='cloudy'?4:0)+
+    (chunk.water>88?4:0)+
+    (chunk.ecology<28?6:0)
+  );
+  const localContactPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const crossSpeciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const importedPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  let strongestPair:WildlifeDiseasePair|undefined;
+
+  for(const target of populations){
+    const density=target.carryingCapacity>0?Math.min(2.5,target.count/target.carryingCapacity):2;
+    const ownLoad=clamp(target.diseaseLoad||0);
+    localContactPressure[target.species]=round(clamp(ownLoad*density*.62));
+    importedPressure[target.species]=round(clamp(target.importedDiseasePressure||0));
+
+    let cross=0;
+    for(const source of populations){
+      if(source.species===target.species||source.count<=0)continue;
+      const sourceDensity=source.carryingCapacity>0?Math.min(2.5,source.count/source.carryingCapacity):2;
+      const pairPressure=clamp(
+        (source.diseaseLoad||0)*sourceDensity*wildlifeDiseaseContactCoefficient(source.species,target.species)*.55
+      );
+      cross+=pairPressure;
+      if(!strongestPair||pairPressure>strongestPair.pressure){
+        strongestPair={fromSpecies:source.species,toSpecies:target.species,pressure:round(pairPressure)};
+      }
+    }
+    crossSpeciesPressure[target.species]=round(clamp(cross));
+    speciesPressure[target.species]=round(clamp(
+      environmentalPressure*.34+
+      localContactPressure[target.species]*.52+
+      crossSpeciesPressure[target.species]*.38+
+      importedPressure[target.species]*.44
+    ));
+  }
+
+  const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
+  chunk.wildlifeDisease={
+    environmentalPressure:round(environmentalPressure),
+    speciesPressure,localContactPressure,crossSpeciesPressure,importedPressure,meanPressure,strongestPair
+  };
+  return chunk.wildlifeDisease;
 }
 
 function hash(text:string){
@@ -214,13 +275,14 @@ export function ensureWildlifePopulations(chunk:CoarseChunkState){
       current.health=clamp(Number.isFinite(current.health)?current.health:75);
       current.count=Math.max(0,current.count);
       current.diseaseLoad=clamp(Number(current.diseaseLoad)||0);
+      current.importedDiseasePressure=clamp(Number(current.importedDiseasePressure)||0);
       return current;
     }
     const occupancy=.22+hash(`${chunk.id}:${species}:population`)*.52;
     const count=round(carryingCapacity*occupancy);
     return {
       species,count,carryingCapacity,health:65+hash(`${chunk.id}:${species}:health`)*25,
-      diseaseLoad:hash(`${chunk.id}:${species}:disease`)*4
+      diseaseLoad:hash(`${chunk.id}:${species}:disease`)*4,importedDiseasePressure:0
     };
   });
   chunk.wildlife=seeded;
@@ -248,13 +310,17 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const dt=Math.min(30,Math.max(0,seconds));
   let mortalityReturn=0;
   computeWildlifeNicheCompetition(chunk,populations);
+  const diseasePressure=computeWildlifeDiseasePressure(chunk,populations,weather);
 
   for(const pop of populations){
     const k=Math.max(.001,pop.carryingCapacity);
     const density=pop.count/k;
-    const climateDisease=(chunk.biome==='wetlands'?.006:0)+(weather==='rain'?.003:0);
-    const crowdDisease=Math.max(0,density-.72)*.018;
-    pop.diseaseLoad=clamp((pop.diseaseLoad||0)+(climateDisease+crowdDisease-.006)*dt);
+    const load=clamp(pop.diseaseLoad||0);
+    const targetPressure=diseasePressure.speciesPressure[pop.species];
+    const transmission=Math.max(0,targetPressure-load)*.0065*dt;
+    const recovery=(.0045+Math.max(0,chunk.ecology-55)*.000025)*dt;
+    pop.diseaseLoad=clamp(load+transmission-recovery);
+    pop.importedDiseasePressure=clamp((pop.importedDiseasePressure||0)*Math.exp(-dt*.018));
 
     const rainPenalty=weather==='rain'&&pop.species==='rabbit'?.0025:0;
     const droughtPenalty=chunk.water<25?.006:0;
@@ -298,6 +364,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   flux.mortalityReturn=smooth(flux.mortalityReturn,mortalityReturn+predation*.12);
   chunk.trophicFlux=flux;
   computeWildlifeNicheCompetition(chunk,populations);
+  computeWildlifeDiseasePressure(chunk,populations,weather);
 }
 
 export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>,day=1):WildlifeMigration[]{
@@ -354,7 +421,9 @@ export function applyWildlifeMigration(chunks:Map<string,CoarseChunkState>,moves
     const actual=Math.min(source.count,room,Math.max(0,move.amount));
     if(actual<=0)continue;
     const total=target.count+actual;
+    const importedContribution=total>0?clamp((source.diseaseLoad||0)*(actual/total)):0;
     target.diseaseLoad=total>0?clamp(((target.diseaseLoad||0)*target.count+(source.diseaseLoad||0)*actual)/total):target.diseaseLoad;
+    target.importedDiseasePressure=clamp(Math.max((target.importedDiseasePressure||0)*.9,importedContribution));
     source.count=round(source.count-actual);
     target.count=round(total);
   }
