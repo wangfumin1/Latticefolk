@@ -29,6 +29,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Identity-preserving fine wildlife migration with bounded adjacent-chunk targets, deterministic carrying-capacity checks, conserved coarse population transfer, per-entity representative weights, durable transit queue, migration provenance, and God-safe flee semantics.
 - Deterministic wildlife niche competition with fixed resource-use profiles, pairwise niche overlap, density-derived competition pressure, bounded carrying-capacity penalties, God View observability, and competition exposure preserved in lineage habitat evidence.
 - Deterministic seasonal wildlife migration drivers with species/biome seasonal suitability, capacity-bounded conserved coarse migration, season-aware fine decision candidates, and seasonal suitability preserved in lineage habitat exposure.
+- Deterministic wildlife disease transmission with environmental reservoirs, same-species contact, cross-species spillover, wet/rain/crowding amplification, migration-carried disease load, fine contact exposure, and lineage disease-pressure evidence.
 
 ### Changed
 
