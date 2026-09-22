@@ -3,7 +3,7 @@ import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
   ChunkMigrationPolicy, ChunkEcologyPolicy, CoarseChunkState,
   RegionState, RegionDecision, RegionDecisionRequest, RegionDecisionResponse,
-  WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
+  WildlifeCompetitionPair, WorldDecision, WorldDecisionRequest, WorldDecisionResponse, WorldStrategicSummary
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
@@ -524,7 +524,7 @@ export class CoarseWorldRuntime {
       trophicPredation:avg(c=>c.trophicFlux?.predation||0),
       nicheCompetition:avg(c=>c.nicheCompetition?.meanPressure||0),
       strongestCompetition:(()=>{
-        const pair=list.map(c=>c.nicheCompetition?.strongestPair).filter((x):x is NonNullable<CoarseChunkState['nicheCompetition']>['strongestPair']=>Boolean(x))
+        const pair=list.map(c=>c.nicheCompetition?.strongestPair).filter((x):x is WildlifeCompetitionPair=>Boolean(x))
           .sort((a,b)=>(b?.pressure||0)-(a?.pressure||0))[0];
         return pair?`${pair.speciesA}/${pair.speciesB} ${pair.pressure.toFixed(0)}`:'—';
       })(),
