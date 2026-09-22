@@ -161,6 +161,16 @@ export class WorldPersistence {
     const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
     const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
+    const lineageRows=this.db.prepare(`
+      SELECT entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
+             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,offspring_count,reproductive_success
+      FROM wildlife_lineage ORDER BY birth_day,entity_id
+    `).all() as Array<{
+      entity_id:string;species:WildlifeLineageRecord['species'];mother_id:string|null;father_id:string|null;
+      birth_day:number;death_day:number|null;death_reason:WildlifeLineageRecord['deathReason']|null;generation:number;
+      birth_chunk:string;death_chunk:string|null;traits_at_birth_json:string;traits_at_death_json:string|null;
+      offspring_count:number;reproductive_success:number;
+    }>;
 
     const coarseChunks=coarseRows.map(row=>parse<CoarseChunkState|null>(row.state_json,null)).filter((x):x is CoarseChunkState=>Boolean(x));
     const fineChunks:PersistedFineChunk[]=fineRows.map(row=>({
@@ -168,6 +178,22 @@ export class WorldPersistence {
       npcStates:parse<NpcState[]>(row.npc_json,[]),
       objectStates:parse<WorldObjectState[]>(row.object_json,[]),
       wildlifeStates:parse<WildlifeState[]>(row.wildlife_json,[])
+    }));
+    const wildlifeLineage:WildlifeLineageRecord[]=lineageRows.map(row=>({
+      entityId:row.entity_id,
+      species:row.species,
+      motherId:row.mother_id??undefined,
+      fatherId:row.father_id??undefined,
+      birthDay:Number(row.birth_day),
+      deathDay:row.death_day===null?undefined:Number(row.death_day),
+      deathReason:row.death_reason??undefined,
+      generation:Number(row.generation),
+      birthChunk:row.birth_chunk,
+      deathChunk:row.death_chunk??undefined,
+      traitsAtBirth:parse<WildlifeTraits>(row.traits_at_birth_json,{speed:1,size:1,fertility:.5,wariness:.5}),
+      traitsAtDeath:row.traits_at_death_json?parse<WildlifeTraits|undefined>(row.traits_at_death_json,undefined):undefined,
+      offspringCount:Number(row.offspring_count)||0,
+      reproductiveSuccess:Boolean(row.reproductive_success)
     }));
 
     return {
@@ -180,15 +206,22 @@ export class WorldPersistence {
       fineChunks,
       homeNpcs:homeRow?parse<NpcState[]>(homeRow.npc_json,[]):[],
       homeObjects:homeRow?parse<WorldObjectState[]>(homeRow.object_json,[]):[],
+      wildlifeLineage,
       savedAt:Number(metaRow.saved_at)||undefined
     };
+  }
+
+  evolutionStats() {
+    const snapshot=this.load();
+    return computeEvolutionStatistics(snapshot?.wildlifeLineage||[]);
   }
 
   stats() {
     const saved=this.db.prepare('SELECT saved_at FROM world_meta WHERE slot = ?').get('default') as {saved_at:number}|undefined;
     const coarse=(this.db.prepare('SELECT COUNT(*) AS n FROM coarse_chunks').get() as {n:number}).n;
     const fine=(this.db.prepare('SELECT COUNT(*) AS n FROM fine_chunks').get() as {n:number}).n;
-    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,coarseChunks:coarse,fineChunks:fine };
+    const lineage=(this.db.prepare('SELECT COUNT(*) AS n FROM wildlife_lineage').get() as {n:number}).n;
+    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,coarseChunks:coarse,fineChunks:fine,lineageRecords:lineage };
   }
 
   clear() {
@@ -197,6 +230,7 @@ export class WorldPersistence {
       this.db.prepare('DELETE FROM coarse_chunks').run();
       this.db.prepare('DELETE FROM fine_chunks').run();
       this.db.prepare('DELETE FROM home_state').run();
+      this.db.prepare('DELETE FROM wildlife_lineage').run();
     });
     tx();
     return {ok:true};
