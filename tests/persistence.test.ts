@@ -36,9 +36,22 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
       habitatExposure:{
         observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53},
-        biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:0,lastChunk:'chunk_2_-1',lastBiome:'plains'
+        biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:1,lastChunk:'chunk_3_-1',lastBiome:'forest'
       },
+      migrationHistory:[{
+        fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',day:2.5,fromBiome:'plains',toBiome:'forest',
+        representedPopulation:2.5,reason:'behavioral_migration'
+      }],
       origin:'founder',offspringCount:1,reproductiveSuccess:true
+    }],
+    wildlifeTransfers:[{
+      entityId:'rabbit_migrant',
+      state:{
+        id:'rabbit_migrant',chunkId:'chunk_3_-1',species:'rabbit',position:{x:61,z:-24},ageDays:90,
+        health:88,hunger:30,thirst:25,energy:65,sex:'male',generation:1,
+        traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3
+      },
+      fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:2.5,transferredDay:4.2
     }]
   };
   store.save(snapshot);
@@ -53,12 +66,19 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.biomeDays.plains,1.5);
+  assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.toChunkId,'chunk_3_-1');
+  assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.representedPopulation,2.5);
+  assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
+  assert.equal(loaded.wildlifeTransfers?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(store.stats().lineageRecords,1);
+  assert.equal(store.stats().pendingWildlifeTransfers,1);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
 
-  store.save({...snapshot,wildlifeLineage:[]});
+  store.save({...snapshot,wildlifeLineage:[],wildlifeTransfers:[]});
   const afterSparseSave=store.load();
   assert.equal(afterSparseSave?.wildlifeLineage?.length,1,'lineage archive must not be pruned by later sparse snapshots');
+  assert.equal(afterSparseSave?.wildlifeTransfers?.length,0,'completed transfer queue entries should be pruned');
+  assert.equal(store.stats().pendingWildlifeTransfers,0);
   assert.equal(store.stats().hasSave,true);
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
@@ -101,8 +121,12 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
       birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
       habitatExposure:{
         observedDays:.5,habitatMean:{ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
-        biomeDays:{forest:.5},chunkDays:{chunk_0_0:.5},observedTransitions:0,lastChunk:'chunk_0_0',lastBiome:'forest'
+        biomeDays:{forest:.5},chunkDays:{chunk_0_0:.5},observedTransitions:1,lastChunk:'chunk_1_0',lastBiome:'plains'
       },
+      migrationHistory:[{
+        fromChunkId:'chunk_0_0',toChunkId:'chunk_1_0',day:2.25,fromBiome:'forest',toBiome:'plains',
+        representedPopulation:1,reason:'behavioral_migration'
+      }],
       origin:'reproduction',offspringCount:0,reproductiveSuccess:false
     }]
   };
@@ -111,7 +135,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   assert.equal(migrated?.origin,'reproduction');
   assert.equal(migrated?.birthHabitat?.biome,'forest');
   assert.equal(migrated?.habitatExposure?.observedDays,.5);
-  assert.equal(migrated?.habitatExposure?.lastBiome,'forest');
+  assert.equal(migrated?.habitatExposure?.lastBiome,'plains');
+  assert.equal(migrated?.migrationHistory?.[0]?.fromChunkId,'chunk_0_0');
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
