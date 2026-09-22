@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeEvolutionStatistics, lineageAncestors } from '../src/world/evolution.js';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from '../src/world/evolution.js';
 import type { WildlifeLineageRecord, WildlifeTraits } from '../src/types.js';
 
 const traits=(wariness:number,size=1):WildlifeTraits=>({speed:1.5+wariness,size,fertility:.7,wariness});
@@ -101,4 +101,48 @@ test('persistent selection signal requires repeated comparable generations and a
   assert.equal(stats.comparableSelectionGenerations.wariness,3);
   assert.ok(stats.traitTrendPerGeneration.wariness<0);
   assert.equal(stats.signal.wariness,'weak');
+});
+
+
+test('lifetime habitat exposure accumulates only observed time with weighted habitat means and transitions',()=>{
+  const forest={biome:'forest' as const,ecology:80,food:60,water:70,danger:30,settlementLevel:1,plantBiomass:75};
+  const wetlands={biome:'wetlands' as const,ecology:90,food:72,water:95,danger:44,settlementLevel:0,plantBiomass:88};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,forest,'chunk_forest',2);
+  exposure=accumulateWildlifeHabitatExposure(exposure,wetlands,'chunk_wetlands',1);
+  assert.equal(exposure.observedDays,3);
+  assert.equal(exposure.biomeDays.forest,2);
+  assert.equal(exposure.biomeDays.wetlands,1);
+  assert.equal(exposure.chunkDays.chunk_forest,2);
+  assert.equal(exposure.chunkDays.chunk_wetlands,1);
+  assert.equal(exposure.observedTransitions,1);
+  assert.equal(exposure.habitatMean.ecology,(80*2+90)/3);
+  assert.equal(exposure.habitatMean.water,(70*2+95)/3);
+  assert.equal(dominantWildlifeExposureBiome(exposure),'forest');
+});
+
+test('lifetime biome selection groups by observed exposure rather than only birth biome',()=>{
+  const plains={biome:'plains' as const,ecology:60,food:65,water:55,danger:20,settlementLevel:1,plantBiomass:58};
+  const forest={biome:'forest' as const,ecology:85,food:72,water:68,danger:48,settlementLevel:0,plantBiomass:80};
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<3;generation++){
+    for(let index=0;index<3;index++){
+      const wariness=.25+generation*.1+index*.2;
+      const breeder=index===2;
+      let exposure=accumulateWildlifeHabitatExposure(undefined,forest,'forest_core',.2+generation*.02);
+      exposure.lastObservedDay=undefined;
+      sample.push({
+        entityId:`migrant_g${generation}_${index}`,species:'rabbit',birthDay:1+generation*10+index,generation,
+        birthChunk:'plains_birth',traitsAtBirth:traits(wariness),birthHabitat:plains,
+        habitatExposure:exposure,origin:generation===0?'founder':'reproduction',
+        offspringCount:breeder?2:0,reproductiveSuccess:breeder
+      });
+    }
+  }
+  const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
+  assert.equal(rabbit.biomeSelection[0]?.basis,'origin');
+  assert.equal(rabbit.biomeSelection[0]?.biome,'plains');
+  assert.equal(rabbit.lifetimeBiomeSelection[0]?.basis,'lifetime');
+  assert.equal(rabbit.lifetimeBiomeSelection[0]?.biome,'forest');
+  assert.equal(rabbit.lifetimeBiomeSelection[0]?.population,9);
+  assert.ok((rabbit.lifetimeBiomeSelection[0]?.observedExposureDaysMean||0)>.2);
 });
