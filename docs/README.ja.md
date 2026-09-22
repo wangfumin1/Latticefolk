@@ -23,6 +23,7 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 - Quaternius の CC0 low-poly assets。
 - 永続的な野生動物系譜と進化観測。死亡・unload 後も祖先記録を SQLite に保持し、founder と実際の繁殖出生を区別、死亡原因・子孫数・繁殖成功率・世代別 trait 平均/分散/傾向を God View から確認できます。
 - biome 別の選択圧観測。出生/死亡時の habitat を系譜に保存し、繁殖個体と cohort の標準化 trait 差、世代間の方向一致率、サンプル数を God View に表示します。相関を因果として断定しません。
+- 生涯 habitat 曝露。個体が実際に fine simulation されている時間だけ、環境の時間加重平均、biome/chunk 滞在日数、観測された遷移を記録します。coarse 区間を個体履歴として捏造せず、出生 biome と lifetime dominant biome の選択証拠を God View で比較できます。
 
 ## 起動
 
@@ -46,7 +47,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → **migration exposure / niche competition / disease selection** → richer ecology → physics。
+✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → **identity-preserving fine migration / niche competition / disease selection** → richer ecology → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 
