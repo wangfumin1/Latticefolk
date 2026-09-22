@@ -1598,6 +1598,11 @@ class TownGame {
       representedPopulation,transferredDay:currentDay
     };
 
+    animal.removed=true;
+    animal.path=[];animal.pathIndex=0;
+    animal.mesh.parent?.remove(animal.mesh);
+    this.wildlife.delete(state.id);
+
     const targetRuntime=this.materializedChunks.get(target.id);
     if(targetRuntime){
       if(this.spawnWildlife(structuredClone(transferredState))){
@@ -1605,11 +1610,6 @@ class TownGame {
         targetRuntime.initialWildlifeCounts[state.species]=(targetRuntime.initialWildlifeCounts[state.species]||0)+1;
       }else this.wildlifeTransfers.set(state.id,transfer);
     }else this.wildlifeTransfers.set(state.id,transfer);
-
-    animal.removed=true;
-    animal.path=[];animal.pathIndex=0;
-    animal.mesh.parent?.remove(animal.mesh);
-    this.wildlife.delete(state.id);
     if(this.selectedEntity?.type==='wildlife'&&this.selectedEntity.id===state.id)this.selectedEntity=undefined;
     if(this.hoverEntity?.type==='wildlife'&&this.hoverEntity.id===state.id)this.hoverEntity=undefined;
     this.event(`${this.wildlifeName(state.species)} ${state.id} 从 ${source.id} 迁移至 ${target.id}（代表 ${representedPopulation.toFixed(2)}）`);
