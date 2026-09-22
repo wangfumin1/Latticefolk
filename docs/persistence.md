@@ -84,3 +84,7 @@ Each transfer stores the full `WildlifeState`, source/destination chunk IDs, sim
 ### Niche competition persistence
 
 Coarse niche competition is part of each `CoarseChunkState`, so it is persisted automatically inside `coarse_chunks.state_json` with the rest of the authoritative aggregate ecology. Species-level `competitionPressure` is also stored on coarse wildlife populations. Fine lineage habitat JSON can carry `competitionPressure`; because it is an optional additive field, older saves remain loadable without a schema migration. New lineage habitat observations can also carry optional `seasonalSuitability`; lifetime exposure time-weights it with the other observed habitat values. Older lineage JSON remains loadable and is not backfilled.
+
+### Wildlife disease state
+
+Coarse disease transmission state is embedded in each `CoarseChunkState` and therefore persists inside `coarse_chunks.state_json`: environmental reservoir, mean load, cross-species pressure, per-species pressure and strongest spillover. Coarse wildlife populations continue to persist their `diseaseLoad`. Lineage habitat JSON may now carry optional `diseasePressure`; lifetime habitat exposure time-weights that value when present. These are additive JSON fields, so existing SQLite schemas and older saves remain loadable without a table migration.
