@@ -1270,7 +1270,7 @@ class TownGame {
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
       s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
-      if(s.health<=0){this.removeWildlife(animal,'自然死亡');continue;}
+      if(s.health<=0){this.removeWildlife(animal,this.classifyWildlifeDeath(s));continue;}
 
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
@@ -1422,7 +1422,7 @@ class TownGame {
           other.state.health=clamp(other.state.health-damage,0,100);
           s.hunger=clamp(s.hunger-(other.state.species==='rabbit'?48:30),0,100);
           s.energy=clamp(s.energy-8,0,100);
-          if(other.state.health<=0)this.removeWildlife(other,'被捕食');
+          if(other.state.health<=0)this.removeWildlife(other,'predation');
         }
         break;
       case 'seek_mate':
@@ -1483,11 +1483,14 @@ class TownGame {
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-        generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:this.day,
+        generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
         diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??s.pregnantById
       };
-      this.spawnWildlife(baby);
-      const runtime=this.materializedChunks.get(s.chunkId);if(runtime)runtime.wildlifeIds.push(id);
+      if(this.spawnWildlife(baby)){
+        const runtime=this.materializedChunks.get(s.chunkId);if(runtime)runtime.wildlifeIds.push(id);
+        this.recordWildlifeOffspring(s.id);
+        this.recordWildlifeOffspring(baby.fatherId);
+      }
     }
     s.pregnantById=undefined;s.pregnantUntilDay=undefined;s.lastBirthDay=currentDay;
     s.energy=clamp(s.energy-18,0,100);s.hunger=clamp(s.hunger+16,0,100);
