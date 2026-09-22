@@ -337,6 +337,7 @@ export interface WildlifeBiomeSelectionStats {
   selectionDifferential: WildlifeTraits;
   normalizedSelectionDifferential: WildlifeTraits;
   selectionConsistency: WildlifeTraits;
+  comparableSelectionGenerations: WildlifeTraits;
   traitTrendPerGeneration: WildlifeTraits;
   signal: Record<keyof WildlifeTraits, WildlifeSelectionSignal>;
 }
