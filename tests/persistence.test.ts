@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 
@@ -48,6 +49,49 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   const afterSparseSave=store.load();
   assert.equal(afterSparseSave?.wildlifeLineage?.length,1,'lineage archive must not be pruned by later sparse snapshots');
   assert.equal(store.stats().hasSave,true);
+  store.close();
+  fs.rmSync(dir,{recursive:true,force:true});
+});
+
+
+test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-lineage-migration-'));
+  const file=path.join(dir,'world.sqlite');
+  const legacy=new Database(file);
+  legacy.exec(`
+    CREATE TABLE wildlife_lineage (
+      entity_id TEXT PRIMARY KEY,
+      species TEXT NOT NULL,
+      mother_id TEXT,
+      father_id TEXT,
+      birth_day REAL NOT NULL,
+      death_day REAL,
+      death_reason TEXT,
+      generation INTEGER NOT NULL,
+      birth_chunk TEXT NOT NULL,
+      death_chunk TEXT,
+      traits_at_birth_json TEXT NOT NULL,
+      traits_at_death_json TEXT,
+      offspring_count INTEGER NOT NULL DEFAULT 0,
+      reproductive_success INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  legacy.close();
+
+  const store=new WorldPersistence(file);
+  const snapshot:WorldPersistenceSnapshot={
+    version:1,
+    meta:{day:1,minuteOfDay:480,weather:'clear',playerPosition:{x:0,z:0},playerInventory:{apple:0,bread:0,wood:0,coin:0,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},
+    coarseChunks:[],fineChunks:[],homeNpcs:[],homeObjects:[],
+    wildlifeLineage:[{
+      entityId:'rabbit_child',species:'rabbit',motherId:'rabbit_mother',fatherId:'rabbit_father',
+      birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
+      origin:'reproduction',offspringCount:0,reproductiveSuccess:false
+    }]
+  };
+  store.save(snapshot);
+  assert.equal(store.load()?.wildlifeLineage?.[0]?.origin,'reproduction');
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
