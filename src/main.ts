@@ -8,10 +8,11 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
+import { computeEvolutionStatistics, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -36,6 +37,7 @@ app.innerHTML = `
   <div id="inventory"></div>
 </div>
 <div id="npcPanel" class="panel compact"></div>
+<div id="evolutionPanel" class="panel evolution hidden"></div>
 <div id="log" class="panel log"></div>
 <div id="admin" class="panel admin hidden">
   <div class="panel-title">${i18n.t('console.title')} <span>${i18n.t('console.close')}</span></div>
@@ -90,6 +92,7 @@ const ui = {
   prompt: document.querySelector<HTMLDivElement>('#prompt')!,
   inv: document.querySelector<HTMLDivElement>('#inventory')!,
   npc: document.querySelector<HTMLDivElement>('#npcPanel')!,
+  evolution: document.querySelector<HTMLDivElement>('#evolutionPanel')!,
   log: document.querySelector<HTMLDivElement>('#log')!,
   admin: document.querySelector<HTMLDivElement>('#admin')!,
   adminStatus: document.querySelector<HTMLDivElement>('#adminStatus')!,
@@ -169,6 +172,10 @@ class TownGame {
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
+  wildlifeLineage = new Map<string,WildlifeLineageRecord>();
+  lineageEpoch = 0;
+  evolutionCacheEpoch = -1;
+  evolutionCache: WildlifeEvolutionStats[] = [];
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
