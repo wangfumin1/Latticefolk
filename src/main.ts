@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
-import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, lineageAncestors } from './world/evolution';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -2266,10 +2266,17 @@ class TownGame {
         <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
         ${entry.biomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
-            <b>${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
+            <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
             <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+          </div>`).join('')}
+        ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
+            <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
+            <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
@@ -2280,6 +2287,7 @@ class TownGame {
       <div class="evo-lineage">
         <b>${i18n.t('evolution.lineage')}</b> · ${this.escape(selected.entityId)} · G${selected.generation} · offspring ${selected.offspringCount}
         <div>${ancestors.length?ancestors.map(record=>`${this.escape(record.entityId)} (G${record.generation}${record.deathDay!==undefined?' †':''})`).join(' ← '):i18n.t('evolution.noAncestors')}</div>
+        ${selected.habitatExposure?`<div>${i18n.t('evolution.exposure')} ${selected.habitatExposure.observedDays.toFixed(2)}d · ${i18n.t('evolution.dominantBiome')} ${this.escape(dominantWildlifeExposureBiome(selected.habitatExposure)||'—')} · ${i18n.t('evolution.transitions')} ${selected.habitatExposure.observedTransitions}</div>`:''}
         ${selectedStats?.cohorts.length?`<div class="evo-cohorts">${selectedStats.cohorts.slice(-6).map(cohort=>`G${cohort.generation}: n=${cohort.population}, μw=${trait(cohort.traitMean.wariness)}, var=${trait(cohort.traitVariance.wariness)}`).join('<br>')}</div>`:''}
       </div>`:'';
 
