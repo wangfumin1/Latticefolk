@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CoarseChunkState, CoarseWildlifePopulation, WildlifeState } from '../src/types.js';
 import {
   applyFineWildlifePopulationTransfer, areAdjacentChunks,
-  fineMigrationEntryPoint, fineMigrationRepresentativeWeight
+  fineMigrationEntryPoint, fineMigrationRepresentativeWeight, foldFineWildlifePopulationCount
 } from '../src/world/fineWildlifeMigration.js';
 
 const chunk=(id:string,cx:number,cz:number):CoarseChunkState=>({
@@ -60,4 +60,32 @@ test('migration transfer never removes more population than the source owns',()=
   assert.equal(moved,.4);
   assert.equal(source.count,0);
   assert.equal(target.count,8.4);
+});
+
+
+test('migration honors fixed representative weight and destination free capacity',()=>{
+  const source=population(12,72,9);
+  const target=population(9,65,5);
+  target.carryingCapacity=10.5;
+  const moved=applyFineWildlifePopulationTransfer(source,target,animal,3,4,1.5);
+  assert.equal(moved,1.5);
+  assert.equal(source.count,10.5);
+  assert.equal(target.count,10.5);
+});
+
+test('fold-back removes a dead migrated representative by its exact fixed weight',()=>{
+  const folded=foldFineWildlifePopulationCount(
+    14, // coarse population already includes a 4-unit incoming representative
+    5,  // ordinary baseline fine representatives
+    5,  // all ordinary representatives survived
+    4,  // incoming identity represents four coarse animals
+    0   // incoming identity died before collapse
+  );
+  assert.equal(folded.ordinaryWeight,2);
+  assert.equal(folded.nextCount,10);
+});
+
+test('fold-back does not double-count a surviving migrated representative',()=>{
+  const folded=foldFineWildlifePopulationCount(14,5,5,4,4);
+  assert.equal(folded.nextCount,14);
 });
