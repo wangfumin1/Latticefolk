@@ -156,3 +156,13 @@ test('lifetime habitat exposure preserves time-weighted niche competition pressu
   assert.equal(exposure.observedDays,4);
   assert.equal(exposure.habitatMean.competitionPressure,65);
 });
+
+
+test('lifetime habitat exposure preserves time-weighted disease pressure',()=>{
+  const low={biome:'forest' as const,ecology:80,food:65,water:70,danger:25,settlementLevel:1,plantBiomass:72,competitionPressure:20,seasonalSuitability:70,diseasePressure:10};
+  const high={...low,diseasePressure:90};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,low,'chunk_a',1);
+  exposure=accumulateWildlifeHabitatExposure(exposure,high,'chunk_a',3);
+  assert.equal(exposure.observedDays,4);
+  assert.equal(exposure.habitatMean.diseasePressure,70);
+});
