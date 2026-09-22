@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
-import { applyWildlifeMigration, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
+import { applyWildlifeMigration, computeWildlifeDiseaseTransmission, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -170,4 +170,47 @@ test('seasonal pull can reverse deer migration direction while conserving popula
   applyWildlifeMigration(new Map([[forest.id,forest],[hills.id,hills]]),[autumn!]);
   const totalAfter=deerForest.count+deerHills.count;
   assert.ok(Math.abs(totalAfter-totalBefore)<.002);
+});
+
+
+test('coarse disease transmission supports cross-species spillover and environmental reservoir',()=>{
+  const a=chunk('chunk_spillover',13,{biome:'wetlands',ecology:80,water:95,food:74});
+  const populations=ensureWildlifePopulations(a);
+  for(const p of populations){
+    p.count=Math.max(4,p.carryingCapacity*.75);
+    p.diseaseLoad=p.species==='boar'?92:0;
+  }
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const before=rabbit.diseaseLoad||0;
+  for(let i=0;i<8;i++)computeWildlifeDiseaseTransmission(a,populations,'rain',30);
+  assert.ok((rabbit.diseaseLoad||0)>before);
+  assert.ok((a.wildlifeDisease?.environmentalReservoir||0)>0);
+  assert.ok((a.wildlifeDisease?.crossSpeciesPressure||0)>0);
+  assert.equal(a.wildlifeDisease?.strongestSpillover?.fromSpecies,'boar');
+});
+
+test('environmental disease reservoir decays after population disease pressure is removed',()=>{
+  const a=chunk('chunk_reservoir_decay',14,{biome:'wetlands',ecology:80,water:90,food:70});
+  const populations=ensureWildlifePopulations(a);
+  for(const p of populations){p.count=Math.max(3,p.carryingCapacity*.7);p.diseaseLoad=80;}
+  for(let i=0;i<6;i++)computeWildlifeDiseaseTransmission(a,populations,'rain',30);
+  const peak=a.wildlifeDisease?.environmentalReservoir||0;
+  assert.ok(peak>0);
+  for(const p of populations)p.diseaseLoad=0;
+  for(let i=0;i<16;i++)computeWildlifeDiseaseTransmission(a,populations,'clear',30);
+  assert.ok((a.wildlifeDisease?.environmentalReservoir||0)<peak);
+});
+
+test('wildlife migration conserves population while carrying disease load into destination',()=>{
+  const a=chunk('chunk_disease_move_a',15,{biome:'plains'}),b=chunk('chunk_disease_move_b',16,{biome:'plains'});
+  ensureWildlifePopulations(a);ensureWildlifePopulations(b);
+  const source=a.wildlife!.find(p=>p.species==='rabbit')!;
+  const target=b.wildlife!.find(p=>p.species==='rabbit')!;
+  source.count=10;source.diseaseLoad=80;
+  target.count=2;target.diseaseLoad=0;
+  target.carryingCapacity=20;
+  const before=source.count+target.count;
+  applyWildlifeMigration(new Map([[a.id,a],[b.id,b]]),[{species:'rabbit',fromChunkId:a.id,toChunkId:b.id,amount:2}]);
+  assert.ok(Math.abs(source.count+target.count-before)<.002);
+  assert.ok((target.diseaseLoad||0)>0);
 });
