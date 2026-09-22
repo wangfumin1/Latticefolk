@@ -1238,26 +1238,46 @@ class TownGame {
     }
 
     const wildlifeStates:WildlifeState[]=[];
-    const currentWildlifeCounts:Partial<Record<WildlifeSpecies,number>>={};
-    const diseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
+    const currentOrdinaryCounts:Partial<Record<WildlifeSpecies,number>>={};
+    const currentFixedWeights:Partial<Record<WildlifeSpecies,number>>={};
+    const ordinaryDiseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
+    const fixedDiseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
     for(const id of runtime.wildlifeIds){
       const animal=this.wildlife.get(id);if(!animal)continue;
       this.endWildlifeHabitatObservation(animal.state);
       wildlifeStates.push(structuredClone(animal.state));
-      currentWildlifeCounts[animal.state.species]=(currentWildlifeCounts[animal.state.species]||0)+1;
-      diseaseTotals[animal.state.species]=(diseaseTotals[animal.state.species]||0)+(animal.state.diseaseLoad||0);
+      const species=animal.state.species;
+      const fixedWeight=runtime.fixedWildlifeWeights.get(id)||0;
+      if(fixedWeight>0){
+        currentFixedWeights[species]=(currentFixedWeights[species]||0)+fixedWeight;
+        fixedDiseaseTotals[species]=(fixedDiseaseTotals[species]||0)+(animal.state.diseaseLoad||0)*fixedWeight;
+      }else{
+        currentOrdinaryCounts[species]=(currentOrdinaryCounts[species]||0)+1;
+        ordinaryDiseaseTotals[species]=(ordinaryDiseaseTotals[species]||0)+(animal.state.diseaseLoad||0);
+      }
       animal.removed=true;
       animal.mesh.parent?.remove(animal.mesh);
       this.wildlife.delete(id);
     }
     if(chunk?.wildlife){
       for(const population of chunk.wildlife){
-        const initial=runtime.initialWildlifeCounts[population.species]||0;
-        const current=currentWildlifeCounts[population.species]||0;
-        if(initial<=0&&current<=0)continue;
-        const scale=initial>0?Math.min(4,Math.max(1,population.count/initial)):1;
-        population.count=Math.max(0,population.count+(current-initial)*scale);
-        if(current>0)population.diseaseLoad=clamp((diseaseTotals[population.species]||0)/current,0,100);
+        const initialOrdinary=runtime.initialWildlifeCounts[population.species]||0;
+        const currentOrdinary=currentOrdinaryCounts[population.species]||0;
+        let initialFixedWeight=0;
+        for(const [id,weight] of runtime.fixedWildlifeWeights){
+          if(this.wildlifeLineage.get(id)?.species===population.species)initialFixedWeight+=weight;
+        }
+        const currentFixedWeight=currentFixedWeights[population.species]||0;
+        if(initialOrdinary<=0&&currentOrdinary<=0&&initialFixedWeight<=0&&currentFixedWeight<=0)continue;
+        const folded=foldFineWildlifePopulationCount(
+          population.count,initialOrdinary,currentOrdinary,initialFixedWeight,currentFixedWeight
+        );
+        population.count=folded.nextCount;
+        const representedAlive=currentOrdinary*folded.ordinaryWeight+currentFixedWeight;
+        if(representedAlive>0){
+          const diseaseWeighted=(ordinaryDiseaseTotals[population.species]||0)*folded.ordinaryWeight+(fixedDiseaseTotals[population.species]||0);
+          population.diseaseLoad=clamp(diseaseWeighted/representedAlive,0,100);
+        }
       }
     }
 
