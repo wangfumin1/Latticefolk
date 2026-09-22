@@ -106,3 +106,9 @@ Unmaterialized destinations use a durable transit queue rather than a fake visit
 Rabbit, deer, boar and fox no longer behave as ecologically isolated populations. Fixed simulation-owned resource profiles define how strongly their niches overlap; observed population density converts that overlap into explicit competition pressure. The pressure reduces effective carrying capacity within a bounded range, contributes to population health, appears in God View, and is captured in lineage habitat exposure for later selection analysis.
 
 This creates a deterministic bridge from community composition to evolution observability: future analyses can ask whether trait success changes under sustained high competition rather than treating biome alone as the environmental cause. The next ecological milestones are seasonal migration drivers, richer disease transmission and additional species/predators.
+
+## Implemented milestone: seasonal migration drivers
+
+Wildlife movement now changes with the season rather than reacting only to crowding and immediate habitat degradation. Species-specific biome preferences combine with current forage, water, ecology and danger to produce seasonal suitability. Neighboring chunks with materially better seasonal suitability can pull a small conserved population flow even before density becomes extreme, while all movement remains capacity-bounded and traceable.
+
+Fine individuals see the same simulation-derived seasonal suitability in their bounded migration candidates, and lineage exposure records the suitability actually observed during fine simulation. The next ecological milestones are richer disease transmission, additional species/predators and explicit fitness-by-habitat measures that can use competition and seasonal exposure together.
