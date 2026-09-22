@@ -77,7 +77,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       species,
       livingPopulation:living.length,
       historicalPopulation:speciesRecords.length,
-      births:speciesRecords.length,
+      births:speciesRecords.filter(record=>record.origin==='reproduction').length,
       deaths:dead.length,
       generationMean:mean(speciesRecords.map(record=>record.generation)),
       generationMax:speciesRecords.length?Math.max(...speciesRecords.map(record=>record.generation)):0,
