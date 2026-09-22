@@ -1027,9 +1027,10 @@ class TownGame {
       for(const saved of cached.wildlifeStates){
         const state=structuredClone(saved);
         state.chunkId=chunk.id;
-        this.spawnWildlife(state);
-        runtime.wildlifeIds.push(state.id);
-        runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        if(this.spawnWildlife(state)){
+          runtime.wildlifeIds.push(state.id);
+          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        }
       }
     }else{
       for(const p of plan.wildlife){
@@ -1041,9 +1042,10 @@ class TownGame {
           sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
           lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
         };
-        this.spawnWildlife(state);
-        runtime.wildlifeIds.push(state.id);
-        runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        if(this.spawnWildlife(state)){
+          runtime.wildlifeIds.push(state.id);
+          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+        }
       }
     }
 
@@ -1079,12 +1081,16 @@ class TownGame {
   }
 
   spawnWildlife(state:WildlifeState) {
+    const archived=this.wildlifeLineage.get(state.id);
+    if(archived?.deathDay!==undefined)return false;
+    this.ensureWildlifeLineage(state);
     const g=this.makeProceduralAnimal(state);
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
     this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
+    return true;
   }
 
   makeProceduralAnimal(state:WildlifeState) {
