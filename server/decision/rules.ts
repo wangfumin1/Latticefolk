@@ -189,11 +189,11 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     let targetChunkId:string|undefined;
     let reasonCode='wildlife_wander';
     const habitatScore=(x:typeof entry.world.currentHabitat)=>
-      x.ecology*.28+x.food*.25+x.water*.20+(100-x.danger)*.17+(1-Math.min(1.5,x.density))*10-x.settlementLevel*2-x.competitionPressure*.10;
+      x.ecology*.24+x.food*.22+x.water*.18+(100-x.danger)*.15+(1-Math.min(1.5,x.density))*9-x.settlementLevel*2-x.competitionPressure*.10+x.seasonalSuitability*.12;
     const currentHabitat=entry.world.currentHabitat;
     const migrationTarget=[...entry.world.nearbyChunks]
       .sort((a,b)=>habitatScore(b)-habitatScore(a)||a.id.localeCompare(b.id))[0];
-    const migrationPressure=currentHabitat.density>=.9||currentHabitat.competitionPressure>=65||currentHabitat.ecology<38||currentHabitat.water<30||currentHabitat.food<34||currentHabitat.danger>70;
+    const migrationPressure=currentHabitat.density>=.9||currentHabitat.competitionPressure>=65||currentHabitat.seasonalSuitability<42||currentHabitat.ecology<38||currentHabitat.water<30||currentHabitat.food<34||currentHabitat.danger>70;
 
     if(animal.species!=='fox'&&nearbyFox&&entry.allowedActions.includes('flee')){
       action='flee';targetWildlifeId=nearbyFox.id;reasonCode='predator_nearby';
