@@ -2506,7 +2506,7 @@ class TownGame {
         <b>${i18n.t('evolution.lineage')}</b> · ${this.escape(selected.entityId)} · G${selected.generation} · offspring ${selected.offspringCount}
         <div>${ancestors.length?ancestors.map(record=>`${this.escape(record.entityId)} (G${record.generation}${record.deathDay!==undefined?' †':''})`).join(' ← '):i18n.t('evolution.noAncestors')}</div>
         ${selected.habitatExposure?`<div>${i18n.t('evolution.exposure')} ${selected.habitatExposure.observedDays.toFixed(2)}d · ${i18n.t('evolution.dominantBiome')} ${this.escape(dominantWildlifeExposureBiome(selected.habitatExposure)||'—')} · ${i18n.t('evolution.transitions')} ${selected.habitatExposure.observedTransitions}</div>`:''}
-        ${selected.migrationHistory?.length?`<div><b>${i18n.t('evolution.migrations')}</b><br>${selected.migrationHistory.slice(-4).map(event=>`Day ${event.day.toFixed(2)} · ${this.escape(event.fromChunkId)} → ${this.escape(event.toChunkId)} · ${event.representedPopulation.toFixed(2)}</`).join('<br>')}</div>`:''}
+        ${selected.migrationHistory?.length?`<div><b>${i18n.t('evolution.migrations')}</b><br>${selected.migrationHistory.slice(-4).map(event=>`Day ${event.day.toFixed(2)} · ${this.escape(event.fromChunkId)} → ${this.escape(event.toChunkId)} · ${event.representedPopulation.toFixed(2)}`).join('<br>')}</div>`:''}
         ${selectedStats?.cohorts.length?`<div class="evo-cohorts">${selectedStats.cohorts.slice(-6).map(cohort=>`G${cohort.generation}: n=${cohort.population}, μw=${trait(cohort.traitMean.wariness)}, var=${trait(cohort.traitVariance.wariness)}`).join('<br>')}</div>`:''}
       </div>`:'';
 
