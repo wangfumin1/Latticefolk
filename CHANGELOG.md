@@ -24,6 +24,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Persistent coarse/fine wildlife ecology for rabbit/deer/boar/fox populations, habitat carrying capacity, conserved migration, fine needs/predation/reproduction, inheritable traits, batched Jev decisions, interactive inspection, and SQLite wildlife persistence.
 - Seasonal plant biomass and trophic-flow ecology with disease pressure, renewable fine resources, gestation/litters, senescence, parent IDs, and multi-generation inheritance.
 - Durable wildlife ancestry archive with founder/reproduction provenance, typed death causes, lifetime offspring accounting, per-species/per-generation trait mean/variance/trend statistics, lineage traversal, a read-only evolution API, and God View evolution observability.
+- Biome-linked selection-pressure observability with persisted habitat snapshots, breeder-vs-cohort trait differentials, normalized effect sizes, cross-generation directional consistency, cautious signal classification, and God View habitat evidence.
 
 ### Changed
 
