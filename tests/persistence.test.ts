@@ -49,7 +49,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       state:{
         id:'rabbit_migrant',chunkId:'chunk_3_-1',species:'rabbit',position:{x:61,z:-24},ageDays:90,
         health:88,hunger:30,thirst:25,energy:65,sex:'male',generation:1,
-        traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3
+        traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3,
+        representedPopulation:2.5
       },
       fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:2.5,transferredDay:4.2
     }]
@@ -70,6 +71,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
   assert.equal(loaded.wildlifeTransfers?.[0]?.toChunkId,'chunk_3_-1');
+  assert.equal(loaded.wildlifeTransfers?.[0]?.state.representedPopulation,2.5);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.stats().pendingWildlifeTransfers,1);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
