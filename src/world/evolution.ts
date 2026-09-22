@@ -1,6 +1,6 @@
 import type {
-  WildlifeDeathReason, WildlifeEvolutionStats, WildlifeGenerationCohortStats,
-  WildlifeLineageRecord, WildlifeSpecies, WildlifeTraits
+  WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeGenerationCohortStats,
+  WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 
 const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
@@ -60,6 +60,104 @@ function cohort(generation:number,records:WildlifeLineageRecord[]):WildlifeGener
   };
 }
 
+
+function habitatMean(records:WildlifeLineageRecord[]):Omit<WildlifeHabitatSnapshot,'biome'> {
+  const habitats=records.map(record=>record.birthHabitat).filter((value):value is WildlifeHabitatSnapshot=>Boolean(value));
+  return {
+    ecology:mean(habitats.map(value=>value.ecology)),
+    food:mean(habitats.map(value=>value.food)),
+    water:mean(habitats.map(value=>value.water)),
+    danger:mean(habitats.map(value=>value.danger)),
+    settlementLevel:mean(habitats.map(value=>value.settlementLevel)),
+    plantBiomass:mean(habitats.map(value=>value.plantBiomass))
+  };
+}
+
+function subtractTraits(a:WildlifeTraits,b:WildlifeTraits) {
+  const out=zeroTraits();
+  for(const trait of TRAITS)out[trait]=a[trait]-b[trait];
+  return out;
+}
+
+function normalizedDifferential(difference:WildlifeTraits,records:WildlifeLineageRecord[],average:WildlifeTraits) {
+  const variances=traitVariance(records,average);
+  const out=zeroTraits();
+  for(const trait of TRAITS){
+    const sd=Math.sqrt(Math.max(0,variances[trait]));
+    out[trait]=sd>1e-9?difference[trait]/sd:0;
+  }
+  return out;
+}
+
+function consistencyAcrossGenerations(records:WildlifeLineageRecord[],overall:WildlifeTraits) {
+  const out=zeroTraits();
+  const generations=[...new Set(records.map(record=>record.generation))];
+  for(const trait of TRAITS){
+    const expected=Math.sign(overall[trait]);
+    if(expected===0){out[trait]=0;continue;}
+    let comparable=0,same=0;
+    for(const generation of generations){
+      const cohort=records.filter(record=>record.generation===generation);
+      const breeders=cohort.filter(record=>record.offspringCount>0);
+      if(cohort.length<2||!breeders.length)continue;
+      const diff=traitMean(breeders)[trait]-traitMean(cohort)[trait];
+      if(Math.abs(diff)<=1e-9)continue;
+      comparable++;
+      if(Math.sign(diff)===expected)same++;
+    }
+    out[trait]=comparable?same/comparable:0;
+  }
+  return out;
+}
+
+function signalForTrait(
+  population:number,
+  breeders:number,
+  generations:number,
+  normalized:number,
+  consistency:number
+):WildlifeSelectionSignal {
+  if(population<6||breeders<2||generations<2)return 'insufficient';
+  if(Math.abs(normalized)>=.20&&consistency>=.67)return 'persistent';
+  return 'weak';
+}
+
+function biomeSelection(records:WildlifeLineageRecord[]):WildlifeBiomeSelectionStats[] {
+  const biomes=[...new Set(records.map(record=>record.birthHabitat?.biome).filter((value):value is NonNullable<WildlifeLineageRecord['birthHabitat']>['biome']=>Boolean(value)))];
+  return biomes.map(biome=>{
+    const cohortRecords=records.filter(record=>record.birthHabitat?.biome===biome);
+    const breeders=cohortRecords.filter(record=>record.offspringCount>0);
+    const average=traitMean(cohortRecords);
+    const breederAverage=breeders.length?traitMean(breeders):zeroTraits();
+    const differential=subtractTraits(breederAverage,average);
+    const normalized=normalizedDifferential(differential,cohortRecords,average);
+    const consistency=consistencyAcrossGenerations(cohortRecords,differential);
+    const generations=[...new Set(cohortRecords.map(record=>record.generation))];
+    const dead=cohortRecords.filter(record=>record.deathDay!==undefined);
+    const signal={} as Record<keyof WildlifeTraits,WildlifeSelectionSignal>;
+    for(const trait of TRAITS){
+      signal[trait]=signalForTrait(cohortRecords.length,breeders.length,generations.length,normalized[trait],consistency[trait]);
+    }
+    return {
+      biome,
+      population:cohortRecords.length,
+      breeders:breeders.length,
+      generationsObserved:generations.length,
+      breederRate:cohortRecords.length?breeders.length/cohortRecords.length:0,
+      offspringMean:mean(cohortRecords.map(record=>record.offspringCount)),
+      lifespanMean:mean(dead.map(record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))),
+      habitatMean:habitatMean(cohortRecords),
+      traitMean:average,
+      breederTraitMean:breederAverage,
+      selectionDifferential:differential,
+      normalizedSelectionDifferential:normalized,
+      selectionConsistency:consistency,
+      traitTrendPerGeneration:traitTrend(cohortRecords),
+      signal
+    };
+  }).sort((a,b)=>b.population-a.population||a.biome.localeCompare(b.biome));
+}
+
 export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecord>):WildlifeEvolutionStats[] {
   const all=[...records];
   return SPECIES.map(species=>{
@@ -89,7 +187,8 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       mortality,
       reproductiveSuccess:mean(breeders.map(record=>record.offspringCount)),
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
-      cohorts:generations.map(generation=>cohort(generation,speciesRecords.filter(record=>record.generation===generation)))
+      cohorts:generations.map(generation=>cohort(generation,speciesRecords.filter(record=>record.generation===generation))),
+      biomeSelection:biomeSelection(speciesRecords)
     };
   });
 }
