@@ -147,6 +147,8 @@ test('seasonal habitat suitability changes deterministically by species and biom
 test('seasonal pull can reverse deer migration direction while conserving population',()=>{
   const forest=chunk('chunk_season_a',11,{biome:'forest',ecology:82,food:74,water:72,danger:18});
   const hills=chunk('chunk_season_b',12,{biome:'hills',ecology:82,food:74,water:72,danger:18});
+  forest.plants={grass:70,shrub:70,fruit:70,crop:40};
+  hills.plants={grass:70,shrub:70,fruit:70,crop:40};
   ensureWildlifePopulations(forest);ensureWildlifePopulations(hills);
   for(const species of ['rabbit','boar','fox'] as const){
     forest.wildlife!.find(p=>p.species===species)!.count=0;
