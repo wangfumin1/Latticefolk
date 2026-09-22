@@ -26,6 +26,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - 检索优先的预制台词库，支持完整台词和 opener/body/closer 片段组合。
 - 简体中文、English、日本語、Español UI 与语料支持。
 - Quaternius CC0 低多边形角色、建筑和道具素材。
+- 野生动物永久谱系与进化观测：死亡或卸载后的祖先仍保存在 SQLite；区分 founder 与真实繁殖出生，统计死亡原因、后代数、繁殖成功率、代际 trait 均值/方差/趋势，并在 God View 中查看谱系和进化数据。
 
 ## 本地运行
 
@@ -62,7 +63,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 人口/资源/贸易/生态守恒流 → **Region / World 决策层** → Region/World 决策层 → 动态 chunk streaming → 程序化聚落与环境 → 更完整的生产与交互 → 动植物生态 → 生老病死/繁殖/遗传/进化 → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → **环境选择压力与 biome adaptation 可观测性** → 更完整生态 → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 
