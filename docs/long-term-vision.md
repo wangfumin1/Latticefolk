@@ -100,3 +100,9 @@ This enables a second adaptation view based on the dominant biome actually obser
 Named fine wildlife can cross into adjacent chunks without being destroyed and regenerated as unrelated procedural animals. The same entity ID, ancestry, inherited traits, pregnancy state and observed habitat history survive the transfer. The provider only selects a legal migration intention/destination; deterministic simulation performs carrying-capacity validation, representative population conservation, entry placement, energy cost, persistence and lineage provenance.
 
 Unmaterialized destinations use a durable transit queue rather than a fake visited fine snapshot. Migrants retain their coarse representative weight after arrival, so later mortality or onward migration remains quantitatively consistent. The next ecological phase can build on this identity continuity for niche competition, seasonal movement, disease transmission and richer predator/prey networks.
+
+## Implemented milestone: deterministic niche competition
+
+Rabbit, deer, boar and fox no longer behave as ecologically isolated populations. Fixed simulation-owned resource profiles define how strongly their niches overlap; observed population density converts that overlap into explicit competition pressure. The pressure reduces effective carrying capacity within a bounded range, contributes to population health, appears in God View, and is captured in lineage habitat exposure for later selection analysis.
+
+This creates a deterministic bridge from community composition to evolution observability: future analyses can ask whether trait success changes under sustained high competition rather than treating biome alone as the environmental cause. The next ecological milestones are seasonal migration drivers, richer disease transmission and additional species/predators.
