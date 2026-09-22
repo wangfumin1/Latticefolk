@@ -98,6 +98,27 @@ export class WorldPersistence {
       INSERT INTO home_state(slot,npc_json,object_json,updated_at) VALUES('default',?,?,?)
       ON CONFLICT(slot) DO UPDATE SET npc_json=excluded.npc_json,object_json=excluded.object_json,updated_at=excluded.updated_at
     `);
+    const upsertLineage=this.db.prepare(`
+      INSERT INTO wildlife_lineage(
+        entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
+        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,offspring_count,reproductive_success,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(entity_id) DO UPDATE SET
+        species=excluded.species,
+        mother_id=COALESCE(wildlife_lineage.mother_id,excluded.mother_id),
+        father_id=COALESCE(wildlife_lineage.father_id,excluded.father_id),
+        birth_day=MIN(wildlife_lineage.birth_day,excluded.birth_day),
+        death_day=COALESCE(wildlife_lineage.death_day,excluded.death_day),
+        death_reason=COALESCE(wildlife_lineage.death_reason,excluded.death_reason),
+        generation=excluded.generation,
+        birth_chunk=wildlife_lineage.birth_chunk,
+        death_chunk=COALESCE(wildlife_lineage.death_chunk,excluded.death_chunk),
+        traits_at_birth_json=wildlife_lineage.traits_at_birth_json,
+        traits_at_death_json=COALESCE(wildlife_lineage.traits_at_death_json,excluded.traits_at_death_json),
+        offspring_count=MAX(wildlife_lineage.offspring_count,excluded.offspring_count),
+        reproductive_success=MAX(wildlife_lineage.reproductive_success,excluded.reproductive_success),
+        updated_at=excluded.updated_at
+    `);
     const deleteChunk=this.db.prepare('DELETE FROM coarse_chunks WHERE id = ?');
     const deleteFine=this.db.prepare('DELETE FROM fine_chunks WHERE chunk_id = ?');
 
@@ -117,6 +138,16 @@ export class WorldPersistence {
       }
 
       upsertHome.run(JSON.stringify(data.homeNpcs),JSON.stringify(data.homeObjects),savedAt);
+
+      for(const record of data.wildlifeLineage||[]){
+        upsertLineage.run(
+          record.entityId,record.species,record.motherId??null,record.fatherId??null,
+          record.birthDay,record.deathDay??null,record.deathReason??null,record.generation,
+          record.birthChunk,record.deathChunk??null,JSON.stringify(record.traitsAtBirth),
+          record.traitsAtDeath?JSON.stringify(record.traitsAtDeath):null,record.offspringCount,
+          record.reproductiveSuccess?1:0,savedAt
+        );
+      }
     });
 
     tx(snapshot);
