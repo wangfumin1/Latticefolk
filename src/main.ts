@@ -1386,7 +1386,7 @@ class TownGame {
       const coarseChunk=this.coarseWorld.chunks.get(s.chunkId);
       const coarsePressure=coarseChunk?.wildlifeDisease?.speciesPressure[s.species]??coarseChunk?.wildlife?.find(x=>x.species===s.species)?.diseaseLoad??0;
       const environmental=(coarseChunk?.biome==='wetlands'?10:0)+(this.weather==='rain'?7:this.weather==='cloudy'?2:0);
-      const exposure=clamp(contactExposure*.68+coarsePressure*.22+environmental*.10);
+      const exposure=clamp(contactExposure*.68+coarsePressure*.22+environmental*.10,0,100);
       const load=s.diseaseLoad||0;
       s.diseaseLoad=clamp(load+Math.max(0,exposure-load)*dt*.0019-dt*.0022,0,100);
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
