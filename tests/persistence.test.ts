@@ -142,3 +142,47 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
+
+
+test('server evolution stats use persisted world time for living fitness eligibility',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-fitness-time-'));
+  const file=path.join(dir,'world.sqlite');
+  const store=new WorldPersistence(file);
+  const exposure=(pressure:number)=>({
+    observedDays:1,
+    habitatMean:{ecology:80,food:70,water:72,danger:20,settlementLevel:0,plantBiomass:74,competitionPressure:20,seasonalSuitability:78,diseasePressure:pressure},
+    biomeDays:{forest:1},
+    chunkDays:{chunk_0_0:1},
+    observedTransitions:0
+  });
+  const snapshot:WorldPersistenceSnapshot={
+    version:1,
+    meta:{day:200,minuteOfDay:720,weather:'clear',playerPosition:{x:0,z:0},playerInventory:{apple:0,bread:0,wood:0,coin:0,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},
+    coarseChunks:[],fineChunks:[],homeNpcs:[],homeObjects:[],
+    wildlifeLineage:[
+      {
+        entityId:'adult_living',species:'rabbit',birthDay:1,generation:0,birthChunk:'chunk_0_0',
+        traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},habitatExposure:exposure(20),
+        origin:'founder',offspringCount:1,reproductiveSuccess:true
+      },
+      {
+        entityId:'juvenile_living',species:'rabbit',birthDay:150,generation:1,birthChunk:'chunk_0_0',
+        traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},habitatExposure:exposure(80),
+        origin:'reproduction',offspringCount:0,reproductiveSuccess:false
+      },
+      {
+        entityId:'juvenile_dead',species:'rabbit',birthDay:150,deathDay:170,deathReason:'disease',generation:1,birthChunk:'chunk_0_0',
+        traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},habitatExposure:exposure(90),
+        origin:'reproduction',offspringCount:0,reproductiveSuccess:false
+      }
+    ]
+  };
+  store.save(snapshot);
+  const disease=store.evolutionStats().find(entry=>entry.species==='rabbit')?.exposureFitness
+    .find(entry=>entry.dimension==='diseasePressure');
+  assert.equal(disease?.sampleSize,3);
+  assert.equal(disease?.reproductionEligibleSamples,2);
+  assert.equal(disease?.lifespanSamples,1);
+  store.close();
+  fs.rmSync(dir,{recursive:true,force:true});
+});
