@@ -50,6 +50,27 @@ export function applyFineWildlifePopulationTransfer(
   return amount;
 }
 
+export function foldFineWildlifePopulationCount(
+  coarseCount:number,
+  initialOrdinaryCount:number,
+  currentOrdinaryCount:number,
+  initialFixedWeight:number,
+  currentFixedWeight:number
+) {
+  const ordinaryBase=Math.max(0,coarseCount-Math.max(0,initialFixedWeight));
+  const ordinaryWeight=initialOrdinaryCount>0
+    ?Math.min(4,Math.max(1,ordinaryBase/initialOrdinaryCount))
+    :1;
+  return {
+    ordinaryWeight,
+    nextCount:Math.max(0,
+      coarseCount+
+      (currentOrdinaryCount-initialOrdinaryCount)*ordinaryWeight+
+      (currentFixedWeight-initialFixedWeight)
+    )
+  };
+}
+
 export function fineMigrationEntryPoint(
   source:Pick<CoarseChunkState,'cx'|'cz'>,
   target:Pick<CoarseChunkState,'cx'|'cz'>,
