@@ -50,3 +50,35 @@ test('lineageAncestors walks durable ancestry without duplicating shared ancesto
   const ancestors=lineageAncestors(map,'r2a',3);
   assert.deepEqual(ancestors.map(record=>record.entityId),['r1a','r0f','r0m']);
 });
+
+
+test('biome selection statistics expose persistent breeder trait differentials without claiming causality',()=>{
+  const forest=(generation:number,index:number,wariness:number,offspringCount:number):WildlifeLineageRecord=>({
+    entityId:`forest_g${generation}_${index}`,
+    species:'rabbit',
+    birthDay:generation*20+index,
+    generation,
+    birthChunk:`chunk_forest_${generation}`,
+    traitsAtBirth:traits(wariness,1+generation*.02),
+    birthHabitat:{biome:'forest',ecology:82,food:70,water:68,danger:55,settlementLevel:1,plantBiomass:74},
+    origin:generation===0?'founder':'reproduction',
+    offspringCount,
+    reproductiveSuccess:offspringCount>0
+  });
+  const selectionRecords:WildlifeLineageRecord[]=[
+    forest(0,0,.20,0),forest(0,1,.40,0),forest(0,2,.70,2),
+    forest(1,0,.30,0),forest(1,1,.50,0),forest(1,2,.80,2),
+    forest(2,0,.40,0),forest(2,1,.60,0),forest(2,2,.90,2)
+  ];
+  const rabbit=computeEvolutionStatistics(selectionRecords).find(entry=>entry.species==='rabbit')!;
+  const forestStats=rabbit.biomeSelection.find(entry=>entry.biome==='forest')!;
+  assert.equal(forestStats.population,9);
+  assert.equal(forestStats.breeders,3);
+  assert.equal(forestStats.generationsObserved,3);
+  assert.ok(forestStats.selectionDifferential.wariness>0);
+  assert.ok(forestStats.normalizedSelectionDifferential.wariness>.2);
+  assert.equal(forestStats.selectionConsistency.wariness,1);
+  assert.equal(forestStats.signal.wariness,'persistent');
+  assert.ok(forestStats.traitTrendPerGeneration.wariness>0);
+  assert.equal(forestStats.habitatMean.ecology,82);
+});
