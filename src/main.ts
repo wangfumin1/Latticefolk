@@ -874,7 +874,8 @@ class TownGame {
       coarseChunks:[...this.coarseWorld.chunks.values()].map(x=>structuredClone(x)),
       fineChunks:[...fine.values()],
       homeNpcs,
-      homeObjects
+      homeObjects,
+      wildlifeLineage:[...this.wildlifeLineage.values()].map(record=>structuredClone(record))
     };
   }
 
@@ -891,6 +892,10 @@ class TownGame {
 
     this.coarseWorld.restoreKnownChunks(snapshot.coarseChunks||[]);
     this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z,true);
+
+    this.wildlifeLineage.clear();
+    for(const record of snapshot.wildlifeLineage||[])this.wildlifeLineage.set(record.entityId,structuredClone(record));
+    this.lineageEpoch++;
 
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
