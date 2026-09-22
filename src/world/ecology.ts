@@ -44,7 +44,7 @@ const SEASONAL_BIOME_AFFINITY:Record<WildlifeSpecies,Record<WorldSeason,Record<C
   deer:{
     spring:{plains:1.02,forest:1.04,hills:1.00,wetlands:.88,dryland:.70},
     summer:{plains:.92,forest:.98,hills:1.12,wetlands:.84,dryland:.66},
-    autumn:{plains:.90,forest:1.14,hills:1.05,wetlands:.80,dryland:.68},
+    autumn:{plains:.90,forest:1.14,hills:.98,wetlands:.80,dryland:.68},
     winter:{plains:.84,forest:1.10,hills:.92,wetlands:.72,dryland:.64}
   },
   boar:{
