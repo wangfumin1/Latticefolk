@@ -340,7 +340,7 @@ export class CoarseWorldRuntime {
       return {...flow,amount:flow.amount*factor};
     });
     const applied=applyConservedFlows(this.chunks,adjusted);
-    const wildlifeMoves=planWildlifeMigration(this.chunks.values(),this.materialized);
+    const wildlifeMoves=planWildlifeMigration(this.chunks.values(),this.materialized,ctx.day);
     applyWildlifeMigration(this.chunks,wildlifeMoves);
     if(applied.length){
       this.recentFlowLog.push(...applied);
