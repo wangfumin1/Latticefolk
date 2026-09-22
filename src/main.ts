@@ -1447,7 +1447,8 @@ class TownGame {
       carryingCapacity,
       density:carryingCapacity>0?count/carryingCapacity:2,
       competitionPressure:population?.competitionPressure||0,
-      seasonalSuitability:seasonalHabitatSuitability(chunk,state.species,this.day+this.minuteOfDay/1440)
+      seasonalSuitability:seasonalHabitatSuitability(chunk,state.species,this.day+this.minuteOfDay/1440),
+      diseasePressure:chunk.wildlifeDisease?.speciesPressure[state.species]??population?.diseaseLoad??0
     };
   }
 
@@ -1470,7 +1471,8 @@ class TownGame {
       id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
       ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
       settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0,
-      seasonalSuitability:source?seasonalHabitatSuitability(source,animal.state.species,this.day+this.minuteOfDay/1440):0
+      seasonalSuitability:source?seasonalHabitatSuitability(source,animal.state.species,this.day+this.minuteOfDay/1440):0,
+      diseasePressure:source?.wildlifeDisease?.speciesPressure[animal.state.species]??source?.wildlife?.find(x=>x.species===animal.state.species)?.diseaseLoad??0
     };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
