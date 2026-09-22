@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
-import { applyWildlifeMigration, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount } from '../src/world/ecology.js';
+import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -170,4 +170,61 @@ test('seasonal pull can reverse deer migration direction while conserving popula
   applyWildlifeMigration(new Map([[forest.id,forest],[hills.id,hills]]),[autumn!]);
   const totalAfter=deerForest.count+deerHills.count;
   assert.ok(Math.abs(totalAfter-totalBefore)<.002);
+});
+
+
+test('wildlife disease pressure separates environmental, local and cross-species exposure',()=>{
+  const a=chunk('chunk_disease_pressure',13,{biome:'wetlands',ecology:75,water:94});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){
+    pop.count=Math.max(2,pop.carryingCapacity*.8);
+    pop.diseaseLoad=pop.species==='deer'?70:5;
+    pop.importedDiseasePressure=0;
+  }
+  const pressure=computeWildlifeDiseasePressure(a,populations,'rain');
+  assert.ok(pressure.environmentalPressure>0);
+  assert.ok(pressure.crossSpeciesPressure.rabbit>0);
+  assert.ok(pressure.speciesPressure.rabbit>pressure.localContactPressure.rabbit);
+  assert.ok(pressure.strongestPair);
+  assert.ok(Object.values(pressure.speciesPressure).every(value=>value>=0&&value<=100));
+});
+
+test('cross-species disease contact coefficients are bounded and preserve stronger same-species contact',()=>{
+  assert.equal(wildlifeDiseaseContactCoefficient('rabbit','rabbit'),1);
+  assert.ok(wildlifeDiseaseContactCoefficient('deer','rabbit')>0);
+  assert.ok(wildlifeDiseaseContactCoefficient('deer','rabbit')<1);
+  assert.ok(wildlifeDiseaseContactCoefficient('rabbit','fox')>0);
+});
+
+test('wildlife migration imports disease pressure without violating population conservation',()=>{
+  const from=chunk('chunk_disease_from',14,{biome:'forest'});
+  const to=chunk('chunk_disease_to',15,{biome:'plains'});
+  ensureWildlifePopulations(from);ensureWildlifePopulations(to);
+  const source=from.wildlife!.find(p=>p.species==='rabbit')!;
+  const target=to.wildlife!.find(p=>p.species==='rabbit')!;
+  source.count=Math.max(4,source.carryingCapacity*.5);
+  target.count=Math.min(target.carryingCapacity*.2,2);
+  source.diseaseLoad=80;
+  target.diseaseLoad=2;
+  target.importedDiseasePressure=0;
+  const before=source.count+target.count;
+  applyWildlifeMigration(new Map([[from.id,from],[to.id,to]]),[{species:'rabbit',fromChunkId:from.id,toChunkId:to.id,amount:.5}]);
+  assert.ok((target.importedDiseasePressure||0)>0);
+  assert.ok((target.diseaseLoad||0)>2);
+  assert.ok(Math.abs(source.count+target.count-before)<.002);
+});
+
+test('coarse disease dynamics permit cross-species amplification and bounded recovery',()=>{
+  const a=chunk('chunk_disease_dynamics',16,{biome:'plains',ecology:82,water:70});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){
+    pop.count=Math.max(3,pop.carryingCapacity*.75);
+    pop.diseaseLoad=pop.species==='deer'?85:1;
+    pop.importedDiseasePressure=0;
+  }
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const before=rabbit.diseaseLoad||0;
+  for(let i=0;i<12;i++)simulateWildlife(a,20,'clear',45);
+  assert.ok((rabbit.diseaseLoad||0)>before);
+  assert.ok(populations.every(p=>(p.diseaseLoad||0)>=0&&(p.diseaseLoad||0)<=100));
 });
