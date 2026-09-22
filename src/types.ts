@@ -445,6 +445,7 @@ export interface WildlifeMigrationCandidate {
   population: number;
   carryingCapacity: number;
   density: number;
+  competitionPressure: number;
 }
 
 export interface WildlifeDecisionRequest {
