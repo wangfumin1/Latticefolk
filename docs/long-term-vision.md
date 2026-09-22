@@ -88,3 +88,9 @@ The next evolution milestone is environmental selection observability: connect l
 Lineages now retain habitat context and can be grouped by origin biome. The simulation compares breeders with their observed cohort, reports normalized trait differentials, cross-generation direction consistency, generation/sample counts, and habitat conditions, then classifies the evidence as insufficient, weak, or persistent. This makes questions such as “is forest wariness rising because successful breeders are consistently more wary?” measurable without treating correlation as proof of causality.
 
 The next ecology step expands exposure history beyond origin/death snapshots: migration history, competition and niche pressure, seasonal movement, richer disease transmission, and more species should feed the same deterministic evidence layer.
+
+## Implemented milestone: observed lifetime habitat exposure
+
+Lineages now retain more than two endpoint snapshots. While a named animal is actually running in fine simulation, Latticefolk accumulates observed habitat duration and time-weighted environmental conditions, including biome/chunk exposure and observed transitions. Coarse intervals remain aggregate-only and are not retroactively invented as individual history.
+
+This enables a second adaptation view based on the dominant biome actually observed during an individual's fine-sim lifetime, alongside the existing origin-biome analysis. The next step is to create identity-preserving fine migration/transfer semantics and then add niche competition, seasonal movement, richer disease transmission, and additional species.
