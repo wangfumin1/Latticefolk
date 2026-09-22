@@ -67,4 +67,8 @@ The wildlife milestone adds a `wildlife_json` column to `fine_chunks`. Existing 
 
 ### Habitat snapshots for selection analysis
 
-Lineage rows now optionally persist `birth_habitat_json` and `death_habitat_json` with biome, ecology, food, water, danger, settlement level, and aggregate plant biomass. Existing databases receive additive column migrations. For reproduced offspring, the origin snapshot is the actual birth habitat; for legacy/founder individuals it is the first habitat observed by the upgraded simulation, so downstream analysis keeps that provenance limitation explicit.
+Lineage rows now optionally persist `birth_habitat_json`, `death_habitat_json`, and `habitat_exposure_json`. Birth/death snapshots contain biome, ecology, food, water, danger, settlement level, and aggregate plant biomass; lifetime exposure additionally stores observed days, time-weighted habitat means, per-biome/per-chunk observed duration, and observed transition count. Existing databases receive additive column migrations. For reproduced offspring, the origin snapshot is the actual birth habitat; for legacy/founder individuals it is the first habitat observed by the upgraded simulation, so downstream analysis keeps that provenance limitation explicit.
+
+### Observed lifetime exposure
+
+Lifetime exposure is deliberately observation-bounded. While an individual is materialized in fine simulation, elapsed simulation days are accumulated into its lineage record. On chunk collapse or death the final interval is flushed; `lastObservedDay` is then cleared. When the chunk is later materialized again, observation restarts from the current world time. The coarse interval in between is not backfilled as if the simulation knew that named individual's exact path. This preserves the distinction between aggregate population migration and individual lineage evidence.
