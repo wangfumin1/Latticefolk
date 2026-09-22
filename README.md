@@ -54,6 +54,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Durable evolution observability**: dead and living wildlife share a persistent ancestry archive with founder/reproductive birth provenance, death causes, lifetime offspring counts, per-generation trait mean/variance/trends, reproductive-success metrics, lineage traversal, and a God View observatory.
 - **Biome-linked selection evidence**: lineage habitat snapshots let God View compare breeders with their cohort, show normalized trait differentials and cross-generation consistency, and distinguish insufficient/weak/persistent evidence without claiming causality.
 - **Observed lifetime habitat exposure**: materialized wildlife accumulates time-weighted environmental exposure and biome/chunk duration; God View can compare origin-biome and lifetime-dominant-biome selection evidence without inventing named-animal history during coarse simulation.
+- **Identity-preserving wildlife migration**: named fine animals can move to legal adjacent chunks while retaining lineage/state; deterministic simulation owns carrying-capacity checks, conserved coarse transfer, representative weights, transit persistence, and migration history.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.
@@ -190,7 +191,7 @@ The current development order is intentionally architecture-first:
 7. richer production chains and interactions;
 8. ✅ first ecological food-web/lifecycle systems;
 9. ✅ durable lineage, evolution statistics, and biome-linked selection observability;
-10. deeper ecology, niches, migration exposure, disease, more species, then a fuller physics layer.
+10. ✅ identity-preserving fine wildlife migration; next: niche competition, seasonal movement, richer disease/species, then a fuller physics layer.
 
 See the living [Roadmap](docs/roadmap.md) and [Long-term vision](docs/long-term-vision.md). Documentation is updated as each implementation stage lands.
 
