@@ -275,6 +275,20 @@ export interface WildlifeNicheCompetitionState {
   strongestPair?: WildlifeCompetitionPair;
 }
 
+export interface WildlifeDiseaseSpillover {
+  fromSpecies: WildlifeSpecies;
+  toSpecies: WildlifeSpecies;
+  pressure: number;
+}
+
+export interface WildlifeDiseaseTransmissionState {
+  environmentalReservoir: number;
+  meanLoad: number;
+  crossSpeciesPressure: number;
+  speciesPressure: Record<WildlifeSpecies,number>;
+  strongestSpillover?: WildlifeDiseaseSpillover;
+}
+
 export interface CoarseWildlifePopulation {
   species: WildlifeSpecies;
   count: number;
@@ -303,6 +317,8 @@ export interface WildlifeHabitatSnapshot {
   competitionPressure?: number;
   /** Species-specific seasonal habitat suitability observed at this snapshot; absent in legacy records. */
   seasonalSuitability?: number;
+  /** Species-specific deterministic disease exposure pressure observed at this snapshot; absent in legacy records. */
+  diseasePressure?: number;
 }
 
 export interface WildlifeHabitatExposure {
@@ -449,6 +465,7 @@ export interface WildlifeMigrationCandidate {
   density: number;
   competitionPressure: number;
   seasonalSuitability: number;
+  diseasePressure: number;
 }
 
 export interface WildlifeDecisionRequest {
@@ -507,6 +524,7 @@ export interface CoarseChunkState {
   plants?: PlantBiomassState;
   trophicFlux?: TrophicFluxState;
   nicheCompetition?: WildlifeNicheCompetitionState;
+  wildlifeDisease?: WildlifeDiseaseTransmissionState;
   wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;
