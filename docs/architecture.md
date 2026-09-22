@@ -195,3 +195,14 @@ Wildlife decisions are batched (up to six animals per provider request). Jev rec
 Fine reproduction creates persistent descendants by averaging parental traits plus bounded deterministic mutation. On chunk collapse, fine births/deaths are scaled back into the coarse population, while individual animals remain in the fine-chunk SQLite cache for future revisits.
 
 SQLite `fine_chunks` now stores `wildlife_json`; startup performs a backward-compatible schema migration when an older database lacks the column. Procedural low-poly quadrupeds are used as a visual fallback until dedicated animal assets are integrated.
+
+
+## Plant biomass, trophic flow, disease, and lifecycle
+
+The ecology layer no longer treats `ecology` and `food` as the only environmental signals.
+
+Each coarse chunk can persist four plant-biomass pools: grass, shrub, fruit, and cultivated crop. Regrowth depends on biome, water, weather, season, ecology policy, and settlement cultivation. Wildlife carrying capacity is recalculated from species-specific biome affinity plus plant food availability, water, danger, and settlement pressure.
+
+The coarse trophic model tracks primary production, herbivory, predation, and mortality return. Rabbit/deer/boar consumption depletes different biomass mixes; fox predation consumes prey population rather than creating/removing abstract food independently. Disease load responds to crowding, wet habitat, weather, migration, and recovery pressure.
+
+Fine wildlife now includes senescence, local disease exposure/recovery, gestation, birth cooldown, litter size, parental IDs, inherited traits with bounded mutation, and explicit multi-generation offspring. Natural water sites and renewable fine resource nodes connect the fine simulation back to the same habitat constraints.
