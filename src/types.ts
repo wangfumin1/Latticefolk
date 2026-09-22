@@ -299,6 +299,8 @@ export interface WildlifeHabitatSnapshot {
   danger: number;
   settlementLevel: number;
   plantBiomass: number;
+  /** Species-specific coarse niche pressure observed at this habitat snapshot; absent in legacy records. */
+  competitionPressure?: number;
 }
 
 export interface WildlifeHabitatExposure {
