@@ -30,6 +30,8 @@ export interface CoarseWorldStatus {
   trophicPrimary: number;
   trophicHerbivory: number;
   trophicPredation: number;
+  nicheCompetition: number;
+  strongestCompetition: string;
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
@@ -520,6 +522,12 @@ export class CoarseWorldRuntime {
       trophicPrimary:avg(c=>c.trophicFlux?.primaryProduction||0),
       trophicHerbivory:avg(c=>c.trophicFlux?.herbivory||0),
       trophicPredation:avg(c=>c.trophicFlux?.predation||0),
+      nicheCompetition:avg(c=>c.nicheCompetition?.meanPressure||0),
+      strongestCompetition:(()=>{
+        const pair=list.map(c=>c.nicheCompetition?.strongestPair).filter((x):x is NonNullable<CoarseChunkState['nicheCompetition']>['strongestPair']=>Boolean(x))
+          .sort((a,b)=>(b?.pressure||0)-(a?.pressure||0))[0];
+        return pair?`${pair.speciesA}/${pair.speciesB} ${pair.pressure.toFixed(0)}`:'—';
+      })(),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
       avgProsperity:avg(c=>c.prosperity)
