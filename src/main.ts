@@ -1039,10 +1039,19 @@ class TownGame {
       runtime.npcIds.push(state.id);
     }
 
+    const pendingTransfers=[...this.wildlifeTransfers.values()].filter(transfer=>transfer.toChunkId===chunk.id);
+    const pendingReplacement=new Map<WildlifeSpecies,number>();
+    if(!cached){
+      for(const transfer of pendingTransfers){
+        pendingReplacement.set(transfer.state.species,(pendingReplacement.get(transfer.state.species)||0)+1);
+      }
+    }
+
     if(cached){
       for(const saved of cached.wildlifeStates){
         const state=structuredClone(saved);
         state.chunkId=chunk.id;
+        state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
         if(this.spawnWildlife(state)){
           runtime.wildlifeIds.push(state.id);
           runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
@@ -1050,6 +1059,8 @@ class TownGame {
       }
     }else{
       for(const p of plan.wildlife){
+        const replacements=pendingReplacement.get(p.species)||0;
+        if(replacements>0){pendingReplacement.set(p.species,replacements-1);continue;}
         const population=chunk.wildlife?.find(x=>x.species===p.species);
         const state:WildlifeState={
           id:p.id,chunkId:chunk.id,species:p.species,position:{x:p.x,z:p.z},ageDays:p.ageDays,
@@ -1064,11 +1075,29 @@ class TownGame {
         }
       }
     }
+    this.materializePendingWildlifeTransfers(chunk,runtime,pendingTransfers);
 
     runtime.initialMetrics=this.fineMetrics(runtime);
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
     this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`);
+  }
+
+  materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
+    for(const transfer of transfers){
+      if(this.wildlifeTransfers.get(transfer.entityId)!==transfer)continue;
+      const state=structuredClone(transfer.state);
+      state.chunkId=chunk.id;
+      state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
+      state.position=this.randomPassableNear(state.position,3,chunk.id);
+      state.currentAction='wander';
+      state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
+      if(!this.spawnWildlife(state))continue;
+      runtime.wildlifeIds.push(state.id);
+      runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+      this.wildlifeTransfers.delete(transfer.entityId);
+      this.event(`${this.wildlifeName(state.species)} ${state.id} 已进入 ${chunk.id}。`);
+    }
   }
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
