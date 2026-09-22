@@ -149,6 +149,9 @@ test('seasonal pull can reverse deer migration direction while conserving popula
   const hills=chunk('chunk_season_b',12,{biome:'hills',ecology:82,food:74,water:72,danger:18});
   forest.plants={grass:70,shrub:70,fruit:70,crop:40};
   hills.plants={grass:70,shrub:70,fruit:70,crop:40};
+  ensurePlantBiomass(forest);ensurePlantBiomass(hills);
+  forest.plants={grass:60,shrub:60,fruit:60,crop:30};
+  hills.plants={grass:60,shrub:60,fruit:60,crop:30};
   ensureWildlifePopulations(forest);ensureWildlifePopulations(hills);
   for(const species of ['rabbit','boar','fox'] as const){
     forest.wildlife!.find(p=>p.species===species)!.count=0;
