@@ -26,6 +26,7 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 - 生涯 habitat 曝露。個体が実際に fine simulation されている時間だけ、環境の時間加重平均、biome/chunk 滞在日数、観測された遷移を記録します。coarse 区間を個体履歴として捏造せず、出生 biome と lifetime dominant biome の選択証拠を God View で比較できます。
 - 身元を保持する fine wildlife migration。名前付き個体は合法な隣接 chunk のみへ移動でき、entity ID、親、世代、traits、妊娠、habitat history を保持します。carrying capacity、coarse 数量保存、代表重み、transit persistence、移動 provenance は deterministic simulation が管理します。
 - 決定論的なニッチ競争。ウサギ/シカ/イノシシ/キツネの固定 resource profile から pairwise niche overlap を計算し、他種の密度から competition pressure を導出します。圧力は effective carrying capacity と健康に有界に作用し、God View と lineage habitat exposure に記録されます。
+- 季節移動ドライバ。species×biome の春夏秋冬の適性を forage・水・ecology・danger と組み合わせて seasonal suitability を計算し、隣接 habitat が 8 点以上良い場合は低強度の保存的移動を単独で駆動できます。fine wildlife も合法候補内でのみこの信号を利用します。
 
 ## 起動
 
@@ -49,7 +50,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → **seasonal movement / disease transmission / more species** → richer ecology → physics。
+✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → ✅ seasonal movement → **disease transmission / more species / fitness-by-habitat** → richer ecology → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 
