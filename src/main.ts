@@ -6,7 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
-import { seasonalHabitatSuitability } from './world/ecology';
+import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -1372,9 +1372,23 @@ class TownGame {
       s.energy=clamp(s.energy-dt*.045,0,100);
       const maxAge=this.wildlifeLifeHistory(s.species).maxAge;
       const agePressure=Math.max(0,s.ageDays/maxAge-.72);
-      const nearbyDisease=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed&&x.state.species===s.species&&dist(s.position,x.state.position)<4).map(x=>x.state.diseaseLoad||0);
-      const exposure=nearbyDisease.length?nearbyDisease.reduce((a,b)=>a+b,0)/nearbyDisease.length:0;
-      s.diseaseLoad=clamp((s.diseaseLoad||0)+(exposure-(s.diseaseLoad||0))*dt*.0015-dt*.002,0,100);
+      const nearbyDisease=[...this.wildlife.values()]
+        .filter(x=>x!==animal&&!x.removed&&dist(s.position,x.state.position)<4.5)
+        .map(x=>{
+          const distance=Math.max(.4,dist(s.position,x.state.position));
+          const contact=wildlifeDiseaseContactCoefficient(x.state.species,s.species);
+          const proximity=clamp(1-distance/4.5,0,1);
+          return {load:x.state.diseaseLoad||0,weight:contact*(.35+proximity*.65)};
+        })
+        .filter(x=>x.weight>0);
+      const contactWeight=nearbyDisease.reduce((sum,x)=>sum+x.weight,0);
+      const contactExposure=contactWeight>0?nearbyDisease.reduce((sum,x)=>sum+x.load*x.weight,0)/contactWeight:0;
+      const coarseChunk=this.coarseWorld.chunks.get(s.chunkId);
+      const coarsePressure=coarseChunk?.wildlifeDisease?.speciesPressure[s.species]??coarseChunk?.wildlife?.find(x=>x.species===s.species)?.diseaseLoad??0;
+      const environmental=(coarseChunk?.biome==='wetlands'?10:0)+(this.weather==='rain'?7:this.weather==='cloudy'?2:0);
+      const exposure=clamp(contactExposure*.68+coarsePressure*.22+environmental*.10);
+      const load=s.diseaseLoad||0;
+      s.diseaseLoad=clamp(load+Math.max(0,exposure-load)*dt*.0019-dt*.0022,0,100);
       if(s.hunger>95||s.thirst>95)s.health=clamp(s.health-dt*.65,0,100);
       else if(s.hunger<55&&s.thirst<55)s.health=clamp(s.health+dt*.025,0,100);
       s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
@@ -1803,7 +1817,8 @@ class TownGame {
       settlementLevel:chunk.settlementLevel,
       plantBiomass:plants?(plants.grass+plants.shrub+plants.fruit+plants.crop)/4:chunk.ecology,
       competitionPressure:population?.competitionPressure||0,
-      seasonalSuitability:species?seasonalHabitatSuitability(chunk,species,this.day+this.minuteOfDay/1440):0
+      seasonalSuitability:species?seasonalHabitatSuitability(chunk,species,this.day+this.minuteOfDay/1440):0,
+      diseasePressure:species?(chunk.wildlifeDisease?.speciesPressure[species]??population?.diseaseLoad??0):0
     };
   }
 
@@ -2546,14 +2561,14 @@ class TownGame {
             <b>${i18n.t('evolution.origin')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${Number(selection.habitatMean.diseasePressure||0).toFixed(0)}</div>
           </div>`).join('')}
         ${entry.lifetimeBiomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
             <b>${i18n.t('evolution.lifetime')} · ${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · obs ${selection.observedExposureDaysMean.toFixed(2)}d
             <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} / Gsel ${selection.comparableSelectionGenerations.wariness.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
             <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} / Gsel ${selection.comparableSelectionGenerations.size.toFixed(0)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
-            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)}</div>
+            <div class="evo-traits">${i18n.t('evolution.exposure')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)} · ${i18n.t('evolution.competition')} ${Number(selection.habitatMean.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.seasonalSuitability')} ${Number(selection.habitatMean.seasonalSuitability||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${Number(selection.habitatMean.diseasePressure||0).toFixed(0)}</div>
           </div>`).join('')}
       </div>`).join('');
 
