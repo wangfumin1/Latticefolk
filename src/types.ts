@@ -262,12 +262,26 @@ export interface TrophicFluxState {
   mortalityReturn: number;
 }
 
+export interface WildlifeCompetitionPair {
+  speciesA: WildlifeSpecies;
+  speciesB: WildlifeSpecies;
+  nicheOverlap: number;
+  pressure: number;
+}
+
+export interface WildlifeNicheCompetitionState {
+  speciesPressure: Record<WildlifeSpecies,number>;
+  meanPressure: number;
+  strongestPair?: WildlifeCompetitionPair;
+}
+
 export interface CoarseWildlifePopulation {
   species: WildlifeSpecies;
   count: number;
   carryingCapacity: number;
   health: number;
   diseaseLoad?: number;
+  competitionPressure?: number;
 }
 
 export interface WildlifeTraits {
@@ -486,6 +500,7 @@ export interface CoarseChunkState {
   ecologyPolicy: ChunkEcologyPolicy;
   plants?: PlantBiomassState;
   trophicFlux?: TrophicFluxState;
+  nicheCompetition?: WildlifeNicheCompetitionState;
   wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;
