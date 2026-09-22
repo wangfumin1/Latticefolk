@@ -1430,7 +1430,8 @@ class TownGame {
       settlementLevel:chunk.settlementLevel,
       population:count,
       carryingCapacity,
-      density:carryingCapacity>0?count/carryingCapacity:2
+      density:carryingCapacity>0?count/carryingCapacity:2,
+      competitionPressure:population?.competitionPressure||0
     };
   }
 
@@ -1452,7 +1453,7 @@ class TownGame {
     const fallbackCurrent:WildlifeMigrationCandidate={
       id:animal.state.chunkId,biome:source?.biome||'plains',distance:0,
       ecology:source?.ecology||0,food:source?.food||0,water:source?.water||0,danger:source?.danger||100,
-      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2
+      settlementLevel:source?.settlementLevel||0,population:0,carryingCapacity:0,density:2,competitionPressure:0
     };
     const nearbyResources=[...this.objects.values()]
       .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
