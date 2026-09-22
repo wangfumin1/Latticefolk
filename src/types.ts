@@ -468,6 +468,7 @@ export interface WildlifeMigrationCandidate {
   density: number;
   competitionPressure: number;
   seasonalSuitability: number;
+  diseasePressure: number;
 }
 
 export interface WildlifeDecisionRequest {
