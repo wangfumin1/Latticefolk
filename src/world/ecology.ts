@@ -25,6 +25,23 @@ const BIOME_AFFINITY:Record<WildlifeSpecies,Record<ChunkBiome,number>>={
   fox:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48}
 };
 
+type NicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
+const NICHE_PROFILE:Record<WildlifeSpecies,Record<NicheAxis,number>>={
+  rabbit:{grass:.58,shrub:.30,fruit:0,crop:.12,prey:0,space:.15},
+  deer:{grass:.38,shrub:.38,fruit:.24,crop:0,prey:0,space:.15},
+  boar:{grass:0,shrub:.28,fruit:.34,crop:.38,prey:0,space:.15},
+  fox:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25}
+};
+const NICHE_AXES:NicheAxis[]=['grass','shrub','fruit','crop','prey','space'];
+
+function nicheOverlap(a:WildlifeSpecies,b:WildlifeSpecies){
+  const pa=NICHE_PROFILE[a],pb=NICHE_PROFILE[b];
+  const sumA=NICHE_AXES.reduce((sum,key)=>sum+pa[key],0);
+  const sumB=NICHE_AXES.reduce((sum,key)=>sum+pb[key],0);
+  const shared=NICHE_AXES.reduce((sum,key)=>sum+Math.min(pa[key]/sumA,pb[key]/sumB),0);
+  return clamp(shared,0,1);
+}
+
 function hash(text:string){
   let h=2166136261;
   for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
@@ -100,7 +117,7 @@ function plantFoodIndex(chunk:CoarseChunkState,species:WildlifeSpecies){
   return chunk.food*.55+chunk.ecology*.45;
 }
 
-function capacity(chunk:CoarseChunkState,species:WildlifeSpecies){
+function fundamentalCapacity(chunk:CoarseChunkState,species:WildlifeSpecies){
   const affinity=BIOME_AFFINITY[species][chunk.biome];
   const forage=plantFoodIndex(chunk,species);
   const habitat=(chunk.ecology*.38+forage*.32+chunk.water*.20+(100-chunk.danger)*.10)/100;
@@ -109,11 +126,53 @@ function capacity(chunk:CoarseChunkState,species:WildlifeSpecies){
   return Math.max(0,round(base*affinity*habitat*settlementPenalty));
 }
 
+export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populations:CoarseWildlifePopulation[]) {
+  const fundamental=new Map<WildlifeSpecies,number>();
+  const density=new Map<WildlifeSpecies,number>();
+  for(const species of SPECIES){
+    const k=Math.max(.001,fundamentalCapacity(chunk,species));
+    const pop=populations.find(entry=>entry.species===species);
+    fundamental.set(species,k);
+    density.set(species,Math.min(2.5,Math.max(0,(pop?.count||0)/k)));
+  }
+
+  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  let strongestPair:NonNullable<CoarseChunkState['nicheCompetition']>['strongestPair'];
+  for(let i=0;i<SPECIES.length;i++){
+    for(let j=i+1;j<SPECIES.length;j++){
+      const a=SPECIES[i]!,b=SPECIES[j]!;
+      const overlap=nicheOverlap(a,b);
+      if(overlap<=0)continue;
+      const da=density.get(a)||0,db=density.get(b)||0;
+      const pairPressure=clamp(overlap*((da+db)/2)*100,0,100);
+      if(!strongestPair||pairPressure>strongestPair.pressure){
+        strongestPair={speciesA:a,speciesB:b,nicheOverlap:round(overlap),pressure:round(pairPressure)};
+      }
+      speciesPressure[a]+=overlap*db;
+      speciesPressure[b]+=overlap*da;
+    }
+  }
+
+  for(const species of SPECIES){
+    const normalized=clamp((1-Math.exp(-speciesPressure[species]*.58))*100,0,100);
+    speciesPressure[species]=round(normalized);
+    const pop=populations.find(entry=>entry.species===species);
+    if(!pop)continue;
+    const competitionPenalty=Math.min(.32,normalized/100*.32);
+    pop.competitionPressure=round(normalized);
+    pop.carryingCapacity=round((fundamental.get(species)||0)*(1-competitionPenalty));
+  }
+
+  const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
+  chunk.nicheCompetition={speciesPressure,meanPressure,strongestPair};
+  return chunk.nicheCompetition;
+}
+
 export function ensureWildlifePopulations(chunk:CoarseChunkState){
   ensurePlantBiomass(chunk);
   const existing=new Map((chunk.wildlife||[]).map(x=>[x.species,x]));
   const seeded:CoarseWildlifePopulation[]=SPECIES.map(species=>{
-    const carryingCapacity=capacity(chunk,species);
+    const carryingCapacity=fundamentalCapacity(chunk,species);
     const current=existing.get(species);
     if(current){
       current.carryingCapacity=carryingCapacity;
@@ -130,6 +189,7 @@ export function ensureWildlifePopulations(chunk:CoarseChunkState){
     };
   });
   chunk.wildlife=seeded;
+  computeWildlifeNicheCompetition(chunk,seeded);
   return seeded;
 }
 
@@ -152,9 +212,9 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const populations=ensureWildlifePopulations(chunk);
   const dt=Math.min(30,Math.max(0,seconds));
   let mortalityReturn=0;
+  computeWildlifeNicheCompetition(chunk,populations);
 
   for(const pop of populations){
-    pop.carryingCapacity=capacity(chunk,pop.species);
     const k=Math.max(.001,pop.carryingCapacity);
     const density=pop.count/k;
     const climateDisease=(chunk.biome==='wetlands'?.006:0)+(weather==='rain'?.003:0);
@@ -172,7 +232,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     pop.count=Math.max(0,round(pop.count+natural-losses));
 
     const forage=plantFoodIndex(chunk,pop.species);
-    const habitatHealth=clamp(30+chunk.ecology*.31+forage*.20+chunk.water*.14-chunk.danger*.10-(pop.diseaseLoad||0)*.22);
+    const habitatHealth=clamp(30+chunk.ecology*.31+forage*.20+chunk.water*.14-chunk.danger*.10-(pop.diseaseLoad||0)*.22-(pop.competitionPressure||0)*.08);
     pop.health=clamp(pop.health+(habitatHealth-pop.health)*Math.min(.10,dt*.003));
   }
 
@@ -202,6 +262,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   flux.predation=smooth(flux.predation,predation);
   flux.mortalityReturn=smooth(flux.mortalityReturn,mortalityReturn+predation*.12);
   chunk.trophicFlux=flux;
+  computeWildlifeNicheCompetition(chunk,populations);
 }
 
 export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>):WildlifeMigration[]{
