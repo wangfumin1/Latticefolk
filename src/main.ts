@@ -1093,6 +1093,10 @@ class TownGame {
   materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
     for(const transfer of transfers){
       if(this.wildlifeTransfers.get(transfer.entityId)!==transfer)continue;
+      if(runtime.wildlifeIds.includes(transfer.entityId)||this.wildlifeLineage.get(transfer.entityId)?.deathDay!==undefined){
+        this.wildlifeTransfers.delete(transfer.entityId);
+        continue;
+      }
       const population=chunk.wildlife?.find(entry=>entry.species===transfer.state.species);
       if(!population||population.count<=0)continue;
       let alreadyFixed=0;
