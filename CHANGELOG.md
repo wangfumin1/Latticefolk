@@ -30,6 +30,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Deterministic wildlife niche competition with fixed resource-use profiles, pairwise niche overlap, density-derived competition pressure, bounded carrying-capacity penalties, God View observability, and competition exposure preserved in lineage habitat evidence.
 - Deterministic seasonal wildlife migration drivers with species/biome seasonal suitability, capacity-bounded conserved coarse migration, season-aware fine decision candidates, and seasonal suitability preserved in lineage habitat exposure.
 - Richer deterministic wildlife disease transmission with explicit environmental, local-contact, cross-species and migration-import pressures, fine cross-species contact spread, God View observability, and disease exposure preserved in lineage habitat history.
+- Fitness-by-habitat evolution evidence across competition pressure, seasonal suitability, and disease pressure, including exposure/outcome correlations, low/mid/high cohorts, breeder rates, offspring/lifespan associations, and God View evidence without causal claims.
 
 ### Changed
 
