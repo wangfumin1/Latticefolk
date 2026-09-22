@@ -505,7 +505,8 @@ export class JevDecisionProvider implements DecisionProvider {
       flee:'Move away from a nearby threat or predator.',
       hunt:'Predator approaches suitable nearby prey.',
       wander:'Move locally without a stronger urgent goal.',
-      seek_mate:'Approach a suitable nearby same-species mate when healthy and mature.'
+      seek_mate:'Approach a suitable nearby same-species mate when healthy and mature.',
+      migrate:'Move into one supplied adjacent chunk when habitat pressure justifies leaving the current chunk.'
     };
     const questions:Record<string,unknown>={};
     requests.forEach((entry,index)=>{
@@ -533,6 +534,15 @@ export class JevDecisionProvider implements DecisionProvider {
           ]))
         };
       }
+      if(entry.allowedActions.includes('migrate')&&entry.world.nearbyChunks.length){
+        questions[`w${index}_chunk`]={
+          type:'choice',
+          instructions:'Choose one supplied adjacent chunk only if migrate is selected. Prefer materially safer or less crowded habitat; do not invent destinations.',
+          criteria:Object.fromEntries(entry.world.nearbyChunks.slice(0,8).map(x=>[
+            x.id,`${x.biome}; density=${x.density.toFixed(2)}; ecology=${x.ecology.toFixed(0)}; food=${x.food.toFixed(0)}; water=${x.water.toFixed(0)}; danger=${x.danger.toFixed(0)}; settlement=${x.settlementLevel}`
+          ]))
+        };
+      }
     });
     const state={
       simulationLayer:'wildlife',
@@ -542,6 +552,8 @@ export class JevDecisionProvider implements DecisionProvider {
         thirst:Number(entry.wildlife.thirst.toFixed(1)),energy:Number(entry.wildlife.energy.toFixed(1)),
         sex:entry.wildlife.sex,generation:entry.wildlife.generation,traits:entry.wildlife.traits,
         allowedActions:entry.allowedActions,
+        currentHabitat:entry.world.currentHabitat,
+        nearbyChunks:entry.world.nearbyChunks,
         nearbyResources:entry.world.nearbyResources,
         nearbyWildlife:entry.world.nearbyWildlife
       })),
@@ -564,10 +576,12 @@ export class JevDecisionProvider implements DecisionProvider {
         }
         const resourceId=answers[`w${index}_resource`]?.choice;
         const wildlifeId=answers[`w${index}_animal`]?.choice;
+        const chunkId=answers[`w${index}_chunk`]?.choice;
         const targetObjectId=entry.world.nearbyResources.some(x=>x.id===resourceId)?resourceId:undefined;
         const targetWildlifeId=entry.world.nearbyWildlife.some(x=>x.id===wildlifeId)?wildlifeId:undefined;
+        const targetChunkId=entry.world.nearbyChunks.some(x=>x.id===chunkId)?chunkId:undefined;
         return {
-          wildlifeId:entry.wildlife.id,source:'jev',action,targetObjectId,targetWildlifeId,
+          wildlifeId:entry.wildlife.id,source:'jev',action,targetObjectId,targetWildlifeId,targetChunkId,
           confidence,reasonCode:`jev_wildlife_${action}`
         };
       });
