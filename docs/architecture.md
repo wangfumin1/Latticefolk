@@ -206,3 +206,12 @@ Each coarse chunk can persist four plant-biomass pools: grass, shrub, fruit, and
 The coarse trophic model tracks primary production, herbivory, predation, and mortality return. Rabbit/deer/boar consumption depletes different biomass mixes; fox predation consumes prey population rather than creating/removing abstract food independently. Disease load responds to crowding, wet habitat, weather, migration, and recovery pressure.
 
 Fine wildlife now includes senescence, local disease exposure/recovery, gestation, birth cooldown, litter size, parental IDs, inherited traits with bounded mutation, and explicit multi-generation offspring. Natural water sites and renewable fine resource nodes connect the fine simulation back to the same habitat constraints.
+
+## Durable lineage and evolution observability
+
+Wildlife ancestry is no longer inferred only from currently materialized animals. Every observed fine individual receives a durable lineage record keyed by entity ID. Records retain parents, generation, birth/death coordinates in simulation time, birth/death chunks, traits at birth/death, founder-versus-reproduction origin, terminal death cause, and lifetime offspring count. Death removes the fine entity but does not remove its ancestry record; later sparse snapshots also never prune archived ancestors.
+
+Evolution statistics are deterministic derived data in `src/world/evolution.ts`. They aggregate living and historical individuals by species and generation, producing generation mean/max, reproductive birth count, death count, lifespan, offspring distribution, reproductive-success rate, trait mean/variance, trait slope per generation, mortality causes, and generation cohorts. `GET /api/world/evolution` exposes the same derived statistics server-side, while God View renders them as observer-only information.
+
+This layer deliberately does not call Jev or any other Decision Provider. Providers can alter bounded behavior such as mate seeking, hunting, fleeing, or migration; the simulation owns conception, birth, inheritance, mutation, death classification, lineage accounting, and all statistical conclusions.
+
