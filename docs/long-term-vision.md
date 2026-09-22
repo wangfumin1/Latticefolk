@@ -82,3 +82,9 @@ The next requirement is durable ancestry and statistical observability: lineages
 Wildlife ancestry now survives death, unloading, and later sparse saves in an independent SQLite lineage archive. Founders are distinguished from actual reproductive births; terminal deaths carry normalized causes; parents accumulate offspring counts; and per-species/per-generation cohorts expose trait means, variance, trends, lifespan, mortality, and reproductive success. God View can inspect these metrics and selected-animal ancestry without turning the observer into a world entity.
 
 The next evolution milestone is environmental selection observability: connect lineage outcomes to biome and habitat conditions, measure survival-to-reproduction under those pressures, and expose enough evidence to distinguish persistent selection from random drift.
+
+## Implemented milestone: biome-linked selection evidence
+
+Lineages now retain habitat context and can be grouped by origin biome. The simulation compares breeders with their observed cohort, reports normalized trait differentials, cross-generation direction consistency, generation/sample counts, and habitat conditions, then classifies the evidence as insufficient, weak, or persistent. This makes questions such as “is forest wariness rising because successful breeders are consistently more wary?” measurable without treating correlation as proof of causality.
+
+The next ecology step expands exposure history beyond origin/death snapshots: migration history, competition and niche pressure, seasonal movement, richer disease transmission, and more species should feed the same deterministic evidence layer.
