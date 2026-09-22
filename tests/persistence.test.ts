@@ -21,6 +21,11 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       id:'chunk_2_-1',cx:2,cz:-1,biome:'plains',settlementLevel:2,population:18,
       food:61,wood:44,water:70,ecology:66,danger:19,prosperity:57,
       strategy:'trade_route',migrationPolicy:'retain',ecologyPolicy:'balance',
+      wildlifeDisease:{
+        environmentalReservoir:37,meanLoad:24,crossSpeciesPressure:11,
+        speciesPressure:{rabbit:31,deer:22,boar:28,fox:14},
+        strongestSpillover:{fromSpecies:'boar',toSpecies:'deer',pressure:19}
+      },
       lastDecisionAt:123,decisionVersion:4
     }],
     fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[],wildlifeStates:[{
@@ -32,10 +37,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       entityId:'rabbit_ancestor',species:'rabbit',birthDay:1,deathDay:3.5,deathReason:'predation',generation:0,
       birthChunk:'chunk_2_-1',deathChunk:'chunk_2_-1',traitsAtBirth:{speed:2.1,size:.52,fertility:.82,wariness:.63},
       traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},
-      birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
-      deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
+      birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55,diseasePressure:31},
+      deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51,diseasePressure:44},
       habitatExposure:{
-        observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53},
+        observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53,diseasePressure:36},
         biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:1,lastChunk:'chunk_3_-1',lastBiome:'forest'
       },
       migrationHistory:[{
@@ -60,6 +65,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.ok(loaded);
   assert.equal(loaded.meta.day,4);
   assert.equal(loaded.coarseChunks[0]?.strategy,'trade_route');
+  assert.equal(loaded.coarseChunks[0]?.wildlifeDisease?.environmentalReservoir,37);
+  assert.equal(loaded.coarseChunks[0]?.wildlifeDisease?.strongestSpillover?.fromSpecies,'boar');
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
@@ -67,6 +74,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.biomeDays.plains,1.5);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.habitatMean.diseasePressure,36);
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
