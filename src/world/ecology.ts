@@ -34,6 +34,33 @@ const NICHE_PROFILE:Record<WildlifeSpecies,Record<NicheAxis,number>>={
 };
 const NICHE_AXES:NicheAxis[]=['grass','shrub','fruit','crop','prey','space'];
 
+const SEASONAL_BIOME_AFFINITY:Record<WildlifeSpecies,Record<WorldSeason,Record<ChunkBiome,number>>>={
+  rabbit:{
+    spring:{plains:1.10,forest:1.00,hills:.92,wetlands:1.04,dryland:.76},
+    summer:{plains:.98,forest:1.02,hills:.92,wetlands:1.08,dryland:.72},
+    autumn:{plains:1.04,forest:1.06,hills:.96,wetlands:.94,dryland:.78},
+    winter:{plains:.88,forest:1.02,hills:.90,wetlands:.82,dryland:.68}
+  },
+  deer:{
+    spring:{plains:1.02,forest:1.04,hills:1.00,wetlands:.88,dryland:.70},
+    summer:{plains:.92,forest:.98,hills:1.12,wetlands:.84,dryland:.66},
+    autumn:{plains:.90,forest:1.14,hills:1.05,wetlands:.80,dryland:.68},
+    winter:{plains:.84,forest:1.10,hills:.92,wetlands:.72,dryland:.64}
+  },
+  boar:{
+    spring:{plains:.94,forest:1.08,hills:.90,wetlands:1.04,dryland:.66},
+    summer:{plains:.88,forest:1.02,hills:.86,wetlands:1.14,dryland:.60},
+    autumn:{plains:.90,forest:1.16,hills:.92,wetlands:1.00,dryland:.64},
+    winter:{plains:.80,forest:1.10,hills:.86,wetlands:.88,dryland:.58}
+  },
+  fox:{
+    spring:{plains:1.05,forest:1.03,hills:.96,wetlands:.88,dryland:.76},
+    summer:{plains:1.02,forest:1.00,hills:.98,wetlands:.90,dryland:.74},
+    autumn:{plains:1.00,forest:1.08,hills:1.00,wetlands:.84,dryland:.76},
+    winter:{plains:.94,forest:1.06,hills:.98,wetlands:.78,dryland:.72}
+  }
+};
+
 function nicheOverlap(a:WildlifeSpecies,b:WildlifeSpecies){
   const pa=NICHE_PROFILE[a],pb=NICHE_PROFILE[b];
   const sumA=NICHE_AXES.reduce((sum,key)=>sum+pa[key],0);
@@ -115,6 +142,14 @@ function plantFoodIndex(chunk:CoarseChunkState,species:WildlifeSpecies){
   if(species==='deer')return p.grass*.38+p.shrub*.38+p.fruit*.24;
   if(species==='boar')return p.shrub*.28+p.fruit*.34+p.crop*.38;
   return chunk.food*.55+chunk.ecology*.45;
+}
+
+export function seasonalHabitatSuitability(chunk:CoarseChunkState,species:WildlifeSpecies,day:number){
+  const season=seasonForDay(day);
+  const seasonalAffinity=SEASONAL_BIOME_AFFINITY[species][season][chunk.biome];
+  const forage=plantFoodIndex(chunk,species);
+  const base=chunk.ecology*.30+forage*.32+chunk.water*.20+(100-chunk.danger)*.18;
+  return round(clamp(base*seasonalAffinity,0,100));
 }
 
 function fundamentalCapacity(chunk:CoarseChunkState,species:WildlifeSpecies){
@@ -265,7 +300,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   computeWildlifeNicheCompetition(chunk,populations);
 }
 
-export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>):WildlifeMigration[]{
+export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>,day=1):WildlifeMigration[]{
   const list=[...chunks];
   const byCoord=new Map(list.map(c=>[`${c.cx},${c.cz}`,c]));
   const moves:WildlifeMigration[]=[];
@@ -277,19 +312,28 @@ export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,material
       if(!other||materialized.has(other.id))continue;
       ensureWildlifePopulations(other);
       for(const species of SPECIES){
-        let from=source,to=other;
         const a=source.wildlife!.find(x=>x.species===species)!;
         const b=other.wildlife!.find(x=>x.species===species)!;
         const densityA=a.carryingCapacity>0?a.count/a.carryingCapacity:2;
         const densityB=b.carryingCapacity>0?b.count/b.carryingCapacity:2;
-        if(densityB>densityA){from=other;to=source;}
+        const suitabilityA=seasonalHabitatSuitability(source,species,day);
+        const suitabilityB=seasonalHabitatSuitability(other,species,day);
+        const stressA=densityA+(a.diseaseLoad||0)/100*.35+(100-suitabilityA)/100*.55;
+        const stressB=densityB+(b.diseaseLoad||0)/100*.35+(100-suitabilityB)/100*.55;
+        const from=stressA>=stressB?source:other;
+        const to=from===source?other:source;
         const fp=from.wildlife!.find(x=>x.species===species)!;
         const tp=to.wildlife!.find(x=>x.species===species)!;
         const fd=fp.carryingCapacity>0?fp.count/fp.carryingCapacity:2;
         const td=tp.carryingCapacity>0?tp.count/tp.carryingCapacity:2;
+        const fromSuitability=seasonalHabitatSuitability(from,species,day);
+        const toSuitability=seasonalHabitatSuitability(to,species,day);
         const diseasePressure=((fp.diseaseLoad||0)-(tp.diseaseLoad||0))/100;
-        if(fd-td<.34&&diseasePressure<.18||fp.count<1)continue;
-        const amount=round(Math.min(fp.count*.018,.35,Math.max(.03,(fd-td+diseasePressure)*.15)));
+        const seasonalPull=(toSuitability-fromSuitability)/100;
+        const pressureDelta=(fd-td)+diseasePressure*.35+seasonalPull*.55;
+        if(pressureDelta<.20||fp.count<1)continue;
+        const room=Math.max(0,tp.carryingCapacity-tp.count);
+        const amount=round(Math.min(fp.count*.018,.35,room,Math.max(.03,pressureDelta*.15)));
         if(amount>0)moves.push({species,fromChunkId:from.id,toChunkId:to.id,amount});
       }
     }
@@ -304,7 +348,8 @@ export function applyWildlifeMigration(chunks:Map<string,CoarseChunkState>,moves
     ensureWildlifePopulations(from);ensureWildlifePopulations(to);
     const source=from.wildlife!.find(x=>x.species===move.species)!;
     const target=to.wildlife!.find(x=>x.species===move.species)!;
-    const actual=Math.min(source.count,Math.max(0,move.amount));
+    const room=Math.max(0,target.carryingCapacity-target.count);
+    const actual=Math.min(source.count,room,Math.max(0,move.amount));
     if(actual<=0)continue;
     const total=target.count+actual;
     target.diseaseLoad=total>0?clamp(((target.diseaseLoad||0)*target.count+(source.diseaseLoad||0)*actual)/total):target.diseaseLoad;
