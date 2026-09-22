@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
-import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint } from './world/fineWildlifeMigration';
+import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -122,6 +122,8 @@ interface FineChunkRuntime {
   objectIds:string[];
   wildlifeIds:string[];
   initialWildlifeCounts:Partial<Record<WildlifeSpecies,number>>;
+  initialWildlifeIds:Set<string>;
+  fixedWildlifeWeights:Map<string,number>;
   blockedKeys:string[];
   groups:THREE.Object3D[];
   initialMetrics:FineMetrics;
@@ -981,7 +983,8 @@ class TownGame {
     if(this.materializedChunks.has(chunk.id))return;
     const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
     const runtime:FineChunkRuntime={
-      chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},blockedKeys:[],groups:[],
+      chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},
+      initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),blockedKeys:[],groups:[],
       initialMetrics:{food:0,wood:0,ecology:0,prosperity:0,shrub:0,fruit:0,crop:0}
     };
     this.materializedChunks.set(chunk.id,runtime);
@@ -1054,7 +1057,9 @@ class TownGame {
         state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
         if(this.spawnWildlife(state)){
           runtime.wildlifeIds.push(state.id);
-          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+          runtime.initialWildlifeIds.add(state.id);
+          if((state.representedPopulation||0)>0)runtime.fixedWildlifeWeights.set(state.id,state.representedPopulation!);
+          else runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
         }
       }
     }else{
@@ -1071,7 +1076,9 @@ class TownGame {
         };
         if(this.spawnWildlife(state)){
           runtime.wildlifeIds.push(state.id);
-          runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+          runtime.initialWildlifeIds.add(state.id);
+          if((state.representedPopulation||0)>0)runtime.fixedWildlifeWeights.set(state.id,state.representedPopulation!);
+          else runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
         }
       }
     }
@@ -1094,7 +1101,9 @@ class TownGame {
       state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
       if(!this.spawnWildlife(state))continue;
       runtime.wildlifeIds.push(state.id);
-      runtime.initialWildlifeCounts[state.species]=(runtime.initialWildlifeCounts[state.species]||0)+1;
+      runtime.initialWildlifeIds.add(state.id);
+      runtime.fixedWildlifeWeights.set(state.id,Math.max(0,transfer.representedPopulation));
+      state.representedPopulation=Math.max(0,transfer.representedPopulation);
       this.wildlifeTransfers.delete(transfer.entityId);
       this.event(`${this.wildlifeName(state.species)} ${state.id} 已进入 ${chunk.id}。`);
     }
