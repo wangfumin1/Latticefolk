@@ -68,3 +68,10 @@ The next milestone deepens production and logistics so generated farms, markets,
 The first living non-human ecology now spans both simulation scales. Rabbit, deer, boar, and fox populations live in coarse chunks with habitat-derived carrying capacity and conserved migration. Entering a chunk materializes persistent individuals with age, sex, physiological needs, inherited traits, predator/prey behavior, mate choice, reproduction, deterministic mutation, and death. Jev participates only in bounded behavioral choice; physiology, genetics, and population accounting stay in simulation code.
 
 The next ecology milestone introduces explicit plant biomass and trophic energy flow, then disease, seasonality, lineage records, lifespan, and stronger evolutionary selection across many generations.
+
+
+## Implemented milestone: trophic ecology and lifecycle
+
+The first ecology layer now has renewable plant biomass, seasonal productivity, herbivory/predation flow, disease pressure, local resource regeneration, pregnancy, birth cooldowns, litter sizes, senescence, parental IDs, and inherited mutation. This is sufficient for genuine generational turnover rather than one-shot spawned animals.
+
+The next requirement is durable ancestry and statistical observability: lineages must survive ancestor death/unloading, and long-running worlds need per-species generation counts, trait means/variance, births, deaths, and selection trends that can be inspected without inferring them from currently living entities.
