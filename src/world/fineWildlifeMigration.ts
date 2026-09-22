@@ -28,9 +28,14 @@ export function applyFineWildlifePopulationTransfer(
   source:CoarseWildlifePopulation,
   target:CoarseWildlifePopulation,
   animal:Pick<WildlifeState,'health'|'diseaseLoad'>,
-  initialFineCount:number
+  initialFineCount:number,
+  representedPopulation?:number,
+  maxTargetAmount=Number.POSITIVE_INFINITY
 ) {
-  const amount=fineMigrationRepresentativeWeight(source,initialFineCount);
+  const requested=representedPopulation&&representedPopulation>0
+    ?Math.min(source.count,representedPopulation)
+    :fineMigrationRepresentativeWeight(source,initialFineCount);
+  const amount=Math.min(requested,Math.max(0,maxTargetAmount));
   if(amount<=0)return 0;
   const sourceBefore=source.count;
   const targetBefore=target.count;
