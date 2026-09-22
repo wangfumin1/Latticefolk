@@ -2224,6 +2224,13 @@ class TownGame {
         <div class="evo-traits">σ² speed ${trait(entry.traitVariance.speed)} · size ${trait(entry.traitVariance.size)} · fertility ${trait(entry.traitVariance.fertility)} · wariness ${trait(entry.traitVariance.wariness)}</div>
         <div class="evo-traits">Δ/G speed ${trait(entry.traitTrendPerGeneration.speed)} · size ${trait(entry.traitTrendPerGeneration.size)} · fertility ${trait(entry.traitTrendPerGeneration.fertility)} · wariness ${trait(entry.traitTrendPerGeneration.wariness)}</div>
         <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
+        ${entry.biomeSelection.slice(0,3).map(selection=>`
+          <div class="evo-selection">
+            <b>${this.escape(selection.biome)}</b> · n=${selection.population} · G=${selection.generationsObserved} · breeders ${selection.breeders}
+            <div>wariness ${selection.normalizedSelectionDifferential.wariness>=0?'+':''}${trait(selection.normalizedSelectionDifferential.wariness)}σ · ${percent(selection.selectionConsistency.wariness)} · ${i18n.t(`evolution.signal.${selection.signal.wariness}`)}</div>
+            <div>size ${selection.normalizedSelectionDifferential.size>=0?'+':''}${trait(selection.normalizedSelectionDifferential.size)}σ · ${percent(selection.selectionConsistency.size)} · ${i18n.t(`evolution.signal.${selection.signal.size}`)}</div>
+            <div class="evo-traits">${i18n.t('evolution.habitat')} ecology ${selection.habitatMean.ecology.toFixed(0)} · food ${selection.habitatMean.food.toFixed(0)} · water ${selection.habitatMean.water.toFixed(0)} · danger ${selection.habitatMean.danger.toFixed(0)}</div>
+          </div>`).join('')}
       </div>`).join('');
 
     const selected=this.selectedEntity?.type==='wildlife'?this.wildlifeLineage.get(this.selectedEntity.id):undefined;
