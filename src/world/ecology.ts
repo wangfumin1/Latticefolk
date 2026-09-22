@@ -34,6 +34,21 @@ const NICHE_PROFILE:Record<WildlifeSpecies,Record<NicheAxis,number>>={
 };
 const NICHE_AXES:NicheAxis[]=['grass','shrub','fruit','crop','prey','space'];
 
+const DISEASE_SUSCEPTIBILITY:Record<WildlifeSpecies,number>={
+  rabbit:1.05,deer:.82,boar:1.10,fox:.72
+};
+
+const DISEASE_SPILLOVER:Record<WildlifeSpecies,Record<WildlifeSpecies,number>>={
+  rabbit:{rabbit:1,deer:.34,boar:.28,fox:.12},
+  deer:{rabbit:.30,deer:1,boar:.32,fox:.10},
+  boar:{rabbit:.22,deer:.36,boar:1,fox:.14},
+  fox:{rabbit:.24,deer:.20,boar:.22,fox:1}
+};
+
+export function wildlifeDiseaseSpillover(from:WildlifeSpecies,to:WildlifeSpecies){
+  return DISEASE_SPILLOVER[to][from];
+}
+
 const SEASONAL_BIOME_AFFINITY:Record<WildlifeSpecies,Record<WorldSeason,Record<ChunkBiome,number>>>={
   rabbit:{
     spring:{plains:1.10,forest:1.00,hills:.92,wetlands:1.04,dryland:.76},
@@ -203,6 +218,79 @@ export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populatio
   return chunk.nicheCompetition;
 }
 
+export function computeWildlifeDiseaseTransmission(
+  chunk:CoarseChunkState,
+  populations:CoarseWildlifePopulation[],
+  weather:string,
+  seconds:number
+) {
+  const dt=Math.min(30,Math.max(0,seconds));
+  const density=new Map<WildlifeSpecies,number>();
+  const load=new Map<WildlifeSpecies,number>();
+  let totalCount=0,weightedLoad=0;
+  for(const species of SPECIES){
+    const pop=populations.find(entry=>entry.species===species);
+    const count=Math.max(0,pop?.count||0);
+    const k=Math.max(.001,pop?.carryingCapacity||.001);
+    const d=Math.min(2.5,count/k);
+    const l=clamp(pop?.diseaseLoad||0);
+    density.set(species,d);load.set(species,l);
+    totalCount+=count;weightedLoad+=l*count;
+  }
+
+  const meanLoad=totalCount>0?weightedLoad/totalCount:0;
+  const meanDensity=SPECIES.reduce((sum,species)=>sum+(density.get(species)||0),0)/SPECIES.length;
+  const humidity=(chunk.biome==='wetlands'?1.28:1)*(weather==='rain'?1.22:weather==='cloudy'?1.06:.94);
+  const targetReservoir=clamp((meanLoad*.52+Math.max(0,meanDensity-.55)*14)*humidity);
+  const previousReservoir=clamp(chunk.wildlifeDisease?.environmentalReservoir||0);
+  const reservoir=clamp(previousReservoir+(targetReservoir-previousReservoir)*Math.min(.30,dt*.008));
+
+  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  let strongestSpillover:NonNullable<CoarseChunkState['wildlifeDisease']>['strongestSpillover'];
+  let crossTotal=0;
+
+  for(const to of SPECIES){
+    const toDensity=density.get(to)||0;
+    const same=(load.get(to)||0)*(.32+.18*Math.min(1.5,toDensity));
+    let cross=0;
+    for(const from of SPECIES){
+      if(from===to)continue;
+      const contribution=(load.get(from)||0)*(density.get(from)||0)*wildlifeDiseaseSpillover(from,to);
+      cross+=contribution;
+      if(!strongestSpillover||contribution>strongestSpillover.pressure){
+        strongestSpillover={fromSpecies:from,toSpecies:to,pressure:round(clamp(contribution))};
+      }
+    }
+    cross/=Math.max(1,SPECIES.length-1);
+    crossTotal+=cross;
+    const crowd=Math.max(0,toDensity-.68)*18;
+    const climate=(chunk.biome==='wetlands'?2.2:0)+(weather==='rain'?1.2:0);
+    const pressure=clamp(
+      same+
+      cross*.34+
+      reservoir*.28*DISEASE_SUSCEPTIBILITY[to]+
+      crowd+
+      climate
+    );
+    speciesPressure[to]=round(pressure);
+  }
+
+  for(const pop of populations){
+    const target=speciesPressure[pop.species];
+    const rate=Math.min(.28,dt*.006);
+    pop.diseaseLoad=round(clamp((pop.diseaseLoad||0)+(target-(pop.diseaseLoad||0))*rate));
+  }
+
+  chunk.wildlifeDisease={
+    environmentalReservoir:round(reservoir),
+    meanLoad:round(meanLoad),
+    crossSpeciesPressure:round(crossTotal/SPECIES.length),
+    speciesPressure,
+    strongestSpillover
+  };
+  return chunk.wildlifeDisease;
+}
+
 export function ensureWildlifePopulations(chunk:CoarseChunkState){
   ensurePlantBiomass(chunk);
   const existing=new Map((chunk.wildlife||[]).map(x=>[x.species,x]));
@@ -248,13 +336,11 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const dt=Math.min(30,Math.max(0,seconds));
   let mortalityReturn=0;
   computeWildlifeNicheCompetition(chunk,populations);
+  computeWildlifeDiseaseTransmission(chunk,populations,weather,dt);
 
   for(const pop of populations){
     const k=Math.max(.001,pop.carryingCapacity);
     const density=pop.count/k;
-    const climateDisease=(chunk.biome==='wetlands'?.006:0)+(weather==='rain'?.003:0);
-    const crowdDisease=Math.max(0,density-.72)*.018;
-    pop.diseaseLoad=clamp((pop.diseaseLoad||0)+(climateDisease+crowdDisease-.006)*dt);
 
     const rainPenalty=weather==='rain'&&pop.species==='rabbit'?.0025:0;
     const droughtPenalty=chunk.water<25?.006:0;
