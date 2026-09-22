@@ -34,6 +34,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 - Competencia de nicho determinista: perfiles fijos de recursos para conejo/ciervo/jabalí/zorro producen solapamiento de nicho por pares y, junto con la densidad de otras especies, presión competitiva; esta reduce de forma acotada la capacidad efectiva, afecta la salud y se observa en God View y lineage habitat exposure.
 - Migración estacional: una idoneidad species×biome para primavera/verano/otoño/invierno se combina con forage, agua, ecología y peligro; un hábitat adyacente al menos 8 puntos mejor puede impulsar por sí solo un flujo migratorio conservado de baja amplitud, y la fauna fine solo usa este valor dentro de candidatos legales.
 - Transmisión de enfermedades más rica: coarse separa presión ambiental, contacto intraespecífico, contacto entre especies e importación por migración; la fauna fine transmite según vecinos reales, distancia y coeficientes fijos entre especies, y God View/lineage exposure conservan la presión observada.
+- Evidencia fitness-by-habitat: relaciona exposición vital a competencia, idoneidad estacional y presión de enfermedad con reproducción, descendencia y longevidad; God View muestra cohortes de exposición baja/media/alta, breeder rate y diferencias de rasgos sin afirmar causalidad.
 
 ## Inicio rápido
 
@@ -57,7 +58,7 @@ God View también es estrictamente un observador externo y no aparece en la perc
 
 ## Hoja de ruta
 
-✅ coarse↔fine → ✅ SQLite → ✅ flujos conservados → ✅ decisiones Region / World → ✅ streaming dinámico → ✅ asentamientos procedurales semánticos → ✅ cadenas de producción → ✅ primera ecología de ciclo vital → ✅ genealogía duradera / estadísticas evolutivas → ✅ observabilidad de presión selectiva y adaptación por bioma → ✅ exposición de hábitat observada durante la vida → ✅ migración fine con identidad → ✅ competencia de nicho → ✅ movimiento estacional → ✅ transmisión de enfermedades enriquecida → **más especies/depredadores y fitness-by-habitat** → ecología ampliada → física.
+✅ coarse↔fine → ✅ SQLite → ✅ flujos conservados → ✅ decisiones Region / World → ✅ streaming dinámico → ✅ asentamientos procedurales semánticos → ✅ cadenas de producción → ✅ primera ecología de ciclo vital → ✅ genealogía duradera / estadísticas evolutivas → ✅ observabilidad de presión selectiva y adaptación por bioma → ✅ exposición de hábitat observada durante la vida → ✅ migración fine con identidad → ✅ competencia de nicho → ✅ movimiento estacional → ✅ transmisión de enfermedades enriquecida → ✅ fitness-by-habitat → **más especies/depredadores** → ecología ampliada → física.
 
 Consulta [Roadmap](roadmap.md), [Architecture](architecture.md) y [Decision providers](decision-providers.md).
 
