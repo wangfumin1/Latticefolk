@@ -1,6 +1,10 @@
 import type {
   ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifeSpecies, WorldSeason
 } from '../types';
+import {
+  WILDLIFE_NICHE_AXES, WILDLIFE_SPECIES, emptyWildlifeNumberRecord, wildlifeCanPredate,
+  wildlifeIsPredator, wildlifePlantDietTotal, wildlifePreyPreference, wildlifeSpeciesProfile
+} from './wildlifeSpecies.js';
 
 export interface WildlifeMigration {
   species: WildlifeSpecies;
@@ -9,72 +13,22 @@ export interface WildlifeMigration {
   amount: number;
 }
 
-const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
-const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
-const round=(v:number)=>Math.round(v*1000)/1000;
-const plantTotal=(p:{grass:number;shrub:number;fruit:number;crop:number})=>p.grass+p.shrub+p.fruit+p.crop;
-
-function smooth(previous:number,next:number,weight=.08){
-  return round(previous*(1-weight)+Math.max(0,next)*weight);
-}
-
-const BIOME_AFFINITY:Record<WildlifeSpecies,Record<ChunkBiome,number>>={
-  rabbit:{plains:1,forest:.82,hills:.65,wetlands:.72,dryland:.35},
-  deer:{plains:.72,forest:1,hills:.82,wetlands:.55,dryland:.28},
-  boar:{plains:.68,forest:1,hills:.62,wetlands:.84,dryland:.25},
-  fox:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48}
-};
-
-type NicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
-const NICHE_PROFILE:Record<WildlifeSpecies,Record<NicheAxis,number>>={
-  rabbit:{grass:.58,shrub:.30,fruit:0,crop:.12,prey:0,space:.15},
-  deer:{grass:.38,shrub:.38,fruit:.24,crop:0,prey:0,space:.15},
-  boar:{grass:0,shrub:.28,fruit:.34,crop:.38,prey:0,space:.15},
-  fox:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25}
-};
-const NICHE_AXES:NicheAxis[]=['grass','shrub','fruit','crop','prey','space'];
-
-const SEASONAL_BIOME_AFFINITY:Record<WildlifeSpecies,Record<WorldSeason,Record<ChunkBiome,number>>>={
-  rabbit:{
-    spring:{plains:1.10,forest:1.00,hills:.92,wetlands:1.04,dryland:.76},
-    summer:{plains:.98,forest:1.02,hills:.92,wetlands:1.08,dryland:.72},
-    autumn:{plains:1.04,forest:1.06,hills:.96,wetlands:.94,dryland:.78},
-    winter:{plains:.88,forest:1.02,hills:.90,wetlands:.82,dryland:.68}
-  },
-  deer:{
-    spring:{plains:1.02,forest:1.04,hills:1.00,wetlands:.88,dryland:.70},
-    summer:{plains:.92,forest:.98,hills:1.12,wetlands:.84,dryland:.66},
-    autumn:{plains:.90,forest:1.14,hills:.98,wetlands:.80,dryland:.68},
-    winter:{plains:.84,forest:1.10,hills:.92,wetlands:.72,dryland:.64}
-  },
-  boar:{
-    spring:{plains:.94,forest:1.08,hills:.90,wetlands:1.04,dryland:.66},
-    summer:{plains:.88,forest:1.02,hills:.86,wetlands:1.14,dryland:.60},
-    autumn:{plains:.90,forest:1.16,hills:.92,wetlands:1.00,dryland:.64},
-    winter:{plains:.80,forest:1.10,hills:.86,wetlands:.88,dryland:.58}
-  },
-  fox:{
-    spring:{plains:1.05,forest:1.03,hills:.96,wetlands:.88,dryland:.76},
-    summer:{plains:1.02,forest:1.00,hills:.98,wetlands:.90,dryland:.74},
-    autumn:{plains:1.00,forest:1.08,hills:1.00,wetlands:.84,dryland:.76},
-    winter:{plains:.94,forest:1.06,hills:.98,wetlands:.78,dryland:.72}
-  }
-};
-
+const SPECIES=WILDLIFE_SPECIES;
 function nicheOverlap(a:WildlifeSpecies,b:WildlifeSpecies){
-  const pa=NICHE_PROFILE[a],pb=NICHE_PROFILE[b];
-  const sumA=NICHE_AXES.reduce((sum,key)=>sum+pa[key],0);
-  const sumB=NICHE_AXES.reduce((sum,key)=>sum+pb[key],0);
-  const shared=NICHE_AXES.reduce((sum,key)=>sum+Math.min(pa[key]/sumA,pb[key]/sumB),0);
+  const pa=wildlifeSpeciesProfile(a).niche,pb=wildlifeSpeciesProfile(b).niche;
+  const sumA=WILDLIFE_NICHE_AXES.reduce((sum,key)=>sum+pa[key],0);
+  const sumB=WILDLIFE_NICHE_AXES.reduce((sum,key)=>sum+pb[key],0);
+  const shared=WILDLIFE_NICHE_AXES.reduce((sum,key)=>sum+Math.min(pa[key]/sumA,pb[key]/sumB),0);
   return clamp(shared,0,1);
 }
 
 export function wildlifeDiseaseContactCoefficient(from:WildlifeSpecies,to:WildlifeSpecies){
   if(from===to)return 1;
-  const herbivores=new Set<WildlifeSpecies>(['rabbit','deer','boar']);
-  if(herbivores.has(from)&&herbivores.has(to))return .28;
-  if(from==='fox'&&['rabbit','deer'].includes(to))return .42;
-  if(to==='fox'&&['rabbit','deer'].includes(from))return .24;
+  const fromPredator=wildlifeIsPredator(from),toPredator=wildlifeIsPredator(to);
+  if(!fromPredator&&!toPredator)return .28;
+  if(fromPredator&&wildlifeCanPredate(from,to))return .42;
+  if(toPredator&&wildlifeCanPredate(to,from))return .24;
+  if(fromPredator&&toPredator)return .32;
   return .16;
 }
 
@@ -89,10 +43,10 @@ export function computeWildlifeDiseasePressure(
     (chunk.water>88?4:0)+
     (chunk.ecology<28?6:0)
   );
-  const localContactPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const crossSpeciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const importedPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const localContactPressure=emptyWildlifeNumberRecord();
+  const crossSpeciesPressure=emptyWildlifeNumberRecord();
+  const importedPressure=emptyWildlifeNumberRecord();
+  const speciesPressure=emptyWildlifeNumberRecord();
   let strongestPair:WildlifeDiseasePair|undefined;
 
   for(const target of populations){
