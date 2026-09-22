@@ -78,7 +78,27 @@ test('biome selection statistics expose persistent breeder trait differentials w
   assert.ok(forestStats.selectionDifferential.wariness>0);
   assert.ok(forestStats.normalizedSelectionDifferential.wariness>.2);
   assert.equal(forestStats.selectionConsistency.wariness,1);
+  assert.equal(forestStats.comparableSelectionGenerations.wariness,3);
   assert.equal(forestStats.signal.wariness,'persistent');
   assert.ok(forestStats.traitTrendPerGeneration.wariness>0);
   assert.equal(forestStats.habitatMean.ecology,82);
+});
+
+
+test('persistent selection signal requires repeated comparable generations and aligned realized trait trend',()=>{
+  const habitat={biome:'plains' as const,ecology:70,food:70,water:70,danger:30,settlementLevel:0,plantBiomass:70};
+  const sample:WildlifeLineageRecord[]=[
+    {entityId:'g0a',species:'rabbit',birthDay:1,generation:0,birthChunk:'a',traitsAtBirth:traits(.2),birthHabitat:habitat,origin:'founder',offspringCount:0,reproductiveSuccess:false},
+    {entityId:'g0b',species:'rabbit',birthDay:1,generation:0,birthChunk:'a',traitsAtBirth:traits(.8),birthHabitat:habitat,origin:'founder',offspringCount:2,reproductiveSuccess:true},
+    {entityId:'g1a',species:'rabbit',birthDay:2,generation:1,birthChunk:'a',traitsAtBirth:traits(.15),birthHabitat:habitat,origin:'reproduction',offspringCount:0,reproductiveSuccess:false},
+    {entityId:'g1b',species:'rabbit',birthDay:2,generation:1,birthChunk:'a',traitsAtBirth:traits(.75),birthHabitat:habitat,origin:'reproduction',offspringCount:2,reproductiveSuccess:true},
+    {entityId:'g2a',species:'rabbit',birthDay:3,generation:2,birthChunk:'a',traitsAtBirth:traits(.10),birthHabitat:habitat,origin:'reproduction',offspringCount:0,reproductiveSuccess:false},
+    {entityId:'g2b',species:'rabbit',birthDay:3,generation:2,birthChunk:'a',traitsAtBirth:traits(.70),birthHabitat:habitat,origin:'reproduction',offspringCount:2,reproductiveSuccess:true}
+  ];
+  const stats=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!.biomeSelection[0]!;
+  assert.ok(stats.normalizedSelectionDifferential.wariness>0);
+  assert.equal(stats.selectionConsistency.wariness,1);
+  assert.equal(stats.comparableSelectionGenerations.wariness,3);
+  assert.ok(stats.traitTrendPerGeneration.wariness<0);
+  assert.equal(stats.signal.wariness,'weak');
 });
