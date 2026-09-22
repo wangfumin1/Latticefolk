@@ -22,6 +22,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Semantic procedural fine-chunk settlements with deterministic archetypes, roads, functional buildings/sites, role-aware residents, and resource placement that avoids roads/buildings.
 - Shared deterministic production recipes for NPCs and players, including flour/bread and plank/tool multi-step chains with localized new item types.
 - Persistent coarse/fine wildlife ecology for rabbit/deer/boar/fox populations, habitat carrying capacity, conserved migration, fine needs/predation/reproduction, inheritable traits, batched Jev decisions, interactive inspection, and SQLite wildlife persistence.
+- Seasonal plant biomass and trophic-flow ecology with disease pressure, renewable fine resources, gestation/litters, senescence, parent IDs, and multi-generation inheritance.
 
 ### Changed
 
