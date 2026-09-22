@@ -894,7 +894,11 @@ class TownGame {
     this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z,true);
 
     this.wildlifeLineage.clear();
-    for(const record of snapshot.wildlifeLineage||[])this.wildlifeLineage.set(record.entityId,structuredClone(record));
+    for(const record of snapshot.wildlifeLineage||[]){
+      const normalized=structuredClone(record);
+      normalized.origin=normalized.origin==='reproduction'?'reproduction':(normalized.motherId||normalized.fatherId?'reproduction':'founder');
+      this.wildlifeLineage.set(normalized.entityId,normalized);
+    }
     this.lineageEpoch++;
     this.reconcileLineageOffspring();
 
@@ -1538,6 +1542,7 @@ class TownGame {
       generation:state.generation,
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
+      origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
       reproductiveSuccess:false
     };
