@@ -112,3 +112,9 @@ This creates a deterministic bridge from community composition to evolution obse
 Wildlife movement now changes with the season rather than reacting only to crowding and immediate habitat degradation. Species-specific biome preferences combine with current forage, water, ecology and danger to produce seasonal suitability. Neighboring chunks with materially better seasonal suitability can pull a small conserved population flow even before density becomes extreme, while all movement remains capacity-bounded and traceable.
 
 Fine individuals see the same simulation-derived seasonal suitability in their bounded migration candidates, and lineage exposure records the suitability actually observed during fine simulation. The next ecological milestones are richer disease transmission, additional species/predators and explicit fitness-by-habitat measures that can use competition and seasonal exposure together.
+
+## Implemented milestone: wildlife disease transmission
+
+Disease is now an ecological process rather than a per-population decay term. Same-species contact, cross-species spillover, density, weather and an environmental reservoir determine deterministic disease pressure at coarse scale; fine individuals receive distance-weighted contact exposure plus environmental pressure. Migration carries disease load without violating population conservation.
+
+Because disease pressure is also recorded in lineage habitat observations, evolution analysis can later test whether survival and reproductive success differ under sustained pathogen pressure instead of using death counts alone. The next ecology milestones are additional species/predators and explicit fitness-by-habitat measures that combine biome, competition, season and disease exposure.
