@@ -20,6 +20,7 @@ The database and its WAL/SHM sidecars are ignored by Git. It is runtime state, n
 | Visited fine chunks | resident identities/state, memories, relationships, inventory, object storage, resource depletion, and persistent wildlife individuals/traits |
 | Center town | NPC and interactive-object state |
 | Wildlife ancestry | durable birth/death/parent/trait/reproductive records for living and dead individuals |
+| Wildlife transit | identity-preserving fine migrants waiting to materialize in their destination chunk |
 
 The save format is currently `version: 1`.
 
@@ -30,6 +31,7 @@ The save format is currently `version: 1`.
 - `fine_chunks` — NPC JSON, object JSON, and wildlife JSON
 - `home_state`
 - `wildlife_lineage` — append-preserving ancestry/lifecycle archive independent of fine-chunk entity presence
+- `wildlife_transfers` — current identity-preserving fine wildlife transit queue; unlike lineage history, completed queue entries are pruned transactionally
 
 Writes use a single SQLite transaction so one logical snapshot cannot partially update only some simulation layers. `wildlife_lineage` is intentionally not pruned when an incoming snapshot omits an old individual: once observed, ancestry and terminal death facts remain durable. SQLite runs with WAL journaling and `synchronous=NORMAL`.
 
@@ -72,3 +74,9 @@ Lineage rows now optionally persist `birth_habitat_json`, `death_habitat_json`, 
 ### Observed lifetime exposure
 
 Lifetime exposure is deliberately observation-bounded. While an individual is materialized in fine simulation, elapsed simulation days are accumulated into its lineage record. On chunk collapse or death the final interval is flushed; `lastObservedDay` is then cleared. When the chunk is later materialized again, observation restarts from the current world time. The coarse interval in between is not backfilled as if the simulation knew that named individual's exact path. This preserves the distinction between aggregate population migration and individual lineage evidence.
+
+### Identity-preserving wildlife transit
+
+Fine wildlife migration is persisted separately from `fine_chunks`. A migrant already changes the authoritative coarse source/destination population through a conserved deterministic transfer, while its named fine identity is stored in `wildlife_transfers` until the destination is materialized. This avoids treating an unvisited destination as if it already had a complete fine snapshot.
+
+Each transfer stores the full `WildlifeState`, source/destination chunk IDs, simulation day, and `representedPopulation`. That representative weight is also carried by the migrated state after arrival so later death or onward migration folds back by the same coarse quantity rather than by a generic fine-entity scale. Completing/materializing a transfer and pruning the queue occur in the same world-snapshot transaction on the next save.
