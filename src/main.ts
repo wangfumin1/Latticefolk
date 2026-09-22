@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
-import { computeEvolutionStatistics, lineageAncestors } from './world/evolution';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, lineageAncestors } from './world/evolution';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -1089,6 +1089,7 @@ class TownGame {
     const archived=this.wildlifeLineage.get(state.id);
     if(archived?.deathDay!==undefined)return false;
     this.ensureWildlifeLineage(state);
+    this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
@@ -1192,6 +1193,7 @@ class TownGame {
     const diseaseTotals:Partial<Record<WildlifeSpecies,number>>={};
     for(const id of runtime.wildlifeIds){
       const animal=this.wildlife.get(id);if(!animal)continue;
+      this.endWildlifeHabitatObservation(animal.state);
       wildlifeStates.push(structuredClone(animal.state));
       currentWildlifeCounts[animal.state.species]=(currentWildlifeCounts[animal.state.species]||0)+1;
       diseaseTotals[animal.state.species]=(diseaseTotals[animal.state.species]||0)+(animal.state.diseaseLoad||0);
@@ -1280,6 +1282,7 @@ class TownGame {
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
       s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
+      this.recordWildlifeHabitatExposure(s);
     }
     if(!this.aiPaused&&!this.wildlifeDecisionPending&&this.wildlife.size&&now()>=this.nextWildlifeBatchAt){
       void this.requestWildlifeBatch();
@@ -1546,6 +1549,41 @@ class TownGame {
     };
   }
 
+  beginWildlifeHabitatObservation(state:WildlifeState) {
+    const record=this.ensureWildlifeLineage(state);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    if(!habitat)return;
+    const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,0);
+    exposure.lastObservedDay=this.day+this.minuteOfDay/1440;
+    exposure.lastChunk=state.chunkId;
+    exposure.lastBiome=habitat.biome;
+    record.habitatExposure=exposure;
+  }
+
+  recordWildlifeHabitatExposure(state:WildlifeState,force=false) {
+    const record=this.ensureWildlifeLineage(state);
+    const habitat=this.wildlifeHabitatSnapshot(state.chunkId);
+    if(!habitat)return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    if(!record.habitatExposure||record.habitatExposure.lastObservedDay===undefined){
+      this.beginWildlifeHabitatObservation(state);
+      return;
+    }
+    const elapsed=Math.max(0,currentDay-record.habitatExposure.lastObservedDay);
+    const sameChunk=record.habitatExposure.lastChunk===state.chunkId;
+    if(elapsed<=0||(!force&&sameChunk&&elapsed<.02))return;
+    const exposure=accumulateWildlifeHabitatExposure(record.habitatExposure,habitat,state.chunkId,elapsed);
+    exposure.lastObservedDay=currentDay;
+    record.habitatExposure=exposure;
+    this.lineageEpoch++;
+  }
+
+  endWildlifeHabitatObservation(state:WildlifeState) {
+    this.recordWildlifeHabitatExposure(state,true);
+    const exposure=this.wildlifeLineage.get(state.id)?.habitatExposure;
+    if(exposure)exposure.lastObservedDay=undefined;
+  }
+
   ensureWildlifeLineage(state:WildlifeState) {
     const existing=this.wildlifeLineage.get(state.id);
     if(existing){
@@ -1611,6 +1649,7 @@ class TownGame {
 
   removeWildlife(animal:WildlifeRuntime,reason:WildlifeDeathReason) {
     if(animal.removed)return;
+    this.recordWildlifeHabitatExposure(animal.state,true);
     const currentDay=this.day+this.minuteOfDay/1440;
     const record=this.ensureWildlifeLineage(animal.state);
     if(record.deathDay===undefined){
@@ -1619,6 +1658,7 @@ class TownGame {
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
       record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId);
+      if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
     animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
