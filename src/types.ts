@@ -292,6 +292,7 @@ export interface WildlifeLineageRecord {
   deathChunk?: string;
   traitsAtBirth: WildlifeTraits;
   traitsAtDeath?: WildlifeTraits;
+  origin: 'founder' | 'reproduction';
   offspringCount: number;
   reproductiveSuccess: boolean;
 }
