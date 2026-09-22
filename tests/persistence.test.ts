@@ -26,7 +26,12 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
       sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},currentAction:'forage',lastDecisionAt:10,birthDay:3
     }]}],
-    homeNpcs:[],homeObjects:[]
+    homeNpcs:[],homeObjects:[],
+    wildlifeLineage:[{
+      entityId:'rabbit_ancestor',species:'rabbit',birthDay:1,deathDay:3.5,deathReason:'predation',generation:0,
+      birthChunk:'chunk_2_-1',deathChunk:'chunk_2_-1',traitsAtBirth:{speed:2.1,size:.52,fertility:.82,wariness:.63},
+      traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},offspringCount:1,reproductiveSuccess:true
+    }]
   };
   store.save(snapshot);
   const loaded=store.load();
@@ -35,6 +40,13 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.coarseChunks[0]?.strategy,'trade_route');
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
+  assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
+  assert.equal(store.stats().lineageRecords,1);
+  assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
+
+  store.save({...snapshot,wildlifeLineage:[]});
+  const afterSparseSave=store.load();
+  assert.equal(afterSparseSave?.wildlifeLineage?.length,1,'lineage archive must not be pruned by later sparse snapshots');
   assert.equal(store.stats().hasSave,true);
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
