@@ -112,3 +112,11 @@ This creates a deterministic bridge from community composition to evolution obse
 Wildlife movement now changes with the season rather than reacting only to crowding and immediate habitat degradation. Species-specific biome preferences combine with current forage, water, ecology and danger to produce seasonal suitability. Neighboring chunks with materially better seasonal suitability can pull a small conserved population flow even before density becomes extreme, while all movement remains capacity-bounded and traceable.
 
 Fine individuals see the same simulation-derived seasonal suitability in their bounded migration candidates, and lineage exposure records the suitability actually observed during fine simulation. The next ecological milestones are richer disease transmission, additional species/predators and explicit fitness-by-habitat measures that can use competition and seasonal exposure together.
+
+## Implemented milestone: richer disease transmission
+
+Wildlife disease now propagates through several explicit mechanisms instead of only rising with crowding. Weather/biome conditions contribute environmental pressure, dense infected conspecifics contribute local pressure, other species contribute cross-species pressure through fixed contact coefficients, and migration imports disease pressure across chunk boundaries while preserving population conservation.
+
+Fine animals also exchange disease pressure through actual nearby contacts, making identity-preserving migration and predator/prey proximity relevant to disease history. God View can inspect aggregate disease pressure and the strongest transmission direction, and lineage exposure retains observed disease pressure for future selection analysis.
+
+The next ecology step is additional species/predators plus explicit fitness-by-habitat analysis that combines competition, seasonal suitability, disease exposure, survival and reproductive success.
