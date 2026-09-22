@@ -277,6 +277,18 @@ export interface WildlifeTraits {
   wariness: number;
 }
 
+export interface WildlifeHabitatSnapshot {
+  biome: ChunkBiome;
+  ecology: number;
+  food: number;
+  water: number;
+  danger: number;
+  settlementLevel: number;
+  plantBiomass: number;
+}
+
+export type WildlifeSelectionSignal = 'insufficient' | 'weak' | 'persistent';
+
 export type WildlifeDeathReason = 'predation' | 'starvation' | 'dehydration' | 'disease' | 'senescence' | 'other';
 
 export interface WildlifeLineageRecord {
@@ -292,6 +304,8 @@ export interface WildlifeLineageRecord {
   deathChunk?: string;
   traitsAtBirth: WildlifeTraits;
   traitsAtDeath?: WildlifeTraits;
+  birthHabitat?: WildlifeHabitatSnapshot;
+  deathHabitat?: WildlifeHabitatSnapshot;
   origin: 'founder' | 'reproduction';
   offspringCount: number;
   reproductiveSuccess: boolean;
@@ -307,6 +321,24 @@ export interface WildlifeGenerationCohortStats {
   breederRate: number;
   traitMean: WildlifeTraits;
   traitVariance: WildlifeTraits;
+}
+
+export interface WildlifeBiomeSelectionStats {
+  biome: ChunkBiome;
+  population: number;
+  breeders: number;
+  generationsObserved: number;
+  breederRate: number;
+  offspringMean: number;
+  lifespanMean: number;
+  habitatMean: Omit<WildlifeHabitatSnapshot,'biome'>;
+  traitMean: WildlifeTraits;
+  breederTraitMean: WildlifeTraits;
+  selectionDifferential: WildlifeTraits;
+  normalizedSelectionDifferential: WildlifeTraits;
+  selectionConsistency: WildlifeTraits;
+  traitTrendPerGeneration: WildlifeTraits;
+  signal: Record<keyof WildlifeTraits, WildlifeSelectionSignal>;
 }
 
 export interface WildlifeEvolutionStats {
@@ -326,6 +358,7 @@ export interface WildlifeEvolutionStats {
   reproductiveSuccess: number;
   survivalToReproductionRate: number;
   cohorts: WildlifeGenerationCohortStats[];
+  biomeSelection: WildlifeBiomeSelectionStats[];
 }
 
 export interface WildlifeState {
