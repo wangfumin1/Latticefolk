@@ -52,6 +52,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Persistent wildlife ecology**: rabbits, deer, boar, and foxes exist as coarse populations and fine persistent individuals with needs, hunting/fleeing, migration, reproduction, inheritable traits, and batched Jev behavior decisions.
 - **Plant biomass and lifecycle ecology**: seasonal grass/shrub/fruit/crop biomass, trophic flows, disease pressure, pregnancy/litters, senescence, parent IDs, and inherited mutation connect habitat to multi-generation life.
 - **Durable evolution observability**: dead and living wildlife share a persistent ancestry archive with founder/reproductive birth provenance, death causes, lifetime offspring counts, per-generation trait mean/variance/trends, reproductive-success metrics, lineage traversal, and a God View observatory.
+- **Biome-linked selection evidence**: lineage habitat snapshots let God View compare breeders with their cohort, show normalized trait differentials and cross-generation consistency, and distinguish insufficient/weak/persistent evidence without claiming causality.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
 - **Multilingual dialogue corpus and UI**: Simplified Chinese, English, Japanese, and Spanish.
@@ -186,9 +187,9 @@ The current development order is intentionally architecture-first:
 5. ✅ dynamic chunk streaming and real travel;
 6. procedural settlements, buildings, environments, and content;
 7. richer production chains and interactions;
-8. plants, animals, and ecological systems;
-9. complete life cycles, reproduction, inheritance, and evolution;
-10. a fuller physics layer.
+8. ✅ first ecological food-web/lifecycle systems;
+9. ✅ durable lineage, evolution statistics, and biome-linked selection observability;
+10. deeper ecology, niches, migration exposure, disease, more species, then a fuller physics layer.
 
 See the living [Roadmap](docs/roadmap.md) and [Long-term vision](docs/long-term-vision.md). Documentation is updated as each implementation stage lands.
 
