@@ -331,9 +331,11 @@ export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,material
         const diseasePressure=((fp.diseaseLoad||0)-(tp.diseaseLoad||0))/100;
         const seasonalPull=(toSuitability-fromSuitability)/100;
         const pressureDelta=(fd-td)+diseasePressure*.35+seasonalPull*.55;
-        if(pressureDelta<.20||fp.count<1)continue;
+        const seasonalDriver=seasonalPull>=.08;
+        if((pressureDelta<.20&&!seasonalDriver)||fp.count<1)continue;
         const room=Math.max(0,tp.carryingCapacity-tp.count);
-        const amount=round(Math.min(fp.count*.018,.35,room,Math.max(.03,pressureDelta*.15)));
+        const driverStrength=Math.max(pressureDelta,seasonalDriver?seasonalPull:.0);
+        const amount=round(Math.min(fp.count*.018,.35,room,Math.max(.03,driverStrength*.15)));
         if(amount>0)moves.push({species,fromChunkId:from.id,toChunkId:to.id,amount});
       }
     }
