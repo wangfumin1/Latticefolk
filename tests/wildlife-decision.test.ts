@@ -132,3 +132,32 @@ test('wildlife fallback can migrate away from severe disease transmission pressu
   assert.equal(d.action,'migrate');
   assert.equal(d.targetChunkId,'chunk_3_2');
 });
+
+
+test('rabbit fallback flees a nearby wolf predator',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal(),
+    world:world({nearbyWildlife:[
+      {id:'wolf_1',species:'wolf',sex:'male',ageDays:600,distance:3,health:90,currentAction:'hunt',mateAvailable:true}
+    ]}),
+    allowedActions:['flee','wander','graze','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'flee');
+  assert.equal(d.targetWildlifeId,'wolf_1');
+});
+
+test('hungry wolf fallback selects legal preferred prey instead of arbitrary wildlife',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'wolf_1',species:'wolf',hunger:82,ageDays:700,health:90,energy:80}),
+    world:world({nearbyWildlife:[
+      {id:'mouse_1',species:'mouse',sex:'female',ageDays:120,distance:2,health:80,currentAction:'forage',mateAvailable:true},
+      {id:'deer_1',species:'deer',sex:'female',ageDays:500,distance:4,health:85,currentAction:'graze',mateAvailable:true},
+      {id:'wolf_2',species:'wolf',sex:'female',ageDays:650,distance:2,health:90,currentAction:'wander',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'deer_1');
+});
