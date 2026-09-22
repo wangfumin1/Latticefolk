@@ -166,3 +166,36 @@ test('lifetime habitat exposure preserves time-weighted disease transmission pre
   assert.equal(exposure.observedDays,4);
   assert.equal(exposure.habitatMean.diseasePressure,55);
 });
+
+
+test('fitness-by-habitat quantifies outcome associations across exposure bands',()=>{
+  const sample:WildlifeLineageRecord[]=[
+    [10,3,120],[20,2,110],[25,1,100],
+    [40,1,90],[50,0,80],[60,0,70],
+    [75,0,60],[85,0,50],[90,0,40]
+  ].map(([disease,offspring,lifespan],index)=>{
+    const habitat={
+      biome:'forest' as const,ecology:78,food:68,water:72,danger:24,settlementLevel:1,plantBiomass:70,
+      competitionPressure:42,seasonalSuitability:74,diseasePressure:disease!
+    };
+    const exposure=accumulateWildlifeHabitatExposure(undefined,habitat,'fitness_forest',1);
+    exposure.lastObservedDay=undefined;
+    return {
+      entityId:`fitness_${index}`,species:'rabbit' as const,birthDay:1,generation:Math.floor(index/3),
+      deathDay:1+lifespan!,deathReason:'senescence' as const,birthChunk:'fitness_forest',
+      traitsAtBirth:traits(.2+index*.04,1+index*.01),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<3?'founder' as const:'reproduction' as const,
+      offspringCount:offspring!,reproductiveSuccess:offspring!>0
+    };
+  });
+  const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
+  const disease=rabbit.exposureFitness.find(entry=>entry.dimension==='diseasePressure')!;
+  assert.equal(disease.sampleSize,9);
+  assert.ok(disease.reproductionAssociation<0);
+  assert.ok(disease.offspringAssociation<0);
+  assert.ok(disease.lifespanAssociation<0);
+  assert.equal(disease.bands.find(band=>band.band==='low')?.population,3);
+  assert.equal(disease.bands.find(band=>band.band==='low')?.breederRate,1);
+  assert.equal(disease.bands.find(band=>band.band==='high')?.breederRate,0);
+  assert.ok(disease.breederExposureMean<disease.nonBreederExposureMean);
+});
