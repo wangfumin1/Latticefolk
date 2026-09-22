@@ -12,6 +12,9 @@ import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
+import {
+  wildlifeCanPredate, wildlifeIsPredator, wildlifePreyPreference, wildlifeSpeciesProfile
+} from './world/wildlifeSpecies';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -1177,14 +1180,9 @@ class TownGame {
 
   makeProceduralAnimal(state:WildlifeState) {
     const g=new THREE.Group();
-    const palette:Record<WildlifeSpecies,{body:number;accent:number}>={
-      rabbit:{body:0xb8a48d,accent:0xe4d4c1},
-      deer:{body:0x9a6945,accent:0xd2b28f},
-      boar:{body:0x5d4a3c,accent:0x796354},
-      fox:{body:0xc86f35,accent:0xf0d0a5}
-    };
-    const color=palette[state.species];
-    const scale=Math.max(.55,state.traits.size);
+    const profile=wildlifeSpeciesProfile(state.species);
+    const color=profile.visual;
+    const scale=Math.max(.30,state.traits.size);
     const body=new THREE.Mesh(new THREE.BoxGeometry(1.15*scale,.65*scale,.55*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:.95}));
     body.position.y=.55*scale;
     const head=new THREE.Mesh(new THREE.BoxGeometry(.48*scale,.48*scale,.48*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:.95}));
@@ -1194,11 +1192,20 @@ class TownGame {
       const leg=new THREE.Mesh(new THREE.BoxGeometry(.14*scale,.5*scale,.14*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));
       leg.position.set(sx*scale,.25*scale,sz*scale);g.add(leg);
     }
-    if(state.species==='rabbit'){
-      for(const x of [-.12,.12]){const ear=new THREE.Mesh(new THREE.BoxGeometry(.1*scale,.55*scale,.1*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:1}));ear.position.set(x*scale,1.18*scale,.48*scale);g.add(ear);}
-    }else if(state.species==='deer'){
+    if(profile.visual.morphology==='rabbit'||profile.visual.morphology==='rodent'){
+      const earHeight=profile.visual.morphology==='rabbit'?.55:.28;
+      const earWidth=profile.visual.morphology==='rabbit'?.10:.13;
+      for(const x of [-.12,.12]){
+        const ear=new THREE.Mesh(new THREE.BoxGeometry(earWidth*scale,earHeight*scale,.1*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:1}));
+        ear.position.set(x*scale,(profile.visual.morphology==='rabbit'?1.18:1.02)*scale,.48*scale);g.add(ear);
+      }
+      if(profile.visual.morphology==='rodent'){
+        const tail=new THREE.Mesh(new THREE.BoxGeometry(.08*scale,.08*scale,.72*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:1}));
+        tail.position.set(0,.5*scale,-.62*scale);tail.rotation.x=-.18;g.add(tail);
+      }
+    }else if(profile.visual.morphology==='deer'){
       for(const x of [-.16,.16]){const antler=new THREE.Mesh(new THREE.BoxGeometry(.06*scale,.48*scale,.06*scale),new THREE.MeshStandardMaterial({color:0x5b4331,roughness:1}));antler.position.set(x*scale,1.08*scale,.5*scale);g.add(antler);}
-    }else if(state.species==='fox'){
+    }else if(profile.visual.morphology==='canid'){
       const tail=new THREE.Mesh(new THREE.BoxGeometry(.25*scale,.25*scale,.75*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));tail.position.set(0,.55*scale,-.65*scale);tail.rotation.x=-.35;g.add(tail);
     }
     g.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
@@ -1427,8 +1434,9 @@ class TownGame {
     const baseline=this.materializedChunks.get(state.chunkId)?.initialWildlifeIds.has(state.id)??false;
     if(state.ageDays>=life.adultAge&&!pregnant)actions.push('seek_mate');
     if(baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
-    if(state.species==='rabbit'||state.species==='deer'||state.species==='boar')actions.push('graze');
-    if(state.species==='fox')actions.push('hunt');
+    const profile=wildlifeSpeciesProfile(state.species);
+    if(profile.fineForageAction==='graze')actions.push('graze');
+    if(profile.fineForageAction==='hunt')actions.push('hunt');
     return actions;
   }
 
