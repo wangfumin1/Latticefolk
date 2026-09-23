@@ -274,6 +274,7 @@ test('evolution statistics include all newly configured wildlife species',()=>{
   assert.ok(stats.some(entry=>entry.species==='goat'));
   assert.ok(stats.some(entry=>entry.species==='wolf'));
   assert.ok(stats.some(entry=>entry.species==='badger'));
+  assert.ok(stats.some(entry=>entry.species==='lynx'));
 });
 
 
