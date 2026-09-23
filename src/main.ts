@@ -1497,7 +1497,7 @@ class TownGame {
       return true;
     }
 
-    if(domestication.command==='feed'){
+    if(domestication.command==='graze'){
       if(s.hunger<28){
         animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
         s.currentAction='rest';
@@ -2738,7 +2738,7 @@ class TownGame {
     if(!domestication.ownerId){
       add(i18n.t('domestication.feed'),()=>this.feedWildlifeForTaming(animal));
     }else if(domestication.ownerId==='player'){
-      for(const command of ['follow','stay','feed','none'] as WildlifeDomesticationCommand[]){
+      for(const command of ['follow','stay','graze','none'] as WildlifeDomesticationCommand[]){
         add(i18n.t(`domestication.command.${command}`),()=>this.commandOwnedWildlife(animal,command));
       }
       add(i18n.t(domestication.breedingAllowed?'domestication.disableBreeding':'domestication.enableBreeding'),()=>this.toggleOwnedWildlifeBreeding(animal));
