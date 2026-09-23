@@ -259,4 +259,10 @@ Sheep demonstrates a domesticated-form bovid by reusing existing open-plains and
 
 Form is code-owned and read-only to Decision Providers. Jev may see `organismForm` and movement mode when choosing among already-legal candidates, but cannot change form or implement taming. God View observes form without affecting simulation, preserving the out-of-world observer invariant.
 
-The next organism step is **reusable movement/controller execution semantics**: make movement modes drive bounded gait/acceleration/turn/controller behavior and later physics integration. Authoritative domestication ownership/taming/commands should then be modeled as explicit persisted individual state, separate from species form. Physics, damage, resources and population accounting remain deterministic authority.
+## Implemented milestone: first reusable movement controller
+
+Movement modes now execute bounded fine dynamics rather than acting only as scalar tags. Each mode supplies acceleration, deceleration, turn rate and waypoint arrival radius. A pure deterministic controller ramps speed, computes a braking envelope, clamps large frame deltas and turns the rendered heading at the configured rate. Heavy grazers therefore build speed and turn more slowly than cursorial or dexterous animals even when the target path is identical.
+
+This is deliberately a pre-physics controller. Translation stays exactly on pathfinder-approved segments; heading integration is visual and cannot steer an animal around the path into blocked geometry. Fine runtime `moveSpeed` and `heading` are transient. Persisted `WildlifeState.position` remains authoritative, so unloading/reloading can reset momentum without changing world truth or conservation.
+
+The next organism step is **reusable gait/animation/controller execution plus authoritative domestication state**. Movement modes can later select gait/animation/controller behavior and eventually feed a dedicated physics layer. Ownership, tame progress, commands and breeding permissions should be modeled separately as persisted individual state. Physics, damage, resources and population accounting remain deterministic authority.
