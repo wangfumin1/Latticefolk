@@ -327,16 +327,22 @@ const subtractPhenotype=(a:WildlifePhenotype,b:WildlifePhenotype):WildlifePhenot
 
 function phenotypeStats(records:WildlifeLineageRecord[]):WildlifePhenotypeStats {
   const observed=records.filter(record=>record.phenotypeAtBirth);
+  const comparable=observed.filter(record=>record.phenotypeProvenance!=='legacy_upgrade');
   const average=phenotypeMean(observed);
-  const breeders=observed.filter(record=>record.offspringCount>0);
+  const comparableAverage=phenotypeMean(comparable);
+  const breeders=comparable.filter(record=>record.offspringCount>0);
   const breederMean=phenotypeMean(breeders);
   return {
     sampleSize:observed.length,
+    comparableSamples:comparable.length,
+    birthTrackedSamples:observed.filter(record=>record.phenotypeProvenance==='birth').length,
+    founderSeedSamples:observed.filter(record=>record.phenotypeProvenance==='founder_seed').length,
+    legacyUpgradeSamples:observed.filter(record=>record.phenotypeProvenance==='legacy_upgrade').length,
     mean:average,
     variance:phenotypeVariance(observed,average),
-    trendPerGeneration:phenotypeTrend(observed),
+    trendPerGeneration:phenotypeTrend(comparable),
     breederMean,
-    breederDifferential:average&&breederMean?subtractPhenotype(breederMean,average):null
+    breederDifferential:comparableAverage&&breederMean?subtractPhenotype(breederMean,comparableAverage):null
   };
 }
 
