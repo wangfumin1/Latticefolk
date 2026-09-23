@@ -6,6 +6,7 @@ import type {
   NpcState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeMigrationEvent, WildlifeState, WildlifeTraits, WorldObjectState
 } from '../src/types.js';
 import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence } from '../src/world/evolution.js';
+import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
 
 type Row = Record<string, unknown>;
 
@@ -287,6 +288,11 @@ export class WorldPersistence {
     const snapshot=this.load();
     const asOfDay=snapshot?snapshot.meta.day+snapshot.meta.minuteOfDay/1440:undefined;
     return computeWildlifeCoevolutionEvidence(snapshot?.wildlifeLineage||[],asOfDay);
+  }
+
+  interactionNetwork() {
+    const snapshot=this.load();
+    return computeWildlifeInteractionNetwork(snapshot?.coarseChunks||[]);
   }
 
   stats() {
