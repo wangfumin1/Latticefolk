@@ -1,7 +1,7 @@
 import type {
   ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifeSpecies, WorldSeason
 } from '../types';
-import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePreySpecies } from './wildlifeSpecies.js';
+import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies } from './wildlifeSpecies.js';
 
 export interface WildlifeMigration {
   species: WildlifeSpecies;
@@ -380,9 +380,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     for(const preySpecies of wildlifePreySpecies(predatorSpecies)){
       const prey=populations.find(entry=>entry.species===preySpecies);
       if(!prey||prey.count<=0)continue;
-      const preference=predatorSpecies==='fox'
-        ?(preySpecies==='rabbit'?1:.22)
-        :(preySpecies==='deer'?.72:preySpecies==='goat'?.68:preySpecies==='boar'?.48:preySpecies==='rabbit'?.34:.08);
+      const preference=wildlifePredationPreference(predatorSpecies,preySpecies);
       const potential=predator.count*(predationRate[predatorSpecies]||0)*preference*dt;
       const kill=Math.min(prey.count,potential*Math.min(1,prey.count/Math.max(1,predator.count*2)));
       if(kill<=0)continue;
