@@ -60,6 +60,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},
       phenotypeAtBirth:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
       phenotypeAtDeath:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
+      phenotypeProvenance:'founder_seed',
       birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
       habitatExposure:{
@@ -106,6 +107,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtBirth?.behavior.forageDrive,1.06);
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtDeath?.morphology.legLength,1.04);
+  assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeProvenance,'founder_seed');
   assert.equal(loaded.wildlifeLineage?.[0]?.birthHabitat?.biome,'plains');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
@@ -134,6 +136,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   const persistedRabbitEvolution=store.evolutionStats().find(entry=>entry.species==='rabbit');
   assert.equal(persistedRabbitEvolution?.deaths,1);
   assert.equal(persistedRabbitEvolution?.phenotype.sampleSize,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.comparableSamples,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.founderSeedSamples,1);
   assert.equal(persistedRabbitEvolution?.phenotype.mean?.morphology.bodyLength,.96);
   const coevolution=store.coevolutionStats().find(entry=>entry.predatorSpecies==='fox'&&entry.preySpecies==='rabbit');
   assert.equal(coevolution?.bothSidesObserved,false);
@@ -198,6 +202,7 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
       entityId:'rabbit_child',species:'rabbit',motherId:'rabbit_mother',fatherId:'rabbit_father',
       birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
       phenotypeAtBirth:{morphology:{bodyLength:1.03,bodyHeight:.97,legLength:1.01,headScale:1,tailScale:1},behavior:{forageDrive:1.04,migrationDrive:1.06,riskTolerance:.95,recoveryDrive:1.02}},
+      phenotypeProvenance:'birth',
       birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
       habitatExposure:{
         observedDays:.5,habitatMean:{ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
@@ -218,6 +223,7 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   const migrated=store.load()?.wildlifeLineage?.[0];
   assert.equal(migrated?.origin,'reproduction');
   assert.equal(migrated?.phenotypeAtBirth?.morphology.bodyLength,1.03);
+  assert.equal(migrated?.phenotypeProvenance,'birth');
   assert.equal(migrated?.birthHabitat?.biome,'forest');
   assert.equal(migrated?.habitatExposure?.observedDays,.5);
   assert.equal(migrated?.habitatExposure?.lastBiome,'plains');
