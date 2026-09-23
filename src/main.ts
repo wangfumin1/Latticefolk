@@ -17,7 +17,7 @@ import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlife
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -1618,16 +1618,20 @@ class TownGame {
       case 'rest':
         s.energy=clamp(s.energy+24,0,100);break;
       case 'flee': {
-        const threatSpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        const threatLineage=s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId):undefined;
+        const threatSpecies=other?.state.species||threatLineage?.species;
+        const threatTraits=other?.state.traits||threatLineage?.traitsAtDeath||threatLineage?.traitsAtBirth;
         if(threatSpecies&&canWildlifePredate(threatSpecies,s.species)){
           const escaped=!other||other.removed||dist(s.position,other.state.position)>=6;
-          recordWildlifeFleeOutcome(this.ensureWildlifeLineage(s),threatSpecies,escaped);
+          recordWildlifeFleeOutcome(this.ensureWildlifeLineage(s),threatSpecies,escaped,s.traits,threatTraits);
           this.lineageEpoch++;
         }
         s.energy=clamp(s.energy-10,0,100);break;
       }
       case 'hunt': {
-        const preySpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        const preyLineage=s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId):undefined;
+        const preySpecies=other?.state.species||preyLineage?.species;
+        const preyTraits=other?.state.traits||preyLineage?.traitsAtDeath||preyLineage?.traitsAtBirth;
         if(preySpecies&&canWildlifePredate(s.species,preySpecies)){
           let hit=false,kill=false;
           if(other&&!other.removed&&dist(s.position,other.state.position)<=2.3){
@@ -1639,11 +1643,11 @@ class TownGame {
             hit=damage>0;
             kill=other.state.health<=0;
             if(hit){
-              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill);
+              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill,other.state.traits,s.traits);
               this.lineageEpoch++;
             }
           }
-          recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill);
+          recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill,s.traits,preyTraits);
           this.lineageEpoch++;
           if(kill&&other)this.removeWildlife(other,'predation');
         }
@@ -2003,6 +2007,22 @@ class TownGame {
 
   wildlifeName(species:WildlifeSpecies) {
     return i18n.t(`wildlife.${species}`);
+  }
+
+  renderPredationPairEvidence(pair:WildlifePredationPairPerformance) {
+    const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
+    const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
+    const generations=pair.generationTrend.filter(g=>g.attempts>0||g.terminalAttempts>0).slice(-3);
+    const generationText=generations.length
+      ?`<br>${i18n.t('evolution.generationTrend')} ${generations.map(g=>pair.role==='predator'
+        ?`G${g.generation} hit ${percent(g.successRate)} kill ${percent(g.terminalSuccessRate)} Δv ${trait(g.successTraitAdvantageMean.speed)}`
+        :`G${g.generation} escape ${percent(g.successRate)} survive ${percent(g.terminalSuccessRate)} Δv ${trait(g.successTraitAdvantageMean.speed)}`
+      ).join(' · ')}`
+      :'';
+    if(pair.role==='predator'){
+      return `<div class="evo-traits">${i18n.t('evolution.asPredator')} → ${this.escape(this.wildlifeName(pair.counterpartSpecies))} · hit ${pair.huntHits}/${pair.huntAttempts} (${percent(pair.huntHitRate)}) · kill ${pair.kills}/${pair.huntAttempts} (${percent(pair.huntKillRate)})<br>${i18n.t('evolution.traitMatch')} n=${pair.traitMatchAttempts} · attempt Δ speed ${trait(pair.attemptTraitAdvantageMean.speed)} / size ${trait(pair.attemptTraitAdvantageMean.size)} · hit Δ speed ${trait(pair.successTraitAdvantageMean.speed)} / size ${trait(pair.successTraitAdvantageMean.size)} · kill Δ speed ${trait(pair.terminalTraitAdvantageMean.speed)} / size ${trait(pair.terminalTraitAdvantageMean.size)}${generationText}</div>`;
+    }
+    return `<div class="evo-traits">${i18n.t('evolution.asPrey')} ← ${this.escape(this.wildlifeName(pair.counterpartSpecies))} · escape ${pair.successfulEscapes}/${pair.fleeAttempts} (${percent(pair.escapeRate)}) · survive ${pair.survivedAttacks}/${pair.attacksReceived} (${percent(pair.attackSurvivalRate)})<br>${i18n.t('evolution.traitMatch')} n=${pair.traitMatchAttempts} · flee Δ speed ${trait(pair.attemptTraitAdvantageMean.speed)} / wariness ${trait(pair.attemptTraitAdvantageMean.wariness)} · escape Δ speed ${trait(pair.successTraitAdvantageMean.speed)} / wariness ${trait(pair.successTraitAdvantageMean.wariness)} · survive Δ speed ${trait(pair.terminalTraitAdvantageMean.speed)} / wariness ${trait(pair.terminalTraitAdvantageMean.wariness)}${generationText}</div>`;
   }
 
   updateNpcs(dt:number) {
@@ -2607,10 +2627,7 @@ class TownGame {
         <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
         ${entry.realizedPredation.huntAttempts+entry.realizedPredation.fleeAttempts+entry.realizedPredation.attacksReceived>0?`
           <div><b>${i18n.t('evolution.realizedPredation')}</b> · ${i18n.t('evolution.huntOutcome')} ${entry.realizedPredation.huntHits}/${entry.realizedPredation.kills}/${entry.realizedPredation.huntAttempts} · ${i18n.t('evolution.escapeOutcome')} ${entry.realizedPredation.successfulEscapes}/${entry.realizedPredation.fleeAttempts} · ${i18n.t('evolution.attackSurvival')} ${entry.realizedPredation.survivedAttacks}/${entry.realizedPredation.attacksReceived}</div>
-          ${entry.realizedPredation.pairs.slice(0,4).map(pair=>pair.role==='predator'
-            ?`<div class="evo-traits">${i18n.t('evolution.asPredator')} → ${this.escape(this.wildlifeName(pair.counterpartSpecies))} · hit ${pair.huntHits}/${pair.huntAttempts} (${percent(pair.huntHitRate)}) · kill ${pair.kills}/${pair.huntAttempts} (${percent(pair.huntKillRate)}) · Δ speed ${pair.successTraitDifferential.speed>=0?'+':''}${trait(pair.successTraitDifferential.speed)} · size ${pair.successTraitDifferential.size>=0?'+':''}${trait(pair.successTraitDifferential.size)}</div>`
-            :`<div class="evo-traits">${i18n.t('evolution.asPrey')} ← ${this.escape(this.wildlifeName(pair.counterpartSpecies))} · escape ${pair.successfulEscapes}/${pair.fleeAttempts} (${percent(pair.escapeRate)}) · survive ${pair.survivedAttacks}/${pair.attacksReceived} (${percent(pair.attackSurvivalRate)}) · Δ speed ${pair.successTraitDifferential.speed>=0?'+':''}${trait(pair.successTraitDifferential.speed)} · wariness ${pair.successTraitDifferential.wariness>=0?'+':''}${trait(pair.successTraitDifferential.wariness)}</div>`
-          ).join('')}
+          ${entry.realizedPredation.pairs.slice(0,4).map(pair=>this.renderPredationPairEvidence(pair)).join('')}
         `:''}
         ${entry.biomeSelection.slice(0,3).map(selection=>`
           <div class="evo-selection">
