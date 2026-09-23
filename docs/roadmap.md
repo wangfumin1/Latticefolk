@@ -44,7 +44,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Richer wildlife disease transmission: environmental, same-species, cross-species, and migration-import pressure are explicit deterministic state and enter fine/lifetime observability.
 - ✅ Fitness-by-habitat evidence: lifetime competition, seasonal suitability, and disease exposure are associated with reproduction, offspring count, lifespan, exposure bands, and within-band trait differentials without causal overclaiming.
 - ✅ Additional wildlife/predators: goat and wolf participate in coarse carrying capacity, competition, seasonality, disease, trophic predation, fine lifecycle/behavior, migration, and evolution observability through centralized species semantics.
-- ⏭ Deeper ecology: broaden the food web, predator pressure/adaptation evidence, competition structure, disease ecology, and organism morphology/behavior diversity.
+- ✅ Predator-pressure adaptation evidence: actual predator density and shared prey preference produce species-specific pressure that is recorded in lifetime habitat exposure and correlated with reproduction/offspring/lifespan using the existing right-censored evidence layer.
+- ⏭ Deeper ecology: add predator/prey-specialization evidence, richer multi-species food webs and niches, stronger disease ecology, and organism morphology/behavior diversity.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.
