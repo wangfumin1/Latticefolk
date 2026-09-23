@@ -48,7 +48,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Predator/prey specialization evidence: predator→prey pair pressure is persisted and fine lifetime exposure tracks time-weighted source pressure with separate source-observation coverage; God View exposes source-specific reproduction/offspring/lifespan associations and breeder trait differentials.
 - ✅ Realized hunting/escape evidence: deterministic fine action resolution durably records hunt attempts/hits/kills, flee attempts/successes, attacks received/survived attacks, counterpart-species breakdown and God View success rates/trait differentials.
 - ✅ Predator/prey trait matching and generation trends: realized fine interactions record actor-minus-counterpart trait deltas with explicit paired-snapshot coverage; God View exposes attempt/success/terminal advantages and recent generation outcome rates.
-- ⏭ Deeper ecology: add multi-generation coevolution evidence linking realized interaction performance to inherited trait trends, richer food webs/niches, stronger disease ecology, and organism morphology/behavior diversity.
+- ✅ Multi-generation coevolution evidence: each realized predator→prey pair exposes independent predator/prey generation series, performance and reproductive trends, inherited trait trends, and cross-generation associations without aligning generation numbers across species.
+- ⏭ Deeper ecology: expand pair evidence into richer multi-species interaction networks/niches, stronger disease ecology, and organism morphology/behavior diversity.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.
