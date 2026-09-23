@@ -100,3 +100,7 @@ Goat and wolf use the same existing persistence structures as rabbit/deer/boar/f
 ### Predator-pressure evidence persistence
 
 Species-specific predator pressure is stored inside each coarse chunk's JSON state as `wildlifePredatorPressure`, and each coarse wildlife population may cache its current `predatorPressure`. New lineage birth/death habitat snapshots and lifetime exposure JSON may also carry optional `predatorPressure`. These are additive JSON fields in existing tables, so no SQLite schema migration is required and older saves remain loadable.
+
+### Predator-source specialization persistence
+
+`wildlifePredatorPressure` coarse JSON may now include a sorted `pairs` array containing deterministic predator→prey pressure decomposition. Older snapshots without `pairs` remain valid; runtime treats that field as absent legacy evidence until ecology recomputes it. Fine lineage `habitat_exposure_json` may include `predatorSourceMean` and `predatorSourceObservedDays`. Keeping source-observation coverage separate prevents historical exposure recorded before source decomposition from being interpreted as zero predator pressure. These are additive JSON fields in existing tables, so no SQLite schema migration is required.
