@@ -269,3 +269,22 @@ test('wolf participates in coarse predation without creating or negative prey po
   assert.ok(preyAfter<preyBefore);
   assert.ok(populations.every(pop=>pop.count>=0));
 });
+
+
+test('legacy four-species coarse wildlife state upgrades additively to goat and wolf',()=>{
+  const a=chunk('chunk_legacy_species',19,{biome:'forest',ecology:82,water:72,food:70});
+  a.wildlife=[
+    {species:'rabbit',count:7,carryingCapacity:10,health:80,diseaseLoad:2},
+    {species:'deer',count:3,carryingCapacity:6,health:78,diseaseLoad:1},
+    {species:'boar',count:2,carryingCapacity:5,health:76,diseaseLoad:0},
+    {species:'fox',count:1,carryingCapacity:3,health:82,diseaseLoad:1}
+  ];
+  const populations=ensureWildlifePopulations(a);
+  assert.equal(populations.find(p=>p.species==='rabbit')?.count,7);
+  assert.equal(populations.find(p=>p.species==='deer')?.count,3);
+  assert.equal(populations.find(p=>p.species==='boar')?.count,2);
+  assert.equal(populations.find(p=>p.species==='fox')?.count,1);
+  assert.ok(populations.some(p=>p.species==='goat'));
+  assert.ok(populations.some(p=>p.species==='wolf'));
+  assert.equal(populations.length,6);
+});
