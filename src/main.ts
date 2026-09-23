@@ -13,6 +13,7 @@ import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEn
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage } from './world/wildlifeSpecies';
+import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -1616,18 +1617,38 @@ class TownGame {
       }
       case 'rest':
         s.energy=clamp(s.energy+24,0,100);break;
-      case 'flee':
+      case 'flee': {
+        const threatSpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        if(threatSpecies&&canWildlifePredate(threatSpecies,s.species)){
+          const escaped=!other||other.removed||dist(s.position,other.state.position)>=6;
+          recordWildlifeFleeOutcome(this.ensureWildlifeLineage(s),threatSpecies,escaped);
+          this.lineageEpoch++;
+        }
         s.energy=clamp(s.energy-10,0,100);break;
-      case 'hunt':
-        if(other&&canWildlifePredate(s.species,other.state.species)&&dist(s.position,other.state.position)<=2.3){
-          const damage=wildlifePredationDamage(s.species,other.state.species);
-          const relief=wildlifeHungerRelief(s.species,other.state.species);
-          other.state.health=clamp(other.state.health-damage,0,100);
-          s.hunger=clamp(s.hunger-relief,0,100);
-          s.energy=clamp(s.energy-(s.species==='wolf'?10:8),0,100);
-          if(other.state.health<=0)this.removeWildlife(other,'predation');
+      }
+      case 'hunt': {
+        const preySpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        if(preySpecies&&canWildlifePredate(s.species,preySpecies)){
+          let hit=false,kill=false;
+          if(other&&!other.removed&&dist(s.position,other.state.position)<=2.3){
+            const damage=wildlifePredationDamage(s.species,other.state.species);
+            const relief=wildlifeHungerRelief(s.species,other.state.species);
+            other.state.health=clamp(other.state.health-damage,0,100);
+            s.hunger=clamp(s.hunger-relief,0,100);
+            s.energy=clamp(s.energy-(s.species==='wolf'?10:8),0,100);
+            hit=damage>0;
+            kill=other.state.health<=0;
+            if(hit){
+              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill);
+              this.lineageEpoch++;
+            }
+          }
+          recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill);
+          this.lineageEpoch++;
+          if(kill&&other)this.removeWildlife(other,'predation');
         }
         break;
+      }
       case 'seek_mate':
         if(other&&dist(s.position,other.state.position)<=2.5)this.tryWildlifeReproduction(animal,other);
         break;
