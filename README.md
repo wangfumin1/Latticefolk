@@ -64,6 +64,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Realized hunting/escape evidence**: deterministic fine action resolution records hunt attempts/hits/kills, flee attempts/successes and attack survival per counterpart species; Decision Providers choose intent but never declare success.
 - **Predator/prey trait matching**: actual interacting individuals contribute actor-minus-counterpart trait deltas for hunt, escape and attack-survival evidence, with explicit paired-snapshot coverage and generation-level outcome trends.
 - **Multi-generation coevolution evidence**: each realized predator→prey pair keeps independent predator-side and prey-side generation series connecting interaction success, reproductive outcomes and inherited trait trends; sparse/constant evidence remains non-estimable rather than becoming a false zero.
+- **Multi-species interaction network**: predation, symmetric niche competition, and directed cross-species disease transmission are exposed as one derived network with per-kind coverage and node in/out pressure; active God View stays bounded while the server can summarize the persisted discovered world.
 - **Fitness-by-habitat evidence**: lifetime competition, seasonal suitability, disease exposure, and predator pressure are associated with reproduction, offspring count and lifespan using right-censored reproductive eligibility; God View shows total/eligible/dead samples, low/mid/high cohorts and trait differentials without causal overclaiming.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
@@ -201,7 +202,7 @@ The current development order is intentionally architecture-first:
 7. richer production chains and interactions;
 8. ✅ first ecological food-web/lifecycle systems;
 9. ✅ durable lineage, evolution statistics, and biome-linked selection observability;
-10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission, fitness-by-habitat, goat/wolf food-web expansion, predator-pressure observability, predator/prey specialization, realized hunting/escape evidence, predator/prey trait matching, and multi-generation coevolution evidence; next: richer multi-species interaction networks/ecology, then a fuller physics layer.
+10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission, fitness-by-habitat, goat/wolf food-web expansion, predator-pressure observability, predator/prey specialization, realized hunting/escape evidence, predator/prey trait matching, multi-generation coevolution evidence, and multi-species interaction-network observability; next: network-linked niche/disease selection and richer ecology, then a fuller physics layer.
 
 See the living [Roadmap](docs/roadmap.md) and [Long-term vision](docs/long-term-vision.md). Documentation is updated as each implementation stage lands.
 
