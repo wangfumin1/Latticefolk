@@ -58,4 +58,12 @@ Call optimization currently includes:
 
 Runtime budget edits are available at `GET/PUT /api/decision/budget`. In production, writes are disabled unless `ALLOW_RUNTIME_ADMIN=true`.
 
+## Wildlife domestication boundary
+
+Individual domestication is authoritative simulation state, not a Decision Provider output. Tame progress, resource cost, ownership, owner commands, breeding permission, ownership inheritance and owner-follow transfer conservation are resolved locally by deterministic rules.
+
+Wildlife requests may expose the bounded domestication fields `tameProgress`, `command` and `breedingAllowed` as read-only context. Owner identity is deliberately withheld: before a wildlife request leaves the client, `ownerId` is removed from the decision copy, so a player-owned sheep does not put the `player` entity into Jev perception. Active owner-command animals are excluded from wildlife provider batches entirely; commands are executed by the simulation. An owned animal with command `none` can use the ordinary provider/fallback path, but the provider still cannot mutate any domestication field.
+
+This is also part of the God View invariant. Switching to God View suspends player-follow paths because the player entity no longer exists in the simulated world. The observer UI may display persisted ownership facts, but neither the God camera nor observer presence becomes a candidate target.
+
 This follows the provider-neutral project rule: the simulation remains authoritative and token/cost policy stays in the Jev adapter rather than leaking into world-state types.
