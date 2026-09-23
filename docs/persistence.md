@@ -124,3 +124,7 @@ Full competition and cross-species disease pair decompositions are stored as add
 ### Network-linked source exposure persistence
 
 Competition and disease source histories extend the existing lineage `habitat_exposure_json` with optional `competitionSourceMean` / `competitionSourceObservedDays` and `diseaseSourceMean` / `diseaseSourceObservedDays`. No SQLite schema migration is required. Older lineage JSON without these fields remains valid and source-level statistics treat the missing history as unknown rather than zero. The underlying competition/disease pair decompositions remain additive fields inside coarse chunk JSON.
+
+### Source generation evidence derivation
+
+Competition/disease generation evidence adds no persistence schema. It is derived on demand from existing durable lineage fields: generation, birth/death timing, offspring count, traits, and the source-specific means/observation days already stored in `habitat_exposure_json`. The persisted world day/minute supplies reproductive eligibility for living individuals. Older rows lacking source exposure remain valid and simply contribute no source-generation evidence.

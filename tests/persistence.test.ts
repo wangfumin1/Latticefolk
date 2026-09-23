@@ -129,6 +129,17 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(coevolution?.prey.generations[0]?.terminalAttempts,2);
   assert.equal(coevolution?.prey.generations[0]?.eligibleIndividuals,1,'dead juveniles are completed reproductive outcomes');
 
+  const interactionSelection=store.interactionSelectionStats();
+  const competitionPair=interactionSelection.find(entry=>entry.kind==='competition'&&entry.speciesA==='deer'&&entry.speciesB==='rabbit');
+  assert.equal(competitionPair?.bothSidesObserved,false);
+  const rabbitCompetition=competitionPair?.sideA.targetSpecies==='rabbit'?competitionPair.sideA:competitionPair?.sideB;
+  assert.equal(rabbitCompetition?.generationsObserved,1);
+  assert.equal(rabbitCompetition?.generations[0]?.pressureMean,22);
+  const diseasePair=interactionSelection.find(entry=>entry.kind==='disease'&&entry.speciesA==='fox'&&entry.speciesB==='rabbit');
+  const rabbitDisease=diseasePair?.sideA.targetSpecies==='rabbit'?diseasePair.sideA:diseasePair?.sideB;
+  assert.equal(diseasePair?.bothSidesObserved,false);
+  assert.equal(rabbitDisease?.generations[0]?.pressureMean,9);
+
   store.save({...snapshot,wildlifeLineage:[],wildlifeTransfers:[]});
   const afterSparseSave=store.load();
   assert.equal(afterSparseSave?.wildlifeLineage?.length,1,'lineage archive must not be pruned by later sparse snapshots');

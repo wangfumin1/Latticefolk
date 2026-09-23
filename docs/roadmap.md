@@ -51,7 +51,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Multi-generation coevolution evidence: each realized predator→prey pair exposes independent predator/prey generation series, performance and reproductive trends, inherited trait trends, and cross-generation associations without aligning generation numbers across species.
 - ✅ Multi-species interaction-network observability: full predation, niche-competition and cross-species disease pair evidence is aggregated with per-kind legacy-safe coverage, node in/out pressure and bounded active-window God View summaries; persisted discovered-world evidence is available through `/api/world/interactions`.
 - ✅ Network-linked niche/disease source evidence: fine lineage exposure records time-weighted competition counterpart pressure and incoming disease-source pressure only while observed; source-specific right-censored associations expose reproduction, offspring, lifespan and breeder trait differences.
-- ⏭ Deeper ecology: add generation-level competition/disease source trends and reciprocal multi-species selection evidence, then expand species/niches and organism morphology/behavior diversity.
+- ✅ Generation-level competition/disease source evidence: every observed source relationship exposes independent target←source generation series with pressure, breeder/offspring/lifespan and trait trends; bilateral species-pair evidence is shown without synchronizing generation numbers or claiming reciprocal causation.
+- ⏭ Deeper ecology: combine multiple simultaneous interaction exposures into stronger multi-factor selection evidence, then expand species/niches and organism morphology/behavior diversity.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

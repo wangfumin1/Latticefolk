@@ -1,9 +1,10 @@
 import type {
   WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeFitnessBandStats, WildlifeFitnessExposureDimension,
-  WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot, WildlifeInteractionSourceFitnessStats,
+  WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
+  WildlifeInteractionSourceFitnessStats, WildlifeInteractionSourceGenerationCohort, WildlifeInteractionSourceGenerationEvidence,
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
-  WildlifeRealizedPredationStats, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
 import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
@@ -464,6 +465,122 @@ function interactionSourceFitness(
     }
   }
   return results.sort((a,b)=>a.kind.localeCompare(b.kind)||b.pressureMean-a.pressureMean||b.sampleSize-a.sampleSize||a.sourceSpecies.localeCompare(b.sourceSpecies));
+}
+
+type SourceEvidenceKind='competition'|'disease';
+
+const sourceExposureConfig=(kind:SourceEvidenceKind)=>kind==='competition'
+  ?{meanKey:'competitionSourceMean' as const,daysKey:'competitionSourceObservedDays' as const}
+  :{meanKey:'diseaseSourceMean' as const,daysKey:'diseaseSourceObservedDays' as const};
+
+function interactionSourceGenerationSide(
+  all:WildlifeLineageRecord[],
+  kind:SourceEvidenceKind,
+  targetSpecies:WildlifeSpecies,
+  sourceSpecies:WildlifeSpecies,
+  asOfDay?:number
+):WildlifeInteractionSourceGenerationEvidence {
+  const config=sourceExposureConfig(kind);
+  const samples=all.map(record=>{
+    if(record.species!==targetSpecies)return undefined;
+    const exposure=record.habitatExposure;
+    const value=exposure?.[config.meanKey]?.[sourceSpecies];
+    const sourceDays=Number(exposure?.[config.daysKey]||0);
+    return sourceDays>=MIN_LIFETIME_EXPOSURE_DAYS&&typeof value==='number'&&Number.isFinite(value)
+      ?{record,value,sourceDays}
+      :undefined;
+  }).filter((x):x is {record:WildlifeLineageRecord;value:number;sourceDays:number}=>Boolean(x));
+
+  const generationIds=[...new Set(samples.map(sample=>sample.record.generation))].sort((a,b)=>a-b);
+  const generations:WildlifeInteractionSourceGenerationCohort[]=generationIds.map(generation=>{
+    const cohort=samples.filter(sample=>sample.record.generation===generation);
+    const records=cohort.map(sample=>sample.record);
+    const eligible=cohort.filter(sample=>fitnessOutcomeEligible(sample.record,asOfDay));
+    const eligibleRecords=eligible.map(sample=>sample.record);
+    const breeders=eligibleRecords.filter(record=>record.offspringCount>0);
+    const deadSamples=cohort.filter(sample=>sample.record.deathDay!==undefined);
+    const dead=deadSamples.map(sample=>sample.record);
+    const average=traitMean(records);
+    const breederAverage=breeders.length?traitMean(breeders):average;
+    return {
+      generation,
+      observedIndividuals:records.length,
+      eligibleIndividuals:eligibleRecords.length,
+      deaths:dead.length,
+      pressureMean:mean(cohort.map(sample=>sample.value)),
+      breeders:breeders.length,
+      breederRate:eligibleRecords.length?breeders.length/eligibleRecords.length:0,
+      offspringMean:mean(eligibleRecords.map(record=>record.offspringCount)),
+      lifespanMean:mean(dead.map(record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))),
+      lifespanPressureMean:mean(deadSamples.map(sample=>sample.value)),
+      traitMean:average,
+      breederTraitMean:breederAverage,
+      selectionDifferential:breeders.length?subtractTraits(breederAverage,average):zeroTraits()
+    };
+  });
+
+  const eligibleGenerations=generations.filter(entry=>entry.eligibleIndividuals>0);
+  const lifespanGenerations=generations.filter(entry=>entry.deaths>0);
+  const pressureTraitAssociation=nullableTraitEvidence(trait=>correlation(
+    generations.map(entry=>entry.pressureMean),
+    generations.map(entry=>entry.traitMean[trait])
+  ));
+  const traitTrendPerGeneration=nullableTraitEvidence(trait=>slope(
+    generations.map(entry=>entry.generation),
+    generations.map(entry=>entry.traitMean[trait])
+  ));
+
+  return {
+    kind,targetSpecies,sourceSpecies,generations,
+    generationsObserved:generations.length,
+    observedIndividuals:samples.length,
+    pressureTrendPerGeneration:slope(generations.map(entry=>entry.generation),generations.map(entry=>entry.pressureMean)),
+    breederTrendPerGeneration:slope(eligibleGenerations.map(entry=>entry.generation),eligibleGenerations.map(entry=>entry.breederRate)),
+    offspringTrendPerGeneration:slope(eligibleGenerations.map(entry=>entry.generation),eligibleGenerations.map(entry=>entry.offspringMean)),
+    lifespanTrendPerGeneration:slope(lifespanGenerations.map(entry=>entry.generation),lifespanGenerations.map(entry=>entry.lifespanMean)),
+    traitTrendPerGeneration,
+    pressureBreederAssociation:correlation(eligibleGenerations.map(entry=>entry.pressureMean),eligibleGenerations.map(entry=>entry.breederRate)),
+    pressureOffspringAssociation:correlation(eligibleGenerations.map(entry=>entry.pressureMean),eligibleGenerations.map(entry=>entry.offspringMean)),
+    pressureLifespanAssociation:correlation(lifespanGenerations.map(entry=>entry.lifespanPressureMean),lifespanGenerations.map(entry=>entry.lifespanMean)),
+    pressureTraitAssociation
+  };
+}
+
+export function computeWildlifeInteractionSelectionEvidence(
+  records:Iterable<WildlifeLineageRecord>,
+  asOfDay?:number
+):WildlifeReciprocalInteractionSelectionEvidence[] {
+  const all=[...records];
+  const keys=new Map<string,{kind:SourceEvidenceKind;speciesA:WildlifeSpecies;speciesB:WildlifeSpecies}>();
+
+  for(const record of all){
+    const exposure=record.habitatExposure;
+    if(!exposure)continue;
+    for(const kind of ['competition','disease'] as const){
+      const config=sourceExposureConfig(kind);
+      if(Number(exposure[config.daysKey]||0)<MIN_LIFETIME_EXPOSURE_DAYS)continue;
+      const means=exposure[config.meanKey];
+      if(!means)continue;
+      for(const [source,value] of Object.entries(means) as Array<[WildlifeSpecies,number]>){
+        if(source===record.species||!Number.isFinite(value)||value<=0)continue;
+        const [speciesA,speciesB]=[record.species,source].sort() as [WildlifeSpecies,WildlifeSpecies];
+        keys.set(`${kind}:${speciesA}:${speciesB}`,{kind,speciesA,speciesB});
+      }
+    }
+  }
+
+  return [...keys.values()].map(({kind,speciesA,speciesB})=>{
+    const sideA=interactionSourceGenerationSide(all,kind,speciesA,speciesB,asOfDay);
+    const sideB=interactionSourceGenerationSide(all,kind,speciesB,speciesA,asOfDay);
+    return {
+      kind,speciesA,speciesB,
+      bothSidesObserved:sideA.generationsObserved>0&&sideB.generationsObserved>0,
+      sideA,sideB
+    };
+  }).sort((a,b)=>{
+    const activity=(entry:WildlifeReciprocalInteractionSelectionEvidence)=>entry.sideA.observedIndividuals+entry.sideB.observedIndividuals;
+    return a.kind.localeCompare(b.kind)||activity(b)-activity(a)||a.speciesA.localeCompare(b.speciesA)||a.speciesB.localeCompare(b.speciesB);
+  });
 }
 
 function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPredationStats {

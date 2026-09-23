@@ -566,6 +566,49 @@ export interface WildlifeInteractionSourceFitnessStats {
   selectionDifferential: WildlifeTraits;
 }
 
+export interface WildlifeInteractionSourceGenerationCohort {
+  generation: number;
+  observedIndividuals: number;
+  eligibleIndividuals: number;
+  deaths: number;
+  pressureMean: number;
+  breeders: number;
+  breederRate: number;
+  offspringMean: number;
+  lifespanMean: number;
+  lifespanPressureMean: number;
+  traitMean: WildlifeTraits;
+  breederTraitMean: WildlifeTraits;
+  selectionDifferential: WildlifeTraits;
+}
+
+export interface WildlifeInteractionSourceGenerationEvidence {
+  kind: 'competition' | 'disease';
+  targetSpecies: WildlifeSpecies;
+  sourceSpecies: WildlifeSpecies;
+  generations: WildlifeInteractionSourceGenerationCohort[];
+  generationsObserved: number;
+  observedIndividuals: number;
+  pressureTrendPerGeneration: number | null;
+  breederTrendPerGeneration: number | null;
+  offspringTrendPerGeneration: number | null;
+  lifespanTrendPerGeneration: number | null;
+  traitTrendPerGeneration: WildlifeNullableTraits;
+  pressureBreederAssociation: number | null;
+  pressureOffspringAssociation: number | null;
+  pressureLifespanAssociation: number | null;
+  pressureTraitAssociation: WildlifeNullableTraits;
+}
+
+export interface WildlifeReciprocalInteractionSelectionEvidence {
+  kind: 'competition' | 'disease';
+  speciesA: WildlifeSpecies;
+  speciesB: WildlifeSpecies;
+  bothSidesObserved: boolean;
+  sideA: WildlifeInteractionSourceGenerationEvidence;
+  sideB: WildlifeInteractionSourceGenerationEvidence;
+}
+
 export interface WildlifePredationGenerationPerformance {
   generation: number;
   observedIndividuals: number;

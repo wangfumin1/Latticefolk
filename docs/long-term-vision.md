@@ -190,3 +190,11 @@ The multi-species network now connects back to durable individual history. Named
 Source-specific exposure can be compared with reproduction, offspring count, lifespan and breeder trait differentials using the same eligibility/censoring rules as other evolution evidence. Legacy history without pair decomposition remains explicitly unknown. The system still avoids automatic causal claims: source-specific associations are measurements that can support later hypotheses about competition-mediated or disease-mediated selection.
 
 The next step is to move these source signals into generation-level evidence analogous to predator/prey coevolution, so competition and disease relationships can be inspected across generations and reciprocal species responses before adding larger food webs, new niches and morphology genes.
+
+## Implemented milestone: reciprocal source generation evidence
+
+Competition and disease source history now has a generational dimension. For any observed species relationship, Latticefolk can follow how source pressure, reproduction, offspring output, lifespan and inherited traits change across generations on each species side independently. If both sides have evidence they are displayed together, but the simulation does not assume their generation numbers describe the same time cohort.
+
+This closes the first evidence loop for predation, competition and disease: community-level interaction edges can be traced into individual lifetime exposure and then into generation-level reproductive and trait histories. The result remains a measurement system rather than an automatic causal-selection engine.
+
+The next step is multi-factor selection evidence. Real animals experience several pressures at once—multiple competitors, disease sources, predators, habitat quality and season—so stronger inference needs to distinguish correlated exposures rather than evaluating every edge only in isolation. That work should remain deterministic/observational and preserve explicit sample coverage before morphology genes and larger ecological networks are added.
