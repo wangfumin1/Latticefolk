@@ -96,3 +96,7 @@ Fitness-by-habitat statistics are intentionally **not** stored as authoritative 
 ### Species expansion compatibility
 
 Goat and wolf use the same existing persistence structures as rabbit/deer/boar/fox. Their coarse populations are stored in `coarse_chunks.state_json`; named fine individuals use the existing fine wildlife arrays; ancestry, traits, deaths, offspring, habitat exposure and migration history remain in `wildlife_lineage`; identity-preserving transfers remain in `wildlife_transfers`. Because species names are additive values inside existing JSON-backed state, no SQLite schema migration is required for this expansion. Older saves that contain only the original four species are normalized deterministically when coarse wildlife populations are next ensured.
+
+### Predator-pressure evidence persistence
+
+Species-specific predator pressure is stored inside each coarse chunk's JSON state as `wildlifePredatorPressure`, and each coarse wildlife population may cache its current `predatorPressure`. New lineage birth/death habitat snapshots and lifetime exposure JSON may also carry optional `predatorPressure`. These are additive JSON fields in existing tables, so no SQLite schema migration is required and older saves remain loadable.
