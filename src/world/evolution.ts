@@ -5,7 +5,7 @@ import type {
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
   WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorOutcomeStabilityEvidence, WildlifeMultifactorSelectionEvidence,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
-  WildlifeNullablePhenotype, WildlifePhenotype, WildlifePhenotypeBiomeFitnessStats, WildlifePhenotypeStats, WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeNullablePhenotype, WildlifeOrganismGenome, WildlifeOrganismGenomeStats, WildlifeOrganismGenomeVector, WildlifePhenotype, WildlifePhenotypeBiomeFitnessStats, WildlifePhenotypeStats, WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
 import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
@@ -343,6 +343,126 @@ function phenotypeStats(records:WildlifeLineageRecord[]):WildlifePhenotypeStats 
     trendPerGeneration:phenotypeTrend(comparable),
     breederMean,
     breederDifferential:comparableAverage&&breederMean?subtractPhenotype(breederMean,comparableAverage):null
+  };
+}
+
+const genomeObserved=(records:WildlifeLineageRecord[])=>
+  records.filter((record):record is WildlifeLineageRecord&{organismGenomeAtBirth:WildlifeOrganismGenome}=>Boolean(record.organismGenomeAtBirth));
+
+const genomeMean=(records:WildlifeLineageRecord[]):WildlifeOrganismGenomeVector|null=>{
+  const values=genomeObserved(records).map(record=>record.organismGenomeAtBirth);
+  if(!values.length)return null;
+  return {
+    material:{
+      hueShift:mean(values.map(value=>value.material.hueShift)),
+      lightnessShift:mean(values.map(value=>value.material.lightnessShift)),
+      accentShift:mean(values.map(value=>value.material.accentShift))
+    },
+    niche:{
+      grass:mean(values.map(value=>value.niche.grass)),
+      shrub:mean(values.map(value=>value.niche.shrub)),
+      fruit:mean(values.map(value=>value.niche.fruit)),
+      crop:mean(values.map(value=>value.niche.crop))
+    },
+    locomotion:{
+      stride:mean(values.map(value=>value.locomotion.stride)),
+      endurance:mean(values.map(value=>value.locomotion.endurance))
+    }
+  };
+};
+
+const genomeVariance=(records:WildlifeLineageRecord[],average:WildlifeOrganismGenomeVector|null):WildlifeOrganismGenomeVector|null=>{
+  if(!average)return null;
+  const values=genomeObserved(records).map(record=>record.organismGenomeAtBirth);
+  if(!values.length)return null;
+  return {
+    material:{
+      hueShift:variance(values.map(value=>value.material.hueShift),average.material.hueShift),
+      lightnessShift:variance(values.map(value=>value.material.lightnessShift),average.material.lightnessShift),
+      accentShift:variance(values.map(value=>value.material.accentShift),average.material.accentShift)
+    },
+    niche:{
+      grass:variance(values.map(value=>value.niche.grass),average.niche.grass),
+      shrub:variance(values.map(value=>value.niche.shrub),average.niche.shrub),
+      fruit:variance(values.map(value=>value.niche.fruit),average.niche.fruit),
+      crop:variance(values.map(value=>value.niche.crop),average.niche.crop)
+    },
+    locomotion:{
+      stride:variance(values.map(value=>value.locomotion.stride),average.locomotion.stride),
+      endurance:variance(values.map(value=>value.locomotion.endurance),average.locomotion.endurance)
+    }
+  };
+};
+
+const genomeSlope=(records:WildlifeLineageRecord[],value:(genome:WildlifeOrganismGenome)=>number)=>{
+  const observed=genomeObserved(records);
+  if(observed.length<2||new Set(observed.map(record=>record.generation)).size<2)return 0;
+  const x=observed.map(record=>record.generation),mx=mean(x);
+  const denom=x.reduce((sum,generation)=>sum+(generation-mx)**2,0);
+  if(denom<=0)return 0;
+  const y=observed.map(record=>value(record.organismGenomeAtBirth)),my=mean(y);
+  return observed.reduce((sum,record,index)=>sum+(record.generation-mx)*(y[index]!-my),0)/denom;
+};
+
+const genomeTrend=(records:WildlifeLineageRecord[]):WildlifeOrganismGenomeVector|null=>{
+  const observed=genomeObserved(records);
+  if(observed.length<2||new Set(observed.map(record=>record.generation)).size<2)return null;
+  return {
+    material:{
+      hueShift:genomeSlope(records,value=>value.material.hueShift),
+      lightnessShift:genomeSlope(records,value=>value.material.lightnessShift),
+      accentShift:genomeSlope(records,value=>value.material.accentShift)
+    },
+    niche:{
+      grass:genomeSlope(records,value=>value.niche.grass),
+      shrub:genomeSlope(records,value=>value.niche.shrub),
+      fruit:genomeSlope(records,value=>value.niche.fruit),
+      crop:genomeSlope(records,value=>value.niche.crop)
+    },
+    locomotion:{
+      stride:genomeSlope(records,value=>value.locomotion.stride),
+      endurance:genomeSlope(records,value=>value.locomotion.endurance)
+    }
+  };
+};
+
+const subtractGenome=(a:WildlifeOrganismGenomeVector,b:WildlifeOrganismGenomeVector):WildlifeOrganismGenomeVector=>({
+  material:{
+    hueShift:a.material.hueShift-b.material.hueShift,
+    lightnessShift:a.material.lightnessShift-b.material.lightnessShift,
+    accentShift:a.material.accentShift-b.material.accentShift
+  },
+  niche:{
+    grass:a.niche.grass-b.niche.grass,
+    shrub:a.niche.shrub-b.niche.shrub,
+    fruit:a.niche.fruit-b.niche.fruit,
+    crop:a.niche.crop-b.niche.crop
+  },
+  locomotion:{
+    stride:a.locomotion.stride-b.locomotion.stride,
+    endurance:a.locomotion.endurance-b.locomotion.endurance
+  }
+});
+
+function organismGenomeStats(records:WildlifeLineageRecord[]):WildlifeOrganismGenomeStats {
+  const observed=genomeObserved(records);
+  const comparable=observed.filter(record=>record.organismGenomeProvenance!=='legacy_upgrade');
+  const average=genomeMean(observed);
+  const comparableAverage=genomeMean(comparable);
+  const breeders=comparable.filter(record=>record.offspringCount>0);
+  const breederMean=genomeMean(breeders);
+  return {
+    family:observed[0]?.organismGenomeAtBirth.family??null,
+    sampleSize:observed.length,
+    comparableSamples:comparable.length,
+    birthTrackedSamples:observed.filter(record=>record.organismGenomeProvenance==='birth').length,
+    founderSeedSamples:observed.filter(record=>record.organismGenomeProvenance==='founder_seed').length,
+    legacyUpgradeSamples:observed.filter(record=>record.organismGenomeProvenance==='legacy_upgrade').length,
+    mean:average,
+    variance:genomeVariance(observed,average),
+    trendPerGeneration:genomeTrend(comparable),
+    breederMean,
+    breederDifferential:comparableAverage&&breederMean?subtractGenome(breederMean,comparableAverage):null
   };
 }
 
@@ -1489,6 +1609,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       traitTrendPerGeneration:traitTrend(speciesRecords),
       phenotype:phenotypeStats(speciesRecords),
       phenotypeBiomeFitness:phenotypeBiomeFitness(speciesRecords,asOfDay),
+      organismGenome:organismGenomeStats(speciesRecords),
       mortality,
       reproductiveSuccess:mean(breeders.map(record=>record.offspringCount)),
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
