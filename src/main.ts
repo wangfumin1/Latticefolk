@@ -10,14 +10,14 @@ import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from '.
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
-import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage } from './world/wildlifeSpecies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -185,6 +185,9 @@ class TownGame {
   evolutionCacheEpoch = -1;
   evolutionCacheDay = -1;
   evolutionCache: WildlifeEvolutionStats[] = [];
+  coevolutionCacheEpoch = -1;
+  coevolutionCacheDay = -1;
+  coevolutionCache: WildlifeCoevolutionPairEvidence[] = [];
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
@@ -2005,8 +2008,43 @@ class TownGame {
     return this.evolutionCache;
   }
 
+  coevolutionStatistics() {
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const eligibilityDay=Math.floor(currentDay);
+    if(this.coevolutionCacheEpoch!==this.lineageEpoch||this.coevolutionCacheDay!==eligibilityDay){
+      this.coevolutionCache=computeWildlifeCoevolutionEvidence(this.wildlifeLineage.values(),currentDay);
+      this.coevolutionCacheEpoch=this.lineageEpoch;
+      this.coevolutionCacheDay=eligibilityDay;
+    }
+    return this.coevolutionCache;
+  }
+
   wildlifeName(species:WildlifeSpecies) {
     return i18n.t(`wildlife.${species}`);
+  }
+
+  renderCoevolutionSideEvidence(side:WildlifeCoevolutionSideEvidence) {
+    const number=(value:number|null,digits=2)=>value===null?'—':value.toFixed(digits);
+    const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
+    const trait=(value:number|null)=>value===null?'—':value.toFixed(2);
+    const recent=side.generations.filter(g=>g.attempts>0||g.terminalAttempts>0).slice(-4);
+    const roleLabel=side.role==='predator'?i18n.t('evolution.asPredator'):i18n.t('evolution.asPrey');
+    const performanceLabel=side.role==='predator'?'hit':'escape';
+    const terminalLabel=side.role==='predator'?'kill':'survive';
+    return `<div class="evo-traits"><b>${roleLabel} · ${this.escape(this.wildlifeName(side.species))}</b> · G=${side.generationsObserved} · n=${side.interactingIndividuals}<br>
+      Δ/G ${performanceLabel} ${number(side.performanceTrendPerGeneration)} · ${terminalLabel} ${number(side.terminalPerformanceTrendPerGeneration)} · breeder ${number(side.breederTrendPerGeneration)} · offspring ${number(side.offspringTrendPerGeneration)}<br>
+      r(${performanceLabel}, breeder) ${number(side.performanceBreederAssociation)} · r(${terminalLabel}, breeder) ${number(side.terminalPerformanceBreederAssociation)} · r(${performanceLabel}, offspring) ${number(side.performanceOffspringAssociation)} · r(${terminalLabel}, offspring) ${number(side.terminalPerformanceOffspringAssociation)}<br>
+      trait Δ/G speed ${trait(side.traitTrendPerGeneration.speed)} · size ${trait(side.traitTrendPerGeneration.size)} · fertility ${trait(side.traitTrendPerGeneration.fertility)} · wariness ${trait(side.traitTrendPerGeneration.wariness)}<br>
+      r(${performanceLabel}, speed) ${trait(side.performanceTraitAssociation.speed)} · r(${terminalLabel}, size) ${trait(side.terminalPerformanceTraitAssociation.size)} · r(${performanceLabel}, wariness) ${trait(side.performanceTraitAssociation.wariness)}
+      ${recent.length?`<br>${i18n.t('evolution.generationTrend')} ${recent.map(g=>`G${g.generation} ${performanceLabel} ${percent(g.successRate)} ${terminalLabel} ${percent(g.terminalSuccessRate)} breeder ${g.eligibleIndividuals?percent(g.breederRate):'—'} off ${g.eligibleIndividuals?g.offspringMean.toFixed(2):'—'}`).join(' · ')}`:''}
+    </div>`;
+  }
+
+  renderCoevolutionPairEvidence(pair:WildlifeCoevolutionPairEvidence) {
+    return `<div class="evo-lineage"><b>${i18n.t('evolution.coevolutionEvidence')} · ${this.escape(this.wildlifeName(pair.predatorSpecies))} → ${this.escape(this.wildlifeName(pair.preySpecies))}</b> · ${pair.bothSidesObserved?i18n.t('evolution.bilateralEvidence'):i18n.t('evolution.partialEvidence')}
+      ${this.renderCoevolutionSideEvidence(pair.predator)}
+      ${this.renderCoevolutionSideEvidence(pair.prey)}
+    </div>`;
   }
 
   renderPredationPairEvidence(pair:WildlifePredationPairPerformance) {
@@ -2612,6 +2650,7 @@ class TownGame {
     }
     ui.evolution.classList.remove('hidden');
     const stats=this.evolutionStatistics();
+    const coevolution=this.coevolutionStatistics();
     const active=stats.filter(entry=>entry.historicalPopulation>0);
     const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
     const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
@@ -2684,7 +2723,8 @@ class TownGame {
       .sort((a,b)=>b.offspringCount-a.offspringCount||b.generation-a.generation).slice(0,4);
     const leaders=top.length?`<div class="evo-lineage"><b>${i18n.t('evolution.topLineages')}</b><div>${top.map(record=>`${this.escape(record.entityId)} · ${this.escape(this.wildlifeName(record.species))} · G${record.generation} · ${record.offspringCount}`).join('<br>')}</div></div>`:'';
 
-    ui.evolution.innerHTML=`<div class="evo-title">${i18n.t('evolution.title')} <span>${this.wildlifeLineage.size}</span></div>${cards||`<div class="small">${i18n.t('evolution.empty')}</div>`}${ancestry}${leaders}`;
+    const coevolutionCards=coevolution.slice(0,6).map(pair=>this.renderCoevolutionPairEvidence(pair)).join('');
+    ui.evolution.innerHTML=`<div class="evo-title">${i18n.t('evolution.title')} <span>${this.wildlifeLineage.size}</span></div>${cards||`<div class="small">${i18n.t('evolution.empty')}</div>`}${coevolutionCards}${ancestry}${leaders}`;
   }
 
   worldSeason(){

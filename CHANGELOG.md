@@ -36,6 +36,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Predator/prey specialization evidence with persisted predator→prey pressure pairs, time-weighted per-predator lifetime exposure, separate source-observation coverage for legacy-safe statistics, and source-specific reproduction/offspring/lifespan associations plus breeder trait differentials.
 - Realized predation outcome evidence from deterministic fine action resolution: durable hunt attempts/hits/kills, flee attempts/successful escapes, attacks received/survived attacks, counterpart-species breakdown, God View success rates, and lineage trait differentials.
 - Predator/prey trait matching from actual fine interaction counterparts, with legacy-safe paired-trait coverage counts, attack-survival matching, attempt/success/terminal trait advantages, per-generation realized outcome trends, and God View evidence.
+- Multi-generation predator/prey coevolution evidence with independent predator-side and prey-side generation series, realized performance/reproductive/trait trends, cross-generation associations, God View cards, and `/api/world/evolution` output without assuming synchronized generation numbers.
 
 ### Changed
 

@@ -166,3 +166,11 @@ Realized predation evidence now measures the actual trait relationship between i
 Generation-level summaries expose whether realized pair outcomes and their associated trait advantages change across generations, while explicit paired-snapshot coverage prevents pre-feature historical attempts from being misread as zero trait advantage. God View surfaces those raw rates and deltas without turning them into an automatic causal selection verdict.
 
 The next step is multi-generation coevolution evidence: connect realized interaction performance, lineage reproductive success and inherited trait trends on both sides of a predator/prey relationship. Later morphology genes and movement constraints can feed the same evidence path rather than creating a separate evolutionary subsystem.
+
+## Implemented milestone: multi-generation predator/prey coevolution evidence
+
+Predator/prey evidence now reaches across generations without pretending different species share synchronized generation numbers. Each realized pair exposes two independent histories: predator generations with hunting performance, reproductive outcomes and inherited traits, and prey generations with escape/survival performance, reproductive outcomes and inherited traits.
+
+Within each species-side history, Latticefolk can measure whether interaction performance trends with generation, whether breeder rate or offspring output changes with performance, and whether trait means move alongside realized outcomes. Sparse or invariant series remain non-estimable. Bilateral evidence means both sides have actual interaction history; a one-sided archive remains explicitly partial.
+
+This still does not label a relationship as “coevolving” automatically. The purpose is to provide durable, inspectable evidence from which stronger selection and reciprocal-adaptation tests can later be built. The next ecology direction is to extend the same evidence model beyond one predator/prey pair into richer interaction networks, competition niches, disease-mediated selection and eventually morphology-constrained organisms.

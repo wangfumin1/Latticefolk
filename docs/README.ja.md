@@ -33,6 +33,7 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 - predator/prey specialization エビデンス。coarse は predator→prey 圧力の出所分解を保持し、fine lineage は実際の観測期間だけ捕食者別の時間加重圧力を蓄積します。旧履歴に出所データがなければ 0 ではなく未知として扱い、God View では fox/wolf など捕食者別に繁殖・子孫数・寿命との関連と breeder trait differential を確認できます。
 - realized hunting/escape エビデンス。deterministic fine action resolution の時だけ hunt attempt/hit/kill、flee attempt/success、attack received/survived を記録し、counterpart species 別にも保持します。Decision Provider は hunt/flee と合法な対象を選ぶだけで、成功を宣言できません。God View では命中率・撃破率・逃走成功率・被攻撃生存率と成功個体の trait differential を確認できます。
 - predator/prey trait matching。実際に相互作用した個体どうしの actor−counterpart trait delta を記録し、predator は attempt/hit/kill、prey は flee attempt/escape と attack/survival で分けて集計します。paired-snapshot count を独立保持するため、古い realized outcome に trait snapshot がなくても 0 と解釈したり新しい平均を薄めたりしません。God View では最近の世代ごとの成功率と形質優位も確認できます。
+- multi-generation coevolution evidence。実際の predator→prey pair ごとに predator-side と prey-side の generation series を独立保持し、異種間で同じ generation 番号を同期 cohort とみなしません。各側で realized performance、繁殖可能個体の breeder rate、offspring mean、trait mean、実際の trait advantage を結び付けます。相関は少なくとも 3 世代点、trend は 2 点以上を必要とし、証拠不足や無分散は推定不能のままです。自動的に共進化とは断定しません。
 - wildlife food web の拡張。ヤギとオオカミを追加し、species list、predator/prey graph、捕食 preference/damage/hunger relief を simulation-owned 定義として集中管理します。両種は coarse carrying capacity / competition / season / disease / trophic flow、fine hunt/flee / lifecycle / migration、evolution observability に同じ規則で参加します。
 
 ## 起動
@@ -57,7 +58,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → ✅ seasonal movement → ✅ richer disease transmission → ✅ fitness-by-habitat → ✅ goat/wolf + shared predator graph → ✅ predator-pressure adaptation observability → ✅ predator/prey specialization evidence → ✅ realized hunting/escape evidence → ✅ predator/prey trait matching + generation trends → **multi-generation coevolution evidence / richer multi-species ecology** → physics。
+✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → ✅ seasonal movement → ✅ richer disease transmission → ✅ fitness-by-habitat → ✅ goat/wolf + shared predator graph → ✅ predator-pressure adaptation observability → ✅ predator/prey specialization evidence → ✅ realized hunting/escape evidence → ✅ predator/prey trait matching + generation trends → ✅ multi-generation coevolution evidence → **richer multi-species interaction networks / niches / disease selection** → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 

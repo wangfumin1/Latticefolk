@@ -112,3 +112,7 @@ Species-specific predator pressure is stored inside each coarse chunk's JSON sta
 ### Trait-matching evidence persistence
 
 Predator/prey trait matching extends the existing `predation_outcomes_json`; it does not add another SQLite column or table. Optional accumulated trait-delta sums and explicit paired-snapshot counts are stored inside predator/prey counterpart counters. Old JSON without these fields remains valid. Statistics use the explicit match counts rather than the total legacy hunt/flee/contact counts, so historical outcomes that lack counterpart trait snapshots remain valid realized outcomes but do not dilute trait-matching means.
+
+### Coevolution evidence derivation
+
+Multi-generation coevolution evidence is derived from the existing durable `wildlife_lineage` rows, including `predation_outcomes_json`, parent/reproductive fields, generations and birth/death timing. No new SQLite table or column is required. The server derives reproduction eligibility using the persisted world day/minute from `world_meta`, so `/api/world/evolution` and browser-side God View apply the same life-history semantics. Because the pair statistics are derived, old saves automatically gain the new evidence when sufficient lineage/outcome history exists.
