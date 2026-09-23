@@ -12,6 +12,14 @@ export interface WildlifeMovementProfile {
   speedMultiplier:number;
   energyMultiplier:number;
   fastActionMultiplier:number;
+  /** Fine-controller acceleration in world units / second². */
+  acceleration:number;
+  /** Fine-controller braking in world units / second². */
+  deceleration:number;
+  /** Visual heading turn limit in radians / second. Translation remains path-constrained. */
+  turnRate:number;
+  /** Distance at which a path waypoint is considered reached. */
+  arrivalRadius:number;
 }
 
 export type WildlifeOrganismForm='wild'|'domesticated'|'monster';
