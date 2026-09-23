@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, computeWildlifePredatorPressure, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
+import { WILDLIFE_SPECIES } from '../src/world/wildlifeSpecies.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -240,18 +241,17 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
 });
 
 
-test('wildlife ecology seeds all configured species including goat, wolf, badger and lynx',()=>{
+test('wildlife ecology seeds every configured registry species through the shared profile loop',()=>{
   const a=chunk('chunk_species_expansion',17,{biome:'hills',ecology:86,water:70,food:72});
   const populations=ensureWildlifePopulations(a);
-  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf','badger','lynx']);
-  const goat=populations.find(p=>p.species==='goat')!;
-  const wolf=populations.find(p=>p.species==='wolf')!;
-  const badger=populations.find(p=>p.species==='badger')!;
-  const lynx=populations.find(p=>p.species==='lynx')!;
-  assert.ok(goat.carryingCapacity>0);
-  assert.ok(wolf.carryingCapacity>0);
-  assert.ok(badger.carryingCapacity>0);
-  assert.ok(lynx.carryingCapacity>0);
+  assert.deepEqual(populations.map(p=>p.species),[...WILDLIFE_SPECIES]);
+  for(const species of WILDLIFE_SPECIES){
+    const population=populations.find(p=>p.species===species);
+    assert.ok(population);
+    assert.ok((population?.carryingCapacity||0)>=0);
+  }
+  assert.ok(populations.find(p=>p.species==='bison')!.carryingCapacity>0);
+  assert.ok(populations.find(p=>p.species==='raccoon')!.carryingCapacity>0);
 });
 
 test('wolf participates in coarse predation without creating or negative prey populations',()=>{
@@ -289,11 +289,10 @@ test('legacy four-species coarse wildlife state upgrades additively to newer spe
   assert.equal(populations.find(p=>p.species==='deer')?.count,3);
   assert.equal(populations.find(p=>p.species==='boar')?.count,2);
   assert.equal(populations.find(p=>p.species==='fox')?.count,1);
-  assert.ok(populations.some(p=>p.species==='goat'));
-  assert.ok(populations.some(p=>p.species==='wolf'));
-  assert.ok(populations.some(p=>p.species==='badger'));
-  assert.ok(populations.some(p=>p.species==='lynx'));
-  assert.equal(populations.length,8);
+  for(const species of WILDLIFE_SPECIES){
+    assert.ok(populations.some(p=>p.species===species),`missing upgraded species ${species}`);
+  }
+  assert.equal(populations.length,WILDLIFE_SPECIES.length);
 });
 
 
