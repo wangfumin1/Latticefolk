@@ -35,6 +35,9 @@ test('wildlife species profiles cover every configured species and biome/season 
     assert.equal(profile.capabilities.includes('hunt'),Object.keys(profile.prey).length>0);
     assert.ok(profile.movement.speedMultiplier>.8&&profile.movement.speedMultiplier<1.2);
     assert.ok(profile.movement.energyMultiplier>.8&&profile.movement.energyMultiplier<1.2);
+    assert.ok(['wild','domesticated','monster'].includes(profile.form.kind));
+    assert.ok(profile.form.settlementSensitivity>=0);
+    assert.ok(profile.form.dangerSensitivity>=0);
   }
 });
 
@@ -114,5 +117,31 @@ test('organism family ownership is a single species-profile source for composed 
   assert.equal(wildlifeSpeciesProfile('lynx').organismFamily,'felid');
   assert.equal(wildlifeSpeciesProfile('bison').organismFamily,'bovid');
   assert.equal(wildlifeSpeciesProfile('raccoon').organismFamily,'procyonid');
+});
+
+test('sheep validates domesticated form composition without claiming ownership state',()=>{
+  const sheep=wildlifeSpeciesProfile('sheep');
+  assert.equal(sheep.archetypeId,'domesticated_open_plains_grazer');
+  assert.equal(sheep.form.kind,'domesticated');
+  assert.equal(sheep.organismFamily,'bovid');
+  assert.equal(sheep.trophicRole,'herbivore');
+  assert.ok(sheep.capabilities.includes('graze'));
+  assert.ok(!sheep.capabilities.includes('hunt'));
+  assert.ok(sheep.form.settlementSensitivity<1);
+  assert.ok(canWildlifePredate('wolf','sheep'));
+  assert.ok(WILDLIFE_HERBIVORES.includes('sheep'));
+});
+
+test('warg validates monster form composition through the shared predator graph',()=>{
+  const warg=wildlifeSpeciesProfile('warg');
+  assert.equal(warg.archetypeId,'monster_temperate_large_canid');
+  assert.equal(warg.form.kind,'monster');
+  assert.equal(warg.organismFamily,'canid');
+  assert.equal(warg.trophicRole,'predator');
+  assert.ok(warg.capabilities.includes('hunt'));
+  assert.ok(warg.form.dangerSensitivity<1);
+  assert.ok(canWildlifePredate('warg','sheep'));
+  assert.ok(canWildlifePredate('warg','deer'));
+  assert.ok(WILDLIFE_PREDATORS.includes('warg'));
 });
 
