@@ -18,6 +18,7 @@ test('founder organism genomes are deterministic and family constrained',()=>{
   assert.deepEqual(a,b);
   assert.equal(a.family,'lagomorph');
   assert.equal(wildlifeOrganismFamily('wolf'),'canid');
+  assert.equal(wildlifeOrganismFamily('lynx'),'felid');
   assert.notDeepEqual(a,c);
   assert.ok(a.locomotion.stride>=.90&&a.locomotion.stride<=1.12);
   assert.ok(a.material.hueShift>=-.035&&a.material.hueShift<=.035);
@@ -87,3 +88,16 @@ test('individual niche genes redistribute only legal plant-use axes',()=>{
   const wolfWeights=wildlifeGenomePlantForageWeights('wolf',wolf);
   assert.deepEqual(wolfWeights,{grass:0,shrub:0,fruit:0,crop:0},'predator genome cannot invent herbivory');
 });
+
+test('felid family genome remains predator-safe and bounded for archetype-composed lynx',()=>{
+  const lynx=founderWildlifeOrganismGenome('lynx','lynx_founder');
+  assert.equal(lynx.family,'felid');
+  assert.ok(lynx.locomotion.stride>=.94&&lynx.locomotion.stride<=1.12);
+  assert.ok(lynx.locomotion.endurance>=.92&&lynx.locomotion.endurance<=1.10);
+  assert.ok(lynx.material.lightnessShift>=-.075&&lynx.material.lightnessShift<=.075);
+  assert.deepEqual(wildlifeGenomePlantForageWeights('lynx',lynx),{grass:0,shrub:0,fruit:0,crop:0});
+  const locomotion=wildlifeOrganismLocomotion(lynx);
+  assert.ok(locomotion.speedMultiplier>=.94&&locomotion.speedMultiplier<=1.06);
+  assert.ok(locomotion.energyMultiplier>=.92&&locomotion.energyMultiplier<=1.08);
+});
+
