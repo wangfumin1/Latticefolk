@@ -128,3 +128,7 @@ Competition and disease source histories extend the existing lineage `habitat_ex
 ### Source generation evidence derivation
 
 Competition/disease generation evidence adds no persistence schema. It is derived on demand from existing durable lineage fields: generation, birth/death timing, offspring count, traits, and the source-specific means/observation days already stored in `habitat_exposure_json`. The persisted world day/minute supplies reproductive eligibility for living individuals. Older rows lacking source exposure remain valid and simply contribute no source-generation evidence.
+
+### Multi-factor selection evidence derivation
+
+Multi-factor models add no persisted table or field. They are derived on demand from existing source-specific means/observation days in `habitat_exposure_json`, together with offspring and death history already stored in `wildlife_lineage`. Legacy rows missing one source family remain missing for that feature and are excluded from outcome-specific complete-case matrices rather than imputed as zero.
