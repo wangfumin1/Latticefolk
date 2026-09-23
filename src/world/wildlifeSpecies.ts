@@ -1,9 +1,18 @@
-import type { ChunkBiome, WildlifeAction, WildlifeSpecies, WorldSeason } from '../types.js';
-import { composeWildlifeSpeciesProfile, WILDLIFE_BODY_ARCHETYPES, WILDLIFE_ECOLOGY_ARCHETYPES, WILDLIFE_HABITAT_ARCHETYPES, WILDLIFE_LIFE_ARCHETYPES } from './wildlifeArchetypes.js';
+import type { ChunkBiome, WildlifeAction, WildlifeOrganismFamily, WildlifeSpecies, WorldSeason } from '../types.js';
+import { composeWildlifeSpeciesProfile, WILDLIFE_BODY_ARCHETYPES, WILDLIFE_CAPABILITY_ARCHETYPES, WILDLIFE_ECOLOGY_ARCHETYPES, WILDLIFE_HABITAT_ARCHETYPES, WILDLIFE_LIFE_ARCHETYPES, WILDLIFE_MOVEMENT_ARCHETYPES } from './wildlifeArchetypes.js';
 
 export type WildlifeTrophicRole='herbivore'|'omnivore'|'predator';
 export type WildlifeNicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
-export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe'|'ear_tufts';
+export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe'|'ear_tufts'|'face_mask'|'ringed_tail';
+export type WildlifeMovementMode='generalist'|'cursorial'|'ambush'|'sturdy'|'heavy_grazer'|'dexterous_forager';
+
+export interface WildlifeMovementProfile {
+  id:string;
+  mode:WildlifeMovementMode;
+  speedMultiplier:number;
+  energyMultiplier:number;
+  fastActionMultiplier:number;
+}
 
 export interface WildlifeLifeHistoryProfile {
   adultAge:number;
@@ -39,6 +48,9 @@ export interface WildlifeMorphologyProfile {
 export interface WildlifeSpeciesProfile {
   /** Optional reusable archetype definition used to compose this species profile. */
   archetypeId?:string;
+  organismFamily:WildlifeOrganismFamily;
+  movement:WildlifeMovementProfile;
+  capabilities:readonly WildlifeAction[];
   trophicRole:WildlifeTrophicRole;
   biomeAffinity:Record<ChunkBiome,number>;
   seasonalBiomeAffinity:Record<WorldSeason,Record<ChunkBiome,number>>;
@@ -62,10 +74,11 @@ export interface WildlifeSpeciesProfile {
 const zeroPlants:Record<'grass'|'shrub'|'fruit'|'crop',number>={grass:0,shrub:0,fruit:0,crop:0};
 const seasonal=(spring:Record<ChunkBiome,number>,summer:Record<ChunkBiome,number>,autumn:Record<ChunkBiome,number>,winter:Record<ChunkBiome,number>)=>({spring,summer,autumn,winter});
 
-export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger','lynx'];
+export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger','lynx','bison','raccoon'];
 
 export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesProfile>={
   rabbit:{
+    organismFamily:'lagomorph',movement:WILDLIFE_MOVEMENT_ARCHETYPES.generalist,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.grazer.actions,
     trophicRole:'herbivore',
     biomeAffinity:{plains:1,forest:.82,hills:.65,wetlands:.72,dryland:.35},
     seasonalBiomeAffinity:seasonal(
@@ -85,6 +98,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     prey:{}
   },
   deer:{
+    organismFamily:'cervid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.cursorial,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.grazer.actions,
     trophicRole:'herbivore',
     biomeAffinity:{plains:.72,forest:1,hills:.82,wetlands:.55,dryland:.28},
     seasonalBiomeAffinity:seasonal(
@@ -104,6 +118,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     prey:{}
   },
   boar:{
+    organismFamily:'suiform',movement:WILDLIFE_MOVEMENT_ARCHETYPES.sturdy,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.forager.actions,
     trophicRole:'herbivore',
     biomeAffinity:{plains:.68,forest:1,hills:.62,wetlands:.84,dryland:.25},
     seasonalBiomeAffinity:seasonal(
@@ -123,6 +138,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     prey:{}
   },
   goat:{
+    organismFamily:'caprine',movement:WILDLIFE_MOVEMENT_ARCHETYPES.cursorial,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.grazer.actions,
     trophicRole:'herbivore',
     biomeAffinity:{plains:.62,forest:.52,hills:1,wetlands:.30,dryland:.76},
     seasonalBiomeAffinity:seasonal(
@@ -142,6 +158,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     prey:{}
   },
   fox:{
+    organismFamily:'canid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.cursorial,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.predatorForager.actions,
     trophicRole:'predator',
     biomeAffinity:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48},
     seasonalBiomeAffinity:seasonal(
@@ -160,6 +177,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     prey:{rabbit:{preference:1,damage:100,hungerRelief:48},deer:{preference:.22,damage:45,hungerRelief:30}}
   },
   wolf:{
+    organismFamily:'canid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.cursorial,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.predatorForager.actions,
     trophicRole:'predator',
     biomeAffinity:{plains:.68,forest:1,hills:.94,wetlands:.46,dryland:.44},
     seasonalBiomeAffinity:seasonal(
@@ -182,10 +200,12 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
       goat:{preference:.68,damage:86,hungerRelief:50},
       fox:{preference:.08,damage:72,hungerRelief:24},
       badger:{preference:.14,damage:65,hungerRelief:20},
-      lynx:{preference:.12,damage:68,hungerRelief:22}
+      lynx:{preference:.12,damage:68,hungerRelief:22},
+      raccoon:{preference:.10,damage:72,hungerRelief:22}
     }
   },
   badger:{
+    organismFamily:'mustelid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.sturdy,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.omnivoreForager.actions,
     trophicRole:'omnivore',
     biomeAffinity:{plains:.62,forest:.92,hills:.84,wetlands:.70,dryland:.38},
     seasonalBiomeAffinity:seasonal(
@@ -209,12 +229,34 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     habitat:WILDLIFE_HABITAT_ARCHETYPES.temperateForestHills,
     ecology:WILDLIFE_ECOLOGY_ARCHETYPES.mediumAmbushPredator,
     body:WILDLIFE_BODY_ARCHETYPES.mediumFelid,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.ambush,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.predatorForager,
     life:WILDLIFE_LIFE_ARCHETYPES.mediumSolitaryPredator,
     prey:{
       rabbit:{preference:.88,damage:100,hungerRelief:44},
       goat:{preference:.32,damage:58,hungerRelief:36},
-      deer:{preference:.18,damage:46,hungerRelief:30}
+      deer:{preference:.18,damage:46,hungerRelief:30},
+      raccoon:{preference:.16,damage:70,hungerRelief:24}
     }
+  }),
+  bison:composeWildlifeSpeciesProfile({
+    id:'open_plains_large_grazer',
+    habitat:WILDLIFE_HABITAT_ARCHETYPES.openPlains,
+    ecology:WILDLIFE_ECOLOGY_ARCHETYPES.largeGrazer,
+    body:WILDLIFE_BODY_ARCHETYPES.largeBovid,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.heavyGrazer,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.grazer,
+    life:WILDLIFE_LIFE_ARCHETYPES.largeHerdHerbivore
+  }),
+  raccoon:composeWildlifeSpeciesProfile({
+    id:'forest_wetland_small_omnivore',
+    habitat:WILDLIFE_HABITAT_ARCHETYPES.forestWetlandEdge,
+    ecology:WILDLIFE_ECOLOGY_ARCHETYPES.smallOpportunisticOmnivore,
+    body:WILDLIFE_BODY_ARCHETYPES.smallMaskedForager,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.dexterousForager,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.omnivoreForager,
+    life:WILDLIFE_LIFE_ARCHETYPES.smallGeneralistOmnivore,
+    prey:{rabbit:{preference:.16,damage:44,hungerRelief:20}}
   })
 };
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, computeWildlifePredatorPressure, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
+import { WILDLIFE_SPECIES } from '../src/world/wildlifeSpecies.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -240,18 +241,17 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
 });
 
 
-test('wildlife ecology seeds all configured species including goat, wolf, badger and lynx',()=>{
+test('wildlife ecology seeds every configured registry species through the shared profile loop',()=>{
   const a=chunk('chunk_species_expansion',17,{biome:'hills',ecology:86,water:70,food:72});
   const populations=ensureWildlifePopulations(a);
-  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf','badger','lynx']);
-  const goat=populations.find(p=>p.species==='goat')!;
-  const wolf=populations.find(p=>p.species==='wolf')!;
-  const badger=populations.find(p=>p.species==='badger')!;
-  const lynx=populations.find(p=>p.species==='lynx')!;
-  assert.ok(goat.carryingCapacity>0);
-  assert.ok(wolf.carryingCapacity>0);
-  assert.ok(badger.carryingCapacity>0);
-  assert.ok(lynx.carryingCapacity>0);
+  assert.deepEqual(populations.map(p=>p.species),[...WILDLIFE_SPECIES]);
+  for(const species of WILDLIFE_SPECIES){
+    const population=populations.find(p=>p.species===species);
+    assert.ok(population);
+    assert.ok((population?.carryingCapacity||0)>=0);
+  }
+  assert.ok(populations.find(p=>p.species==='bison')!.carryingCapacity>0);
+  assert.ok(populations.find(p=>p.species==='raccoon')!.carryingCapacity>0);
 });
 
 test('wolf participates in coarse predation without creating or negative prey populations',()=>{
@@ -289,11 +289,10 @@ test('legacy four-species coarse wildlife state upgrades additively to newer spe
   assert.equal(populations.find(p=>p.species==='deer')?.count,3);
   assert.equal(populations.find(p=>p.species==='boar')?.count,2);
   assert.equal(populations.find(p=>p.species==='fox')?.count,1);
-  assert.ok(populations.some(p=>p.species==='goat'));
-  assert.ok(populations.some(p=>p.species==='wolf'));
-  assert.ok(populations.some(p=>p.species==='badger'));
-  assert.ok(populations.some(p=>p.species==='lynx'));
-  assert.equal(populations.length,8);
+  for(const species of WILDLIFE_SPECIES){
+    assert.ok(populations.some(p=>p.species===species),`missing upgraded species ${species}`);
+  }
+  assert.equal(populations.length,WILDLIFE_SPECIES.length);
 });
 
 
@@ -414,5 +413,51 @@ test('lynx habitat suitability is inherited from reusable temperate forest-hills
   const dryland=chunk('chunk_lynx_dry',28,{biome:'dryland',ecology:84,food:72,water:70,danger:18});
   ensureWildlifePopulations(forest);ensureWildlifePopulations(dryland);
   assert.ok(seasonalHabitatSuitability(forest,'lynx',61)>seasonalHabitatSuitability(dryland,'lynx',61));
+});
+
+test('bison coarse ecology inherits open-plains large-grazer habitat and plant flow',()=>{
+  const plains=chunk('chunk_bison_plains',29,{biome:'plains',ecology:90,water:78,food:74});
+  const forest=chunk('chunk_bison_forest',30,{biome:'forest',ecology:90,water:78,food:74});
+  plains.plants={grass:82,shrub:55,fruit:30,crop:28};
+  forest.plants={grass:82,shrub:55,fruit:30,crop:28};
+  ensureWildlifePopulations(plains);ensureWildlifePopulations(forest);
+  assert.ok(seasonalHabitatSuitability(plains,'bison',31)>seasonalHabitatSuitability(forest,'bison',31));
+
+  for(const pop of plains.wildlife!){pop.count=0;pop.diseaseLoad=0;}
+  const bison=plains.wildlife!.find(pop=>pop.species==='bison')!;
+  bison.count=Math.max(2,bison.carryingCapacity*.7);
+  const grassBefore=plains.plants.grass;
+  for(let i=0;i<5;i++)simulateWildlife(plains,20,'clear',31);
+  assert.ok((plains.trophicFlux?.herbivory||0)>0);
+  assert.ok(plains.plants.grass<grassBefore);
+  assert.equal(plains.trophicFlux?.predation,0);
+});
+
+test('raccoon coarse ecology combines fruit forage and rabbit predation through shared profile loops',()=>{
+  const a=chunk('chunk_raccoon_omnivore',31,{biome:'wetlands',ecology:88,water:88,food:72});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){pop.count=0;pop.diseaseLoad=0;}
+  const rabbit=populations.find(pop=>pop.species==='rabbit')!;
+  const raccoon=populations.find(pop=>pop.species==='raccoon')!;
+  rabbit.count=Math.max(5,rabbit.carryingCapacity*.7);
+  raccoon.count=Math.max(1,raccoon.carryingCapacity*.7);
+  a.plants={grass:62,shrub:70,fruit:82,crop:36};
+  const control=structuredClone(a);
+  control.id='chunk_raccoon_control';
+  const controlRaccoon=control.wildlife!.find(pop=>pop.species==='raccoon')!;
+  const controlRabbit=control.wildlife!.find(pop=>pop.species==='rabbit')!;
+  controlRaccoon.count=0;
+  const fruitBefore=a.plants.fruit;
+  const pressure=computeWildlifePredatorPressure(a,populations);
+  assert.ok((pressure.speciesPressure.rabbit||0)>0);
+  assert.ok((pressure.pairs||[]).some(pair=>pair.predatorSpecies==='raccoon'&&pair.preySpecies==='rabbit'));
+  for(let i=0;i<6;i++){
+    simulateWildlife(a,20,'clear',45);
+    simulateWildlife(control,20,'clear',45);
+  }
+  assert.ok((a.trophicFlux?.herbivory||0)>0);
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(a.plants.fruit<fruitBefore);
+  assert.ok(rabbit.count<controlRabbit.count,'raccoon predation should suppress rabbit growth relative to the no-raccoon control');
 });
 

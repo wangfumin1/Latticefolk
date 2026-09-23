@@ -28,6 +28,13 @@ test('wildlife species profiles cover every configured species and biome/season 
     assert.equal(wildlifeLifeHistory(species),profile.lifeHistory);
     assert.ok(profile.fine.maxFine>=1);
     assert.ok(profile.morphology.bodyX>0&&profile.morphology.bodyY>0&&profile.morphology.bodyZ>0);
+    assert.ok(profile.capabilities.includes('wander'));
+    assert.ok(profile.capabilities.includes('rest'));
+    assert.ok(profile.capabilities.includes('drink'));
+    assert.ok(profile.capabilities.includes(profile.feedingAction));
+    assert.equal(profile.capabilities.includes('hunt'),Object.keys(profile.prey).length>0);
+    assert.ok(profile.movement.speedMultiplier>.8&&profile.movement.speedMultiplier<1.2);
+    assert.ok(profile.movement.energyMultiplier>.8&&profile.movement.energyMultiplier<1.2);
   }
 });
 
@@ -67,5 +74,45 @@ test('lynx validates reusable generated archetype composition without species-sp
   assert.ok(canWildlifePredate('wolf','lynx'));
   assert.ok(WILDLIFE_PREDATORS.includes('lynx'));
   assert.ok(!WILDLIFE_HERBIVORES.includes('lynx'));
+});
+
+test('bison composes a large grazer with heavy movement and no invented predation capability',()=>{
+  const bison=wildlifeSpeciesProfile('bison');
+  assert.equal(bison.archetypeId,'open_plains_large_grazer');
+  assert.equal(bison.organismFamily,'bovid');
+  assert.equal(bison.trophicRole,'herbivore');
+  assert.equal(bison.movement.mode,'heavy_grazer');
+  assert.ok(bison.capabilities.includes('graze'));
+  assert.ok(!bison.capabilities.includes('hunt'));
+  assert.ok(bison.plantConsumptionWeights.grass>bison.plantConsumptionWeights.shrub);
+  assert.ok(bison.biomeAffinity.plains>bison.biomeAffinity.forest);
+  assert.ok(bison.fine.size>1.2);
+  assert.ok(bison.morphology.features.includes('horns'));
+  assert.ok(WILDLIFE_HERBIVORES.includes('bison'));
+  assert.ok(!WILDLIFE_PREDATORS.includes('bison'));
+});
+
+test('raccoon composes a small omnivore with legal forage and hunt capabilities',()=>{
+  const raccoon=wildlifeSpeciesProfile('raccoon');
+  assert.equal(raccoon.archetypeId,'forest_wetland_small_omnivore');
+  assert.equal(raccoon.organismFamily,'procyonid');
+  assert.equal(raccoon.trophicRole,'omnivore');
+  assert.equal(raccoon.movement.mode,'dexterous_forager');
+  assert.ok(raccoon.capabilities.includes('forage'));
+  assert.ok(raccoon.capabilities.includes('hunt'));
+  assert.ok(raccoon.plantForageWeights.fruit>raccoon.plantForageWeights.grass);
+  assert.ok(raccoon.biomeAffinity.wetlands>raccoon.biomeAffinity.dryland);
+  assert.ok(raccoon.morphology.features.includes('face_mask'));
+  assert.ok(raccoon.morphology.features.includes('ringed_tail'));
+  assert.ok(canWildlifePredate('raccoon','rabbit'));
+  assert.ok(canWildlifePredate('lynx','raccoon'));
+  assert.ok(canWildlifePredate('wolf','raccoon'));
+  assert.ok(WILDLIFE_PREDATORS.includes('raccoon'));
+});
+
+test('organism family ownership is a single species-profile source for composed species',()=>{
+  assert.equal(wildlifeSpeciesProfile('lynx').organismFamily,'felid');
+  assert.equal(wildlifeSpeciesProfile('bison').organismFamily,'bovid');
+  assert.equal(wildlifeSpeciesProfile('raccoon').organismFamily,'procyonid');
 });
 

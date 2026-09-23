@@ -101,3 +101,31 @@ test('felid family genome remains predator-safe and bounded for archetype-compos
   assert.ok(locomotion.energyMultiplier>=.92&&locomotion.energyMultiplier<=1.08);
 });
 
+test('composed species derive family genomes from their profile instead of a second species mapping',()=>{
+  assert.equal(wildlifeOrganismFamily('bison'),'bovid');
+  assert.equal(wildlifeOrganismFamily('raccoon'),'procyonid');
+  const bison=founderWildlifeOrganismGenome('bison','bison_founder');
+  const raccoon=founderWildlifeOrganismGenome('raccoon','raccoon_founder');
+  assert.equal(bison.family,'bovid');
+  assert.equal(raccoon.family,'procyonid');
+  assert.ok(bison.locomotion.endurance>=.98&&bison.locomotion.endurance<=1.14);
+  assert.ok(raccoon.niche.fruit>=.86&&raccoon.niche.fruit<=1.16);
+});
+
+test('new family genomes preserve zero plant axes and bounded legal preferences',()=>{
+  const bison=founderWildlifeOrganismGenome('bison','bison_niche');
+  const bisonWeights=wildlifeGenomePlantForageWeights('bison',bison);
+  assert.equal(bisonWeights.fruit,0);
+  assert.ok(bisonWeights.grass>0);
+
+  const lynx=founderWildlifeOrganismGenome('lynx','lynx_zero_axis');
+  assert.deepEqual(wildlifeGenomePlantForageWeights('lynx',lynx),{grass:0,shrub:0,fruit:0,crop:0});
+
+  const raccoon=normalizeWildlifeOrganismGenome('raccoon',{
+    ...founderWildlifeOrganismGenome('raccoon','raccoon_pref'),
+    niche:{grass:.96,shrub:.90,fruit:1.16,crop:.90}
+  },'raccoon_pref');
+  const raccoonWeights=wildlifeGenomePlantForageWeights('raccoon',raccoon);
+  assert.ok(raccoonWeights.fruit>raccoonWeights.grass);
+});
+
