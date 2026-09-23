@@ -45,3 +45,69 @@ export function normalizeWildlifeOrganismGenome(species:WildlifeSpecies,g:Wildli
     locomotion:{stride:bounded(g?.locomotion?.stride,t.locomotion.stride,f.locomotion.stride),endurance:bounded(g?.locomotion?.endurance,t.locomotion.endurance,f.locomotion.endurance)}
   };
 }
+
+export function inheritWildlifeOrganismGenome(
+  species:WildlifeSpecies,
+  mother:WildlifeOrganismGenome,
+  father:WildlifeOrganismGenome,
+  seed:string
+):WildlifeOrganismGenome {
+  const t=templateFor(species);
+  const a=normalizeWildlifeOrganismGenome(species,mother,seed+':mother');
+  const b=normalizeWildlifeOrganismGenome(species,father,seed+':father');
+  return {family:t.family,
+    material:{
+      hueShift:inherit(a.material.hueShift,b.material.hueShift,seed+':mh',t.material.hueShift,.008),
+      lightnessShift:inherit(a.material.lightnessShift,b.material.lightnessShift,seed+':ml',t.material.lightnessShift,.012),
+      accentShift:inherit(a.material.accentShift,b.material.accentShift,seed+':ma',t.material.accentShift,.006)
+    },
+    niche:{
+      grass:inherit(a.niche.grass,b.niche.grass,seed+':ng',t.niche.grass,.025),
+      shrub:inherit(a.niche.shrub,b.niche.shrub,seed+':ns',t.niche.shrub,.025),
+      fruit:inherit(a.niche.fruit,b.niche.fruit,seed+':nf',t.niche.fruit,.025),
+      crop:inherit(a.niche.crop,b.niche.crop,seed+':nc',t.niche.crop,.025)
+    },
+    locomotion:{
+      stride:inherit(a.locomotion.stride,b.locomotion.stride,seed+':ls',t.locomotion.stride,.025),
+      endurance:inherit(a.locomotion.endurance,b.locomotion.endurance,seed+':le',t.locomotion.endurance,.025)
+    }
+  };
+}
+
+export function wildlifeOrganismLocomotion(genome:WildlifeOrganismGenome):WildlifeOrganismLocomotion {
+  const stride=genome.locomotion.stride-1;
+  const endurance=genome.locomotion.endurance-1;
+  return {
+    speedMultiplier:clamp(1+stride*.28-endurance*.07,.94,1.06),
+    energyMultiplier:clamp(1+Math.max(0,stride)*.12-endurance*.30,.92,1.08)
+  };
+}
+
+function adjustedPlantWeights(base:Record<PlantAxis,number>,genome:WildlifeOrganismGenome):Record<PlantAxis,number> {
+  const axes:PlantAxis[]=['grass','shrub','fruit','crop'];
+  const raw={} as Record<PlantAxis,number>;
+  let total=0;
+  for(const axis of axes){raw[axis]=base[axis]>0?base[axis]*genome.niche[axis]:0;total+=raw[axis];}
+  const baseTotal=axes.reduce((sum,axis)=>sum+base[axis],0);
+  if(total<=0||baseTotal<=0)return {...base};
+  const scale=baseTotal/total;
+  for(const axis of axes)raw[axis]*=scale;
+  return raw;
+}
+export const wildlifeGenomePlantForageWeights=(species:WildlifeSpecies,genome:WildlifeOrganismGenome)=>
+  adjustedPlantWeights(wildlifeSpeciesProfile(species).plantForageWeights,genome);
+export const wildlifeGenomePlantConsumptionWeights=(species:WildlifeSpecies,genome:WildlifeOrganismGenome)=>
+  adjustedPlantWeights(wildlifeSpeciesProfile(species).plantConsumptionWeights,genome);
+
+export function wildlifeResourceNicheScore(species:WildlifeSpecies,genome:WildlifeOrganismGenome,tags:readonly string[],distance:number) {
+  const profile=wildlifeSpeciesProfile(species);
+  if(!tags.some(tag=>profile.forageTags.includes(tag)))return 0;
+  const w=wildlifeGenomePlantForageWeights(species,genome);
+  let preference=1;
+  if(tags.includes('grass'))preference+=w.grass;
+  if(tags.includes('forage')||tags.includes('flower')||tags.includes('nature'))preference+=w.shrub*.7;
+  if(tags.includes('apple')||tags.includes('fruit'))preference+=w.fruit;
+  if(tags.includes('farm')||tags.includes('crop')||tags.includes('grain'))preference+=w.crop;
+  return preference/(1+Math.max(0,distance)*.08);
+}
+
