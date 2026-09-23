@@ -56,7 +56,7 @@ export interface WildlifeSpeciesProfile {
   prey:Partial<Record<WildlifeSpecies,{preference:number;damage:number;hungerRelief:number}>>;
 }
 
-const zeroPlants={grass:0,shrub:0,fruit:0,crop:0} as const;
+const zeroPlants:Record<'grass'|'shrub'|'fruit'|'crop',number>={grass:0,shrub:0,fruit:0,crop:0};
 const seasonal=(spring:Record<ChunkBiome,number>,summer:Record<ChunkBiome,number>,autumn:Record<ChunkBiome,number>,winter:Record<ChunkBiome,number>)=>({spring,summer,autumn,winter});
 
 export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger'];
