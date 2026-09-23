@@ -199,12 +199,36 @@ export const WILDLIFE_LIFE_ARCHETYPES={
 } satisfies Record<string,WildlifeLifeArchetype>;
 
 export const WILDLIFE_MOVEMENT_ARCHETYPES={
-  generalist:{id:'generalist',mode:'generalist',speedMultiplier:1,energyMultiplier:1,fastActionMultiplier:1},
-  cursorial:{id:'cursorial',mode:'cursorial',speedMultiplier:1.04,energyMultiplier:1.03,fastActionMultiplier:.98},
-  ambush:{id:'ambush',mode:'ambush',speedMultiplier:.98,energyMultiplier:.96,fastActionMultiplier:1.03},
-  sturdy:{id:'sturdy',mode:'sturdy',speedMultiplier:.96,energyMultiplier:.95,fastActionMultiplier:1.02},
-  heavyGrazer:{id:'heavy_grazer',mode:'heavy_grazer',speedMultiplier:.92,energyMultiplier:1.04,fastActionMultiplier:1.08},
-  dexterousForager:{id:'dexterous_forager',mode:'dexterous_forager',speedMultiplier:1.01,energyMultiplier:.97,fastActionMultiplier:1}
+  generalist:{
+    id:'generalist',mode:'generalist',gait:'amble',
+    speedMultiplier:1,energyMultiplier:1,fastActionMultiplier:1,
+    accelerationRate:2.4,decelerationRate:3.2,turnRate:3.2,arrivalRadius:.12
+  },
+  cursorial:{
+    id:'cursorial',mode:'cursorial',gait:'trot',
+    speedMultiplier:1.04,energyMultiplier:1.03,fastActionMultiplier:.98,
+    accelerationRate:3.0,decelerationRate:3.2,turnRate:2.6,arrivalRadius:.14
+  },
+  ambush:{
+    id:'ambush',mode:'ambush',gait:'prowl',
+    speedMultiplier:.98,energyMultiplier:.96,fastActionMultiplier:1.03,
+    accelerationRate:3.4,decelerationRate:4.0,turnRate:3.6,arrivalRadius:.10
+  },
+  sturdy:{
+    id:'sturdy',mode:'sturdy',gait:'trudge',
+    speedMultiplier:.96,energyMultiplier:.95,fastActionMultiplier:1.02,
+    accelerationRate:1.9,decelerationRate:2.6,turnRate:2.4,arrivalRadius:.14
+  },
+  heavyGrazer:{
+    id:'heavy_grazer',mode:'heavy_grazer',gait:'trudge',
+    speedMultiplier:.92,energyMultiplier:1.04,fastActionMultiplier:1.08,
+    accelerationRate:1.4,decelerationRate:2.2,turnRate:1.8,arrivalRadius:.18
+  },
+  dexterousForager:{
+    id:'dexterous_forager',mode:'dexterous_forager',gait:'scramble',
+    speedMultiplier:1.01,energyMultiplier:.97,fastActionMultiplier:1,
+    accelerationRate:2.8,decelerationRate:3.8,turnRate:4.2,arrivalRadius:.10
+  }
 } satisfies Record<string,WildlifeMovementArchetype>;
 
 export const WILDLIFE_CAPABILITY_ARCHETYPES={
