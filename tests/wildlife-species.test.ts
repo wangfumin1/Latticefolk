@@ -35,6 +35,10 @@ test('wildlife species profiles cover every configured species and biome/season 
     assert.equal(profile.capabilities.includes('hunt'),Object.keys(profile.prey).length>0);
     assert.ok(profile.movement.speedMultiplier>.8&&profile.movement.speedMultiplier<1.2);
     assert.ok(profile.movement.energyMultiplier>.8&&profile.movement.energyMultiplier<1.2);
+    assert.ok(profile.movement.acceleration>0);
+    assert.ok(profile.movement.deceleration>0);
+    assert.ok(profile.movement.turnRate>0);
+    assert.ok(profile.movement.arrivalRadius>0&&profile.movement.arrivalRadius<.5);
     assert.ok(['wild','domesticated','monster'].includes(profile.form.kind));
     assert.ok(profile.form.settlementSensitivity>=0);
     assert.ok(profile.form.dangerSensitivity>=0);
@@ -143,5 +147,18 @@ test('warg validates monster form composition through the shared predator graph'
   assert.ok(canWildlifePredate('warg','sheep'));
   assert.ok(canWildlifePredate('warg','deer'));
   assert.ok(WILDLIFE_PREDATORS.includes('warg'));
+});
+
+test('movement controller modules encode distinct bounded fine locomotion behavior',()=>{
+  const deer=wildlifeSpeciesProfile('deer').movement;
+  const bison=wildlifeSpeciesProfile('bison').movement;
+  const raccoon=wildlifeSpeciesProfile('raccoon').movement;
+  assert.equal(deer.mode,'cursorial');
+  assert.equal(bison.mode,'heavy_grazer');
+  assert.equal(raccoon.mode,'dexterous_forager');
+  assert.ok(deer.acceleration>bison.acceleration);
+  assert.ok(deer.turnRate>bison.turnRate);
+  assert.ok(raccoon.turnRate>deer.turnRate);
+  assert.ok(bison.arrivalRadius>deer.arrivalRadius);
 });
 
