@@ -245,6 +245,40 @@ function fundamentalCapacity(chunk:CoarseChunkState,species:WildlifeSpecies){
   return Math.max(0,round(base[species]*affinity*habitat*settlementPenalty));
 }
 
+export function computeWildlifePredatorPressure(
+  chunk:CoarseChunkState,
+  populations:CoarseWildlifePopulation[]
+) {
+  const speciesPressure=Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
+  let strongestPair:NonNullable<CoarseChunkState['wildlifePredatorPressure']>['strongestPair'];
+
+  for(const preySpecies of SPECIES){
+    let aggregate=0;
+    for(const predatorSpecies of SPECIES){
+      const preference=wildlifePredationPreference(predatorSpecies,preySpecies);
+      if(preference<=0)continue;
+      const predator=populations.find(entry=>entry.species===predatorSpecies);
+      if(!predator||predator.count<=0)continue;
+      const predatorDensity=predator.carryingCapacity>0
+        ?Math.min(2.5,Math.max(0,predator.count/predator.carryingCapacity))
+        :0;
+      const pairPressure=clamp(preference*predatorDensity*70,0,100);
+      aggregate+=preference*predatorDensity;
+      if(!strongestPair||pairPressure>strongestPair.pressure){
+        strongestPair={predatorSpecies,preySpecies,pressure:round(pairPressure)};
+      }
+    }
+    const pressure=round(clamp((1-Math.exp(-aggregate*.9))*100,0,100));
+    speciesPressure[preySpecies]=pressure;
+    const prey=populations.find(entry=>entry.species===preySpecies);
+    if(prey)prey.predatorPressure=pressure;
+  }
+
+  const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
+  chunk.wildlifePredatorPressure={speciesPressure,meanPressure,strongestPair};
+  return chunk.wildlifePredatorPressure;
+}
+
 export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populations:CoarseWildlifePopulation[]) {
   const fundamental=new Map<WildlifeSpecies,number>();
   const density=new Map<WildlifeSpecies,number>();
@@ -310,6 +344,7 @@ export function ensureWildlifePopulations(chunk:CoarseChunkState){
   });
   chunk.wildlife=seeded;
   computeWildlifeNicheCompetition(chunk,seeded);
+  computeWildlifePredatorPressure(chunk,seeded);
   return seeded;
 }
 
@@ -335,6 +370,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   const dt=Math.min(30,Math.max(0,seconds));
   let mortalityReturn=0;
   computeWildlifeNicheCompetition(chunk,populations);
+  computeWildlifePredatorPressure(chunk,populations);
   const diseasePressure=computeWildlifeDiseasePressure(chunk,populations,weather);
 
   for(const pop of populations){
@@ -402,6 +438,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   flux.mortalityReturn=smooth(flux.mortalityReturn,mortalityReturn+predation*.12);
   chunk.trophicFlux=flux;
   computeWildlifeNicheCompetition(chunk,populations);
+  computeWildlifePredatorPressure(chunk,populations);
   computeWildlifeDiseasePressure(chunk,populations,weather);
 }
 
