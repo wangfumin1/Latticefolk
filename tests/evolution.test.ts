@@ -807,3 +807,52 @@ test('phenotype observability keeps legacy coverage explicit and measures genera
   assert.ok(rabbit.cohorts.every(cohort=>cohort.phenotypeMean!==null));
 });
 
+test('phenotype-by-biome fitness evidence is right-censored and excludes legacy-upgrade pseudo-history',()=>{
+  const forestExposure=(days:number)=>({
+    observedDays:days,
+    habitatMean:{ecology:82,food:72,water:70,danger:42,settlementLevel:1,plantBiomass:76,competitionPressure:24,seasonalSuitability:78,diseasePressure:18,predatorPressure:32},
+    biomeDays:{forest:days},
+    chunkDays:{chunk_forest:days},
+    observedTransitions:0
+  });
+  const sample:WildlifeLineageRecord[]=[];
+  for(let i=0;i<6;i++){
+    const p=phenotype(.90+i*.035,.82+i*.055);
+    p.morphology.legLength=.84+i*.06;
+    p.morphology.headScale=.88+i*.045;
+    p.behavior.forageDrive=.80+i*.075;
+    const birthDay=10+i;
+    const lifespan=70+i*18;
+    sample.push({
+      entityId:`forest_pheno_${i}`,species:'rabbit',birthDay,deathDay:birthDay+lifespan,deathReason:i<2?'predation':'senescence',
+      generation:i<2?0:i<4?1:2,birthChunk:'chunk_forest',deathChunk:'chunk_forest',
+      traitsAtBirth:traits(.45+i*.02),phenotypeAtBirth:p,phenotypeAtDeath:p,phenotypeProvenance:i<2?'founder_seed':'birth',
+      habitatExposure:forestExposure(1+i*.2),
+      origin:i<2?'founder':'reproduction',offspringCount:i<2?0:i-1,reproductiveSuccess:i>=2
+    });
+  }
+  sample.push({
+    entityId:'legacy_upgrade_pheno',species:'rabbit',birthDay:5,deathDay:500,deathReason:'senescence',generation:20,
+    birthChunk:'chunk_forest',deathChunk:'chunk_forest',traitsAtBirth:traits(.9),
+    phenotypeAtBirth:{
+      morphology:{bodyLength:1.22,bodyHeight:1.18,legLength:.78,headScale:1.18,tailScale:1.2},
+      behavior:{forageDrive:.75,migrationDrive:.75,riskTolerance:1.3,recoveryDrive:.75}
+    },
+    phenotypeProvenance:'legacy_upgrade',habitatExposure:forestExposure(10),
+    origin:'founder',offspringCount:20,reproductiveSuccess:true
+  });
+
+  const rabbit=computeEvolutionStatistics(sample,600).find(entry=>entry.species==='rabbit')!;
+  const forest=rabbit.phenotypeBiomeFitness.find(entry=>entry.biome==='forest')!;
+  assert.equal(forest.sampleSize,6);
+  assert.equal(forest.reproductionEligibleSamples,6);
+  assert.equal(forest.lifespanSamples,6);
+  assert.ok(forest.observedExposureDaysMean<3,'legacy exposure must not enter comparable phenotype fitness');
+  assert.ok((forest.breederDifferential?.morphology.legLength||0)>0);
+  assert.ok((forest.breederDifferential?.behavior.forageDrive||0)>0);
+  assert.ok((forest.reproductionAssociation.morphology.legLength||0)>.7);
+  assert.ok((forest.offspringAssociation.morphology.legLength||0)>.9);
+  assert.ok((forest.offspringAssociation.behavior.forageDrive||0)>.9);
+  assert.ok((forest.lifespanAssociation.morphology.legLength||0)>.9);
+});
+

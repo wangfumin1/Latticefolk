@@ -1,5 +1,5 @@
 import type {
-  WildlifeBehaviorPhenotype, WildlifeMorphologyPhenotype, WildlifePhenotype, WildlifeSpecies
+  WildlifeBehaviorPhenotype, WildlifeFunctionalPhenotype, WildlifeMorphologyPhenotype, WildlifePhenotype, WildlifeSpecies
 } from '../types.js';
 import { wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
@@ -107,5 +107,28 @@ export function wildlifeBehaviorThresholds(phenotype:WildlifePhenotype){
     migrationGain:clamp(8/b.migrationDrive,6.4,10.7),
     diseaseRestThreshold:clamp(65-(b.recoveryDrive-1)*20,60,70),
     energyRestThreshold:clamp(24+(b.recoveryDrive-1)*16,20,28)
+  };
+}
+
+/**
+ * Deterministic phenotype -> physiology mapping.
+ * Every term is intentionally narrow and contains a trade-off: larger frames cost
+ * more to maintain, long legs improve speed but increase movement cost, larger
+ * heads / forage drive extract slightly more hunger relief from the same consumed
+ * resource, and strong recovery drive improves rest but does not bypass energy cost.
+ */
+export function wildlifeFunctionalPhenotype(phenotype:WildlifePhenotype):WildlifeFunctionalPhenotype {
+  const m=phenotype.morphology;
+  const b=phenotype.behavior;
+  const bulk=((m.bodyLength-1)+(m.bodyHeight-1))/2;
+  const stride=m.legLength-1;
+  const speed=clamp(1+stride*.42-bulk*.20,.88,1.12);
+  return {
+    movementSpeedMultiplier:speed,
+    movementEnergyMultiplier:clamp(1+bulk*.24+Math.abs(stride)*.10+(speed-1)*.10,.90,1.14),
+    maintenanceMultiplier:clamp(1+bulk*.24+(m.headScale-1)*.06,.90,1.12),
+    forageEfficiency:clamp(1+(m.headScale-1)*.18+(b.forageDrive-1)*.12-(m.bodyHeight-1)*.05,.92,1.08),
+    recoveryEfficiency:clamp(1+(b.recoveryDrive-1)*.22-bulk*.08,.92,1.08),
+    fastActionEnergyMultiplier:clamp(1+bulk*.12+(b.riskTolerance-1)*.10+Math.max(0,stride)*.05,.92,1.10)
   };
 }

@@ -229,4 +229,10 @@ Morphology phenotype changes the constrained procedural body. Behavior phenotype
 
 The lineage archive persists phenotype-at-birth/death with `birth`, `founder_seed` or `legacy_upgrade` provenance. Evolution statistics expose known/comparable sample counts, phenotype means/variance, per-generation slopes and breeder-vs-comparable-cohort differentials. Legacy-upgrade samples are excluded from trend/differential calculations so the migration process cannot fabricate historical evolution.
 
-The next organism step is **phenotype→function selection**: give morphology/behavior genes deterministic locomotion, energy and resource-efficiency trade-offs, then measure phenotype-by-environment reproductive/survival associations before scaling toward larger generated organism families.
+## Implemented milestone: phenotype→function selection
+
+Inherited phenotype now has deterministic functional consequences instead of being only visual/behavior-threshold metadata. A bounded pure mapping derives movement-speed, locomotion-energy, maintenance, forage-efficiency, recovery and fast-action cost multipliers. The mapping intentionally encodes trade-offs and stays close to neutral scale: e.g. longer legs can improve movement but cost more energy, while larger frames cost more to maintain. Fine simulation alone applies these effects to needs, movement and action resolution; no Decision Provider can author physiology.
+
+Evolution observability also now asks whether phenotype and environment co-vary with completed outcomes. Comparable birth/founder phenotype records are grouped by dominant observed lifetime biome; right-censored reproductive eligibility and completed death lifespans are reused to expose breeder differential plus phenotype correlations with reproduction, offspring and lifespan. `legacy_upgrade` samples remain descriptive-only and cannot fabricate historical adaptation evidence.
+
+The next organism step is **larger constrained generated organism families**: generalize the current species-profile + phenotype system into deterministic genome/archetype templates for morphology, materials, locomotion and ecological niche, while preserving semantic interactions, coarse↔fine conservation and durable lineage evidence.

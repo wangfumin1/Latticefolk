@@ -383,6 +383,37 @@ export interface WildlifePhenotype {
   behavior: WildlifeBehaviorPhenotype;
 }
 
+export interface WildlifeFunctionalPhenotype {
+  /** Multiplies trait-based movement speed. */
+  movementSpeedMultiplier: number;
+  /** Continuous locomotion energy cost while pathing. */
+  movementEnergyMultiplier: number;
+  /** Basal hunger/thirst/energy maintenance cost. */
+  maintenanceMultiplier: number;
+  /** Hunger relief gained from the same deterministic food consumption. */
+  forageEfficiency: number;
+  /** Energy restored by the same deterministic rest action. */
+  recoveryEfficiency: number;
+  /** Extra cost applied to flee/hunt/migrate intensity. */
+  fastActionEnergyMultiplier: number;
+}
+
+export interface WildlifeNullablePhenotype {
+  morphology: {
+    bodyLength: number | null;
+    bodyHeight: number | null;
+    legLength: number | null;
+    headScale: number | null;
+    tailScale: number | null;
+  };
+  behavior: {
+    forageDrive: number | null;
+    migrationDrive: number | null;
+    riskTolerance: number | null;
+    recoveryDrive: number | null;
+  };
+}
+
 export type WildlifePhenotypeProvenance = 'birth' | 'founder_seed' | 'legacy_upgrade';
 
 export interface WildlifePhenotypeStats {
@@ -396,6 +427,19 @@ export interface WildlifePhenotypeStats {
   trendPerGeneration: WildlifePhenotype | null;
   breederMean: WildlifePhenotype | null;
   breederDifferential: WildlifePhenotype | null;
+}
+
+export interface WildlifePhenotypeBiomeFitnessStats {
+  biome: ChunkBiome;
+  sampleSize: number;
+  reproductionEligibleSamples: number;
+  lifespanSamples: number;
+  observedExposureDaysMean: number;
+  phenotypeMean: WildlifePhenotype | null;
+  breederDifferential: WildlifePhenotype | null;
+  reproductionAssociation: WildlifeNullablePhenotype;
+  offspringAssociation: WildlifeNullablePhenotype;
+  lifespanAssociation: WildlifeNullablePhenotype;
 }
 
 export interface WildlifeHabitatSnapshot {
@@ -879,6 +923,7 @@ export interface WildlifeEvolutionStats {
   traitVariance: WildlifeTraits;
   traitTrendPerGeneration: WildlifeTraits;
   phenotype: WildlifePhenotypeStats;
+  phenotypeBiomeFitness: WildlifePhenotypeBiomeFitnessStats[];
   mortality: Record<WildlifeDeathReason, number>;
   reproductiveSuccess: number;
   survivalToReproductionRate: number;
