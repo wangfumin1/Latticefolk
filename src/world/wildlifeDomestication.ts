@@ -11,7 +11,7 @@ export type WildlifeDomesticationInteraction =
   | 'feed_tame'
   | 'command_follow'
   | 'command_stay'
-  | 'command_graze'
+  | 'command_forage'
   | 'release';
 
 export function canSpeciesBeDomesticated(species:WildlifeSpecies) {
@@ -139,7 +139,7 @@ export function wildlifeDomesticationInteractions(
     return actions;
   }
   if(current.ownerKind===ownerKind&&current.ownerId===ownerId){
-    actions.push('command_follow','command_stay','command_graze','release');
+    actions.push('command_follow','command_stay','command_forage','release');
   }
   return actions;
 }
