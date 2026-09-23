@@ -114,12 +114,14 @@ export interface WildlifeRepresentativeIndividualization {
 
 export function individualizeWildlifeRepresentative(
   initialOrdinaryCount:number,
-  existingFixedWeight:number
+  existingFixedWeight:number,
+  countedInInitialOrdinary=true
 ):WildlifeRepresentativeIndividualization|undefined {
   const ordinary=Math.max(0,Math.floor(initialOrdinaryCount));
   const fixed=Math.max(0,existingFixedWeight);
   if(fixed>1.0001)return undefined;
   if(fixed>0)return {nextInitialOrdinaryCount:ordinary,nextFixedWeight:1};
+  if(!countedInInitialOrdinary)return {nextInitialOrdinaryCount:ordinary,nextFixedWeight:1};
   if(ordinary<=0)return undefined;
   return {nextInitialOrdinaryCount:ordinary-1,nextFixedWeight:1};
 }
