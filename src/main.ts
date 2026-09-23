@@ -2816,6 +2816,7 @@ class TownGame {
     const interactionNetwork=this.activeInteractionNetwork();
     const active=stats.filter(entry=>entry.historicalPopulation>0);
     const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
+    const association=(value:number|null)=>value===null?'—':value.toFixed(2);
     const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
     const cards=active.map(entry=>`
       <div class="evo-card">
