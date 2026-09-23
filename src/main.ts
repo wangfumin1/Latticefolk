@@ -20,7 +20,7 @@ import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlife
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import {
   advanceWildlifeDomestication, domesticationCommandAllowedActions, domesticationPreservesSurvivalAction,
-  normalizeWildlifeDomestication, releaseWildlifeDomestication, setWildlifeDomesticationCommand,
+  individualizeWildlifeRepresentative, normalizeWildlifeDomestication, releaseWildlifeDomestication, setWildlifeDomesticationCommand,
   wildlifeDomesticationInteractions, type WildlifeDomesticationInteraction
 } from './world/wildlifeDomestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
@@ -733,6 +733,7 @@ class TownGame {
     // God mode is observer-only: no player entity is exposed to NPC perception or targeting.
     this.playerMarker.visible=false;
     this.cancelPlayerTargeting();
+    this.cancelPlayerWildlifeFollowing();
     ui.crosshair.classList.add('hidden');
     ui.modeBtn.textContent=i18n.t('mode.first');ui.modeHint.textContent=i18n.t('mode.observer');
     this.toast('上帝视角：玩家已从 NPC 感知中移除 · 点击查看 · 双击/F 聚焦');
@@ -761,6 +762,17 @@ class TownGame {
       agent.state.currentAction='idle';
       agent.state.targetNpcId=undefined;
       agent.nextDecisionAt=now()+500+Math.random()*1000;
+    }
+  }
+
+  cancelPlayerWildlifeFollowing() {
+    for(const animal of this.wildlife.values()){
+      const domestication=normalizeWildlifeDomestication(animal.state.species,animal.state.domestication);
+      if(domestication?.stage!=='bonded'||domestication.ownerKind!=='player'||domestication.ownerId!=='player'||domestication.command!=='follow')continue;
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+      animal.state.currentAction='rest';
+      animal.state.targetObjectId=undefined;animal.state.targetWildlifeId=undefined;animal.state.targetChunkId=undefined;
+      animal.nextDecisionAt=now()+1200;
     }
   }
 
