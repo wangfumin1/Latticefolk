@@ -334,3 +334,21 @@ test('wolf density raises goat predator pressure monotonically',()=>{
   const high=computeWildlifePredatorPressure(a,populations).speciesPressure.goat;
   assert.ok(high>low);
 });
+
+
+test('predator pressure retains per-pair source decomposition for the same prey',()=>{
+  const a=chunk('chunk_predator_pairs',22,{biome:'forest',ecology:88,water:76,food:74});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations)pop.count=0;
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const fox=populations.find(p=>p.species==='fox')!;
+  const wolf=populations.find(p=>p.species==='wolf')!;
+  rabbit.count=8;
+  fox.count=Math.max(1,fox.carryingCapacity*.6);
+  wolf.count=Math.max(1,wolf.carryingCapacity*.8);
+  const state=computeWildlifePredatorPressure(a,populations);
+  const rabbitPairs=(state.pairs||[]).filter(pair=>pair.preySpecies==='rabbit');
+  assert.ok(rabbitPairs.some(pair=>pair.predatorSpecies==='fox'&&pair.pressure>0));
+  assert.ok(rabbitPairs.some(pair=>pair.predatorSpecies==='wolf'&&pair.pressure>0));
+  assert.ok(rabbitPairs.every(pair=>pair.pressure>=0&&pair.pressure<=100));
+});
