@@ -2,7 +2,7 @@ import type { ChunkBiome, WildlifeAction, WildlifeSpecies, WorldSeason } from '.
 
 export type WildlifeTrophicRole='herbivore'|'omnivore'|'predator';
 export type WildlifeNicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
-export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe';
+export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe'|'ear_tufts';
 
 export interface WildlifeLifeHistoryProfile {
   adultAge:number;
@@ -36,6 +36,8 @@ export interface WildlifeMorphologyProfile {
 }
 
 export interface WildlifeSpeciesProfile {
+  /** Optional reusable archetype definition used to compose this species profile. */
+  archetypeId?:string;
   trophicRole:WildlifeTrophicRole;
   biomeAffinity:Record<ChunkBiome,number>;
   seasonalBiomeAffinity:Record<WorldSeason,Record<ChunkBiome,number>>;
