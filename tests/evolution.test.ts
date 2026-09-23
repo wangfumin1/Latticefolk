@@ -591,3 +591,39 @@ test('multi-factor selection never zero-imputes disjoint legacy source coverage'
   assert.equal(model.coefficients[0]?.coverageSamples,8);
   assert.equal(model.coefficients[0]?.standardizedCoefficient,null);
 });
+
+test('multi-factor selection rejects severe predictor collinearity instead of emitting ridge coefficients',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:80,food:74,water:72,danger:30,settlementLevel:0,plantBiomass:76,
+    competitionPressure:35,seasonalSuitability:78,diseasePressure:24,predatorPressure:32
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let index=0;index<18;index++){
+    const pressure=10+index*3;
+    const disease=12+(index%4)*11;
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,`multifactor_collinear_${index}`,1,
+      {fox:pressure},{goat:pressure*2},{deer:disease}
+    );
+    exposure.lastObservedDay=undefined;
+    const offspring=(index%5)<2?2:0;
+    sample.push({
+      entityId:`multifactor_collinear_${index}`,species:'rabbit',birthDay:1,
+      deathDay:170+index*4,deathReason:'other',generation:index%4,birthChunk:`multifactor_collinear_${index}`,
+      traitsAtBirth:traits(.35+index*.01,.8),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<5?'founder':'reproduction',offspringCount:offspring,reproductiveSuccess:offspring>0
+    });
+  }
+
+  const model=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!
+    .multifactorSelection.models.find(entry=>entry.outcome==='offspring')!;
+
+  assert.equal(model.candidateFeatures,3);
+  assert.equal(model.selectedFeatures,3);
+  assert.equal(model.estimable,false);
+  assert.equal(model.status,'unstable_collinearity');
+  assert.ok((model.maxFeatureCorrelation||0)>.999);
+  assert.equal(model.maxVarianceInflationFactor,null);
+  assert.ok(model.coefficients.every(feature=>feature.standardizedCoefficient===null));
+});
+
