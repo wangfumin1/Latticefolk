@@ -33,6 +33,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Expanded wildlife ecology with goat and wolf, centralized species/predator-prey definitions, wolf trophic predation, goat herbivory/niche competition, fine hunt/flee behavior, species-specific life history, multilingual naming, and evolution observability.
 - Fitness-by-habitat evolution evidence across competition pressure, seasonal suitability, and disease pressure, including exposure/outcome correlations, low/mid/high cohorts, breeder rates, offspring/lifespan associations, and God View evidence without causal claims.
 - Species-specific predator-pressure observability derived from actual predator density and prey preference, with God View summaries, lineage lifetime exposure, and right-censored fitness-by-habitat associations without double-applying predation effects.
+- Predator/prey specialization evidence with persisted predator→prey pressure pairs, time-weighted per-predator lifetime exposure, separate source-observation coverage for legacy-safe statistics, and source-specific reproduction/offspring/lifespan associations plus breeder trait differentials.
 
 ### Changed
 

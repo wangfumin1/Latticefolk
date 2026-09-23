@@ -36,6 +36,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
       habitatExposure:{
         observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53},
+        predatorSourceMean:{fox:35,wolf:12},predatorSourceObservedDays:1.2,
         biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:1,lastChunk:'chunk_3_-1',lastBiome:'forest'
       },
       migrationHistory:[{
@@ -67,6 +68,9 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.biomeDays.plains,1.5);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceObservedDays,1.2);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.fox,35);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.wolf,12);
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
