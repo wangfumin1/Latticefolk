@@ -199,12 +199,12 @@ export const WILDLIFE_LIFE_ARCHETYPES={
 } satisfies Record<string,WildlifeLifeArchetype>;
 
 export const WILDLIFE_MOVEMENT_ARCHETYPES={
-  generalist:{id:'generalist',mode:'generalist',speedMultiplier:1,energyMultiplier:1,fastActionMultiplier:1},
-  cursorial:{id:'cursorial',mode:'cursorial',speedMultiplier:1.04,energyMultiplier:1.03,fastActionMultiplier:.98},
-  ambush:{id:'ambush',mode:'ambush',speedMultiplier:.98,energyMultiplier:.96,fastActionMultiplier:1.03},
-  sturdy:{id:'sturdy',mode:'sturdy',speedMultiplier:.96,energyMultiplier:.95,fastActionMultiplier:1.02},
-  heavyGrazer:{id:'heavy_grazer',mode:'heavy_grazer',speedMultiplier:.92,energyMultiplier:1.04,fastActionMultiplier:1.08},
-  dexterousForager:{id:'dexterous_forager',mode:'dexterous_forager',speedMultiplier:1.01,energyMultiplier:.97,fastActionMultiplier:1}
+  generalist:{id:'generalist',mode:'generalist',speedMultiplier:1,energyMultiplier:1,fastActionMultiplier:1,acceleration:5.0,deceleration:6.0,turnRate:4.8,arrivalRadius:.12},
+  cursorial:{id:'cursorial',mode:'cursorial',speedMultiplier:1.04,energyMultiplier:1.03,fastActionMultiplier:.98,acceleration:7.2,deceleration:7.8,turnRate:5.6,arrivalRadius:.10},
+  ambush:{id:'ambush',mode:'ambush',speedMultiplier:.98,energyMultiplier:.96,fastActionMultiplier:1.03,acceleration:6.4,deceleration:8.2,turnRate:6.0,arrivalRadius:.10},
+  sturdy:{id:'sturdy',mode:'sturdy',speedMultiplier:.96,energyMultiplier:.95,fastActionMultiplier:1.02,acceleration:3.8,deceleration:5.6,turnRate:3.7,arrivalRadius:.13},
+  heavyGrazer:{id:'heavy_grazer',mode:'heavy_grazer',speedMultiplier:.92,energyMultiplier:1.04,fastActionMultiplier:1.08,acceleration:2.6,deceleration:4.2,turnRate:2.8,arrivalRadius:.16},
+  dexterousForager:{id:'dexterous_forager',mode:'dexterous_forager',speedMultiplier:1.01,energyMultiplier:.97,fastActionMultiplier:1,acceleration:5.8,deceleration:6.8,turnRate:6.4,arrivalRadius:.10}
 } satisfies Record<string,WildlifeMovementArchetype>;
 
 export const WILDLIFE_CAPABILITY_ARCHETYPES={
