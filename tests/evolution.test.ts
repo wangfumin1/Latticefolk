@@ -361,3 +361,66 @@ test('predator specialization separates fox pressure from zero wolf exposure',()
   assert.ok(fox!.lifespanAssociation!<0);
   assert.equal(wolf,undefined);
 });
+
+
+test('competition and disease source exposure excludes legacy unknown days from source means',()=>{
+  const habitat={biome:'forest' as const,ecology:80,food:68,water:70,danger:24,settlementLevel:0,plantBiomass:72,competitionPressure:30,seasonalSuitability:76,diseasePressure:20,predatorPressure:10};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,habitat,'legacy_chunk',2);
+  exposure=accumulateWildlifeHabitatExposure(exposure,habitat,'source_chunk',1,undefined,{deer:20},{fox:10});
+  exposure=accumulateWildlifeHabitatExposure(exposure,habitat,'source_chunk',3,undefined,{deer:80},{fox:50});
+  assert.equal(exposure.observedDays,6);
+  assert.equal(exposure.competitionSourceObservedDays,4);
+  assert.equal(exposure.diseaseSourceObservedDays,4);
+  assert.equal(exposure.competitionSourceMean?.deer,65);
+  assert.equal(exposure.diseaseSourceMean?.fox,40);
+});
+
+test('network-linked source fitness keeps living juveniles right-censored',()=>{
+  const pressures=[8,18,28,42,52,62,74,84,94];
+  const sample:WildlifeLineageRecord[]=pressures.map((pressure,index)=>{
+    const habitat={
+      biome:'plains' as const,ecology:78,food:70,water:68,danger:24,settlementLevel:0,plantBiomass:70,
+      competitionPressure:pressure,seasonalSuitability:75,diseasePressure:pressure*.6,predatorPressure:0
+    };
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,'network_source',1,undefined,{goat:pressure},{deer:pressure*.6}
+    );
+    exposure.lastObservedDay=undefined;
+    const offspring=index<3?3-index:index<5?1:0;
+    return {
+      entityId:`network_source_${index}`,species:'rabbit' as const,birthDay:1,generation:Math.floor(index/3),
+      deathDay:150+index*10,deathReason:'other' as const,birthChunk:'network_source',
+      traitsAtBirth:traits(.25+index*.05,.7+index*.02),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<3?'founder' as const:'reproduction' as const,
+      offspringCount:offspring,reproductiveSuccess:offspring>0
+    };
+  });
+  const juvenileHabitat={
+    biome:'plains' as const,ecology:78,food:70,water:68,danger:24,settlementLevel:0,plantBiomass:70,
+    competitionPressure:99,seasonalSuitability:75,diseasePressure:70,predatorPressure:0
+  };
+  const juvenileExposure=accumulateWildlifeHabitatExposure(
+    undefined,juvenileHabitat,'network_source',1,undefined,{goat:99},{deer:70}
+  );
+  juvenileExposure.lastObservedDay=undefined;
+  sample.push({
+    entityId:'network_source_juvenile',species:'rabbit',birthDay:950,generation:3,birthChunk:'network_source',
+    traitsAtBirth:traits(.95,1.1),birthHabitat:juvenileHabitat,habitatExposure:juvenileExposure,
+    origin:'reproduction',offspringCount:0,reproductiveSuccess:false
+  });
+
+  const rabbit=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!;
+  const competition=rabbit.interactionSourceFitness.find(entry=>entry.kind==='competition'&&entry.sourceSpecies==='goat')!;
+  const disease=rabbit.interactionSourceFitness.find(entry=>entry.kind==='disease'&&entry.sourceSpecies==='deer')!;
+  assert.equal(competition.sampleSize,10);
+  assert.equal(competition.reproductionEligibleSamples,9);
+  assert.equal(disease.sampleSize,10);
+  assert.equal(disease.reproductionEligibleSamples,9);
+  assert.notEqual(competition.reproductionAssociation,null);
+  assert.notEqual(competition.offspringAssociation,null);
+  assert.notEqual(competition.lifespanAssociation,null);
+  assert.ok(competition.reproductionAssociation!<0);
+  assert.ok(competition.offspringAssociation!<0);
+  assert.ok(disease.reproductionAssociation!<0);
+  assert.ok(competition.selectionDifferential.wariness<0);
+});
