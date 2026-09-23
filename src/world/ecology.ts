@@ -332,7 +332,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     pop.diseaseLoad=clamp(load+transmission-recovery);
     pop.importedDiseasePressure=clamp((pop.importedDiseasePressure||0)*Math.exp(-dt*.018));
 
-    const rainPenalty=weather==='rain'&&pop.species==='rabbit'?.0025:0;
+    const rainPenalty=weather==='rain'?wildlifeSpeciesProfile(pop.species).rainMortality:0;
     const droughtPenalty=chunk.water<25?.006:0;
     const humanPressure=chunk.settlementLevel*.0012+Math.max(0,chunk.danger-65)*.00012;
     const diseaseMortality=(pop.diseaseLoad||0)*.000045;
