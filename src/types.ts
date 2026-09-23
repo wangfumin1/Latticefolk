@@ -272,6 +272,8 @@ export interface WildlifeCompetitionPair {
 export interface WildlifeNicheCompetitionState {
   speciesPressure: Record<WildlifeSpecies,number>;
   meanPressure: number;
+  /** Full symmetric pair decomposition; absent in legacy snapshots. */
+  pairs?: WildlifeCompetitionPair[];
   strongestPair?: WildlifeCompetitionPair;
 }
 
@@ -288,6 +290,8 @@ export interface WildlifeDiseasePressureState {
   crossSpeciesPressure: Record<WildlifeSpecies,number>;
   importedPressure: Record<WildlifeSpecies,number>;
   meanPressure: number;
+  /** Full directed cross-species transmission decomposition; absent in legacy snapshots. */
+  pairs?: WildlifeDiseasePair[];
   strongestPair?: WildlifeDiseasePair;
 }
 
@@ -302,6 +306,38 @@ export interface WildlifePredatorPressureState {
   meanPressure: number;
   pairs?: WildlifePredatorPressurePair[];
   strongestPair?: WildlifePredatorPressurePair;
+}
+
+export type WildlifeInteractionKind = 'predation' | 'competition' | 'disease';
+
+export interface WildlifeInteractionEdge {
+  kind: WildlifeInteractionKind;
+  fromSpecies: WildlifeSpecies;
+  toSpecies: WildlifeSpecies;
+  directed: boolean;
+  coverageChunks: number;
+  activeChunks: number;
+  meanPressure: number;
+  maxPressure: number;
+}
+
+export interface WildlifeInteractionNode {
+  species: WildlifeSpecies;
+  population: number;
+  predationIncoming: number;
+  predationOutgoing: number;
+  competitionPressure: number;
+  diseaseIncoming: number;
+  diseaseOutgoing: number;
+  activeInteractionKinds: number;
+}
+
+export interface WildlifeInteractionNetwork {
+  chunks: number;
+  coverage: Record<WildlifeInteractionKind,number>;
+  nodes: WildlifeInteractionNode[];
+  edges: WildlifeInteractionEdge[];
+  strongestByKind: Partial<Record<WildlifeInteractionKind,WildlifeInteractionEdge>>;
 }
 
 export interface CoarseWildlifePopulation {
