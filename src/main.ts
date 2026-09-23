@@ -15,6 +15,7 @@ import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeW
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile } from './world/wildlifeSpecies';
 import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlifePhenotype, wildlifeFunctionalPhenotype } from './world/wildlifePhenotype';
+import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -1177,6 +1178,7 @@ class TownGame {
     const archived=this.wildlifeLineage.get(state.id);
     if(archived?.deathDay!==undefined)return false;
     state.phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
+    state.organismGenome=normalizeWildlifeOrganismGenome(state.species,state.organismGenome,state.id);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
@@ -1191,11 +1193,18 @@ class TownGame {
   makeProceduralAnimal(state:WildlifeState) {
     const g=new THREE.Group();
     const phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
+    const genome=normalizeWildlifeOrganismGenome(state.species,state.organismGenome,state.id);
     const morphology=effectiveWildlifeMorphology(state.species,phenotype);
+    const materialColor=(base:number,hueExtra=0)=>{
+      const color=new THREE.Color(base);
+      const hsl={h:0,s:0,l:0};color.getHSL(hsl);
+      color.setHSL((hsl.h+genome.material.hueShift+hueExtra+1)%1,hsl.s,clamp(hsl.l+genome.material.lightnessShift,.06,.94));
+      return color;
+    };
     const scale=Math.max(.55,state.traits.size);
-    const bodyMaterial=new THREE.MeshStandardMaterial({color:morphology.body,roughness:.95});
-    const accentMaterial=new THREE.MeshStandardMaterial({color:morphology.accent,roughness:.95});
-    const featureMaterial=new THREE.MeshStandardMaterial({color:morphology.featureColor??morphology.body,roughness:1});
+    const bodyMaterial=new THREE.MeshStandardMaterial({color:materialColor(morphology.body),roughness:.95});
+    const accentMaterial=new THREE.MeshStandardMaterial({color:materialColor(morphology.accent,genome.material.accentShift),roughness:.95});
+    const featureMaterial=new THREE.MeshStandardMaterial({color:materialColor(morphology.featureColor??morphology.body,genome.material.accentShift*.5),roughness:1});
     const bodyCenter=(morphology.legHeight*.5+morphology.bodyY*.45)*scale;
     const headZ=morphology.bodyZ*.95*scale;
     const headY=bodyCenter+morphology.bodyY*.26*scale;
@@ -1463,10 +1472,12 @@ class TownGame {
     if(d<.12){animal.pathIndex++;if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}return;}
     const fastAction=['flee','hunt','migrate'].includes(animal.state.currentAction);
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(animal.state.phenotype,animal.state.id));
-    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*(fastAction?1.18:1);
+    const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
+    const locomotion=wildlifeOrganismLocomotion(genome);
+    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*(fastAction?1.18:1);
     pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
     animal.state.energy=clamp(
-      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*1.45:1),
+      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*locomotion.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*1.45:1),
       0,100
     );
     animal.mesh.rotation.y=Math.atan2(dx,dz);
@@ -1626,6 +1637,7 @@ class TownGame {
   findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
     const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
     const forageTags=wildlifeSpeciesProfile(animal.state.species).forageTags;
+    const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const wanted=(o:RuntimeObject)=>{
       if(action==='drink')return o.state.tags.includes('water')||o.state.kind==='well';
       if(action==='graze'||action==='forage'){
@@ -1635,7 +1647,15 @@ class TownGame {
       }
       return false;
     };
-    return candidates.filter(wanted).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    const eligible=candidates.filter(wanted);
+    if(action==='graze'||action==='forage'){
+      return eligible.sort((a,b)=>{
+        const aScore=wildlifeResourceNicheScore(animal.state.species,genome,a.state.tags,dist(animal.state.position,a.state.position));
+        const bScore=wildlifeResourceNicheScore(animal.state.species,genome,b.state.tags,dist(animal.state.position,b.state.position));
+        return bScore-aScore||dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position);
+      })[0];
+    }
+    return eligible.sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
   }
 
   findWildlifeTarget(animal:WildlifeRuntime,action:WildlifeAction) {
@@ -1663,7 +1683,8 @@ class TownGame {
         else {
           const chunk=this.coarseWorld.chunks.get(s.chunkId);
           if(chunk?.plants){
-            const amount=.35,weights=profile.plantConsumptionWeights;
+            const genome=normalizeWildlifeOrganismGenome(s.species,s.organismGenome,s.id);
+            const amount=.35,weights=wildlifeGenomePlantConsumptionWeights(s.species,genome);
             chunk.plants.grass=clamp(chunk.plants.grass-amount*weights.grass,0,100);
             chunk.plants.shrub=clamp(chunk.plants.shrub-amount*weights.shrub,0,100);
             chunk.plants.fruit=clamp(chunk.plants.fruit-amount*weights.fruit,0,100);
