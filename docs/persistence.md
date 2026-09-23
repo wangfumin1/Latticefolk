@@ -108,3 +108,7 @@ Species-specific predator pressure is stored inside each coarse chunk's JSON sta
 ### Realized predation outcome persistence
 
 `wildlife_lineage` now has an optional `predation_outcomes_json` column containing durable fine-simulation hunt/flee/contact counters and counterpart-species breakdown. Existing databases are migrated in place with `ALTER TABLE ... ADD COLUMN`; legacy rows remain valid with no outcome evidence. The upsert keeps an existing JSON value when a sparse incoming lineage record omits the field. Because this evidence belongs to individual ancestry history rather than transient entity state, it survives fine-chunk unload, death and later world reloads.
+
+### Trait-matching evidence persistence
+
+Predator/prey trait matching extends the existing `predation_outcomes_json`; it does not add another SQLite column or table. Optional accumulated trait-delta sums and explicit paired-snapshot counts are stored inside predator/prey counterpart counters. Old JSON without these fields remains valid. Statistics use the explicit match counts rather than the total legacy hunt/flee/contact counts, so historical outcomes that lack counterpart trait snapshots remain valid realized outcomes but do not dilute trait-matching means.
