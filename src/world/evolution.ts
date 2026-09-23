@@ -5,7 +5,7 @@ import type {
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
   WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorOutcomeStabilityEvidence, WildlifeMultifactorSelectionEvidence,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
-  WildlifePhenotype, WildlifePhenotypeStats, WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeNullablePhenotype, WildlifePhenotype, WildlifePhenotypeBiomeFitnessStats, WildlifePhenotypeStats, WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
 import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
@@ -344,6 +344,59 @@ function phenotypeStats(records:WildlifeLineageRecord[]):WildlifePhenotypeStats 
     breederMean,
     breederDifferential:comparableAverage&&breederMean?subtractPhenotype(breederMean,comparableAverage):null
   };
+}
+
+const phenotypeAssociation=(
+  records:Array<WildlifeLineageRecord&{phenotypeAtBirth:WildlifePhenotype}>,
+  outcome:(record:WildlifeLineageRecord)=>number
+):WildlifeNullablePhenotype=>{
+  const ys=records.map(outcome);
+  const corr=(values:number[])=>correlation(values,ys);
+  return {
+    morphology:{
+      bodyLength:corr(records.map(record=>record.phenotypeAtBirth.morphology.bodyLength)),
+      bodyHeight:corr(records.map(record=>record.phenotypeAtBirth.morphology.bodyHeight)),
+      legLength:corr(records.map(record=>record.phenotypeAtBirth.morphology.legLength)),
+      headScale:corr(records.map(record=>record.phenotypeAtBirth.morphology.headScale)),
+      tailScale:corr(records.map(record=>record.phenotypeAtBirth.morphology.tailScale))
+    },
+    behavior:{
+      forageDrive:corr(records.map(record=>record.phenotypeAtBirth.behavior.forageDrive)),
+      migrationDrive:corr(records.map(record=>record.phenotypeAtBirth.behavior.migrationDrive)),
+      riskTolerance:corr(records.map(record=>record.phenotypeAtBirth.behavior.riskTolerance)),
+      recoveryDrive:corr(records.map(record=>record.phenotypeAtBirth.behavior.recoveryDrive))
+    }
+  };
+};
+
+function phenotypeBiomeFitness(
+  records:WildlifeLineageRecord[],
+  asOfDay?:number
+):WildlifePhenotypeBiomeFitnessStats[] {
+  const comparable=records.filter((record):record is WildlifeLineageRecord&{phenotypeAtBirth:WildlifePhenotype}=>
+    Boolean(record.phenotypeAtBirth)&&record.phenotypeProvenance!=='legacy_upgrade'&&Boolean(dominantWildlifeExposureBiome(record.habitatExposure))
+  );
+  const biomes=[...new Set(comparable.map(record=>dominantWildlifeExposureBiome(record.habitatExposure)).filter((value):value is WildlifeHabitatSnapshot['biome']=>Boolean(value)))];
+  return biomes.map(biome=>{
+    const samples=comparable.filter(record=>dominantWildlifeExposureBiome(record.habitatExposure)===biome);
+    const eligible=samples.filter(record=>fitnessOutcomeEligible(record,asOfDay));
+    const dead=samples.filter((record):record is typeof samples[number]&{deathDay:number}=>record.deathDay!==undefined);
+    const breeders=eligible.filter(record=>record.offspringCount>0);
+    const eligibleAverage=phenotypeMean(eligible);
+    const breederAverage=phenotypeMean(breeders);
+    return {
+      biome,
+      sampleSize:samples.length,
+      reproductionEligibleSamples:eligible.length,
+      lifespanSamples:dead.length,
+      observedExposureDaysMean:mean(samples.map(record=>record.habitatExposure?.observedDays||0)),
+      phenotypeMean:phenotypeMean(samples),
+      breederDifferential:eligibleAverage&&breederAverage?subtractPhenotype(breederAverage,eligibleAverage):null,
+      reproductionAssociation:phenotypeAssociation(eligible,record=>record.offspringCount>0?1:0),
+      offspringAssociation:phenotypeAssociation(eligible,record=>record.offspringCount),
+      lifespanAssociation:phenotypeAssociation(dead,record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))
+    };
+  }).sort((a,b)=>b.sampleSize-a.sampleSize||a.biome.localeCompare(b.biome));
 }
 
 function cohort(generation:number,records:WildlifeLineageRecord[]):WildlifeGenerationCohortStats {
@@ -1435,6 +1488,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       traitVariance:traitVariance(speciesRecords,average),
       traitTrendPerGeneration:traitTrend(speciesRecords),
       phenotype:phenotypeStats(speciesRecords),
+      phenotypeBiomeFitness:phenotypeBiomeFitness(speciesRecords,asOfDay),
       mortality,
       reproductiveSuccess:mean(breeders.map(record=>record.offspringCount)),
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
