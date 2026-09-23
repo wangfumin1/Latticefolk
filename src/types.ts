@@ -369,6 +369,28 @@ export interface WildlifeMigrationEvent {
   reason: 'behavioral_migration';
 }
 
+export interface WildlifePredatorOutcomeCounter {
+  huntAttempts: number;
+  huntHits: number;
+  kills: number;
+}
+
+export interface WildlifePreyOutcomeCounter {
+  fleeAttempts: number;
+  successfulEscapes: number;
+  attacksReceived: number;
+  survivedAttacks: number;
+}
+
+export interface WildlifePredationOutcomes {
+  asPredator: WildlifePredatorOutcomeCounter & {
+    byPrey: Partial<Record<WildlifeSpecies,WildlifePredatorOutcomeCounter>>;
+  };
+  asPrey: WildlifePreyOutcomeCounter & {
+    byPredator: Partial<Record<WildlifeSpecies,WildlifePreyOutcomeCounter>>;
+  };
+}
+
 export interface WildlifeLineageRecord {
   entityId: string;
   species: WildlifeSpecies;
@@ -386,6 +408,8 @@ export interface WildlifeLineageRecord {
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
   migrationHistory?: WildlifeMigrationEvent[];
+  /** Deterministic fine-simulation hunt/flee/contact outcomes; absent in legacy records. */
+  predationOutcomes?: WildlifePredationOutcomes;
   origin: 'founder' | 'reproduction';
   offspringCount: number;
   reproductiveSuccess: boolean;
@@ -454,6 +478,41 @@ export interface WildlifePredatorSpecializationStats {
   selectionDifferential: WildlifeTraits;
 }
 
+export interface WildlifePredationPairPerformance {
+  role: 'predator' | 'prey';
+  counterpartSpecies: WildlifeSpecies;
+  observedIndividuals: number;
+  huntAttempts: number;
+  huntHits: number;
+  kills: number;
+  huntHitRate: number;
+  huntKillRate: number;
+  fleeAttempts: number;
+  successfulEscapes: number;
+  escapeRate: number;
+  attacksReceived: number;
+  survivedAttacks: number;
+  attackSurvivalRate: number;
+  traitMean: WildlifeTraits;
+  successfulTraitMean: WildlifeTraits;
+  successTraitDifferential: WildlifeTraits;
+}
+
+export interface WildlifeRealizedPredationStats {
+  huntAttempts: number;
+  huntHits: number;
+  kills: number;
+  huntHitRate: number;
+  huntKillRate: number;
+  fleeAttempts: number;
+  successfulEscapes: number;
+  escapeRate: number;
+  attacksReceived: number;
+  survivedAttacks: number;
+  attackSurvivalRate: number;
+  pairs: WildlifePredationPairPerformance[];
+}
+
 export interface WildlifeBiomeSelectionStats {
   basis: 'origin' | 'lifetime';
   biome: ChunkBiome;
@@ -496,6 +555,7 @@ export interface WildlifeEvolutionStats {
   lifetimeBiomeSelection: WildlifeBiomeSelectionStats[];
   exposureFitness: WildlifeHabitatFitnessStats[];
   predatorSpecialization: WildlifePredatorSpecializationStats[];
+  realizedPredation: WildlifeRealizedPredationStats;
 }
 
 export interface WildlifeState {
