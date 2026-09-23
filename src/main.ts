@@ -21,7 +21,7 @@ import { stepWildlifeMovementController } from './world/wildlifeMovementControll
 import {
   advanceWildlifeDomestication, domesticationCommandAllowedActions, domesticationPreservesSurvivalAction,
   individualizeWildlifeRepresentative, normalizeWildlifeDomestication, releaseWildlifeDomestication, setWildlifeDomesticationCommand,
-  wildlifeDomesticationInteractions, type WildlifeDomesticationInteraction
+  shouldWildlifeFollowPlayerAcrossChunk, wildlifeDomesticationInteractions, type WildlifeDomesticationInteraction
 } from './world/wildlifeDomestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -1375,6 +1375,15 @@ class TownGame {
       if(physicalChunk?.id===animal.state.targetChunkId)this.completeFineWildlifeMigration(animal,animal.state.targetChunkId);
     }
 
+    const playerChunk=this.cameraMode==='firstPerson'?this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z):undefined;
+    if(chunk&&playerChunk&&playerChunk.id!==chunk.id&&areAdjacentChunks(chunk,playerChunk)){
+      for(const id of [...runtime.wildlifeIds]){
+        const animal=this.wildlife.get(id);
+        if(!animal||animal.removed||!shouldWildlifeFollowPlayerAcrossChunk(animal.state.species,animal.state.domestication))continue;
+        this.completeFineWildlifeMigration(animal,playerChunk.id,'owner_follow');
+      }
+    }
+
     const wildlifeStates:WildlifeState[]=[];
     const currentOrdinaryCounts:Partial<Record<WildlifeSpecies,number>>={};
     const currentFixedWeights:Partial<Record<WildlifeSpecies,number>>={};
@@ -1860,7 +1869,11 @@ class TownGame {
     s.targetObjectId=undefined;s.targetWildlifeId=undefined;s.targetChunkId=undefined;
   }
 
-  completeFineWildlifeMigration(animal:WildlifeRuntime,targetChunkId:string) {
+  completeFineWildlifeMigration(
+    animal:WildlifeRuntime,
+    targetChunkId:string,
+    reason:'behavioral_migration'|'owner_follow'='behavioral_migration'
+  ) {
     if(animal.removed||this.wildlifeTransfers.has(animal.state.id))return false;
     const state=animal.state;
     const source=this.coarseWorld.chunks.get(state.chunkId);
@@ -1882,13 +1895,18 @@ class TownGame {
       sourcePopulation.count,initialFineCount,initialFineCount,sourceFixedTotal,sourceFixedTotal
     ).ordinaryWeight;
     const requestedWeight=fixedWeight>0?fixedWeight:ordinaryWeight;
+    const ownerFollow=reason==='owner_follow'
+      &&fixedWeight>0&&fixedWeight<=1.0001
+      &&shouldWildlifeFollowPlayerAcrossChunk(state.species,state.domestication);
+    if(reason==='owner_follow'&&!ownerFollow)return false;
     const freeCapacity=Math.max(0,targetPopulation.carryingCapacity-targetPopulation.count);
-    if(freeCapacity<=.05)return false;
+    if(!ownerFollow&&freeCapacity<=.05)return false;
+    const maxTargetAmount=ownerFollow?requestedWeight:freeCapacity;
 
     state.position={x:animal.mesh.position.x,z:animal.mesh.position.z};
     this.endWildlifeHabitatObservation(state);
     const representedPopulation=applyFineWildlifePopulationTransfer(
-      sourcePopulation,targetPopulation,state,initialFineCount,requestedWeight,freeCapacity
+      sourcePopulation,targetPopulation,state,initialFineCount,requestedWeight,maxTargetAmount
     );
     if(representedPopulation<=0){this.beginWildlifeHabitatObservation(state);return false;}
 
@@ -1901,7 +1919,7 @@ class TownGame {
     lineage.migrationHistory??=[];
     lineage.migrationHistory.push({
       fromChunkId:source.id,toChunkId:target.id,day:currentDay,
-      fromBiome:source.biome,toBiome:target.biome,representedPopulation,reason:'behavioral_migration'
+      fromBiome:source.biome,toBiome:target.biome,representedPopulation,reason
     });
     if(lineage.habitatExposure){
       lineage.habitatExposure.observedTransitions++;
@@ -1942,7 +1960,7 @@ class TownGame {
     if(this.selectedEntity?.type==='wildlife'&&this.selectedEntity.id===state.id)this.selectedEntity=undefined;
     if(this.hoverEntity?.type==='wildlife'&&this.hoverEntity.id===state.id)this.hoverEntity=undefined;
     this.event(`${this.wildlifeName(state.species)} ${state.id} 从 ${source.id} 迁移至 ${target.id}（代表 ${representedPopulation.toFixed(2)}）`);
-    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)}`);
+    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)} reason=${reason}`);
     return true;
   }
   tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
