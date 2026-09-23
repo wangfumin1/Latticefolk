@@ -228,3 +228,35 @@ test('coarse disease dynamics permit cross-species amplification and bounded rec
   assert.ok((rabbit.diseaseLoad||0)>before);
   assert.ok(populations.every(p=>(p.diseaseLoad||0)>=0&&(p.diseaseLoad||0)<=100));
 });
+
+
+test('wildlife ecology seeds all configured species including goat and wolf',()=>{
+  const a=chunk('chunk_species_expansion',17,{biome:'hills',ecology:86,water:70,food:72});
+  const populations=ensureWildlifePopulations(a);
+  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf']);
+  const goat=populations.find(p=>p.species==='goat')!;
+  const wolf=populations.find(p=>p.species==='wolf')!;
+  assert.ok(goat.carryingCapacity>0);
+  assert.ok(wolf.carryingCapacity>0);
+});
+
+test('wolf participates in coarse predation without creating or negative prey populations',()=>{
+  const a=chunk('chunk_wolf_predation',18,{biome:'forest',ecology:90,water:78,food:76});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){
+    pop.count=0;
+    pop.diseaseLoad=0;
+  }
+  const goat=populations.find(p=>p.species==='goat')!;
+  const deer=populations.find(p=>p.species==='deer')!;
+  const wolf=populations.find(p=>p.species==='wolf')!;
+  goat.count=Math.max(4,goat.carryingCapacity*.7);
+  deer.count=Math.max(4,deer.carryingCapacity*.7);
+  wolf.count=Math.max(2,wolf.carryingCapacity*.7);
+  const preyBefore=goat.count+deer.count;
+  for(let i=0;i<6;i++)simulateWildlife(a,20,'clear',75);
+  const preyAfter=goat.count+deer.count;
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(preyAfter<preyBefore);
+  assert.ok(populations.every(pop=>pop.count>=0));
+});
