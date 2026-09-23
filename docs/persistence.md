@@ -104,3 +104,7 @@ Species-specific predator pressure is stored inside each coarse chunk's JSON sta
 ### Predator-source specialization persistence
 
 `wildlifePredatorPressure` coarse JSON may now include a sorted `pairs` array containing deterministic predator→prey pressure decomposition. Older snapshots without `pairs` remain valid; runtime treats that field as absent legacy evidence until ecology recomputes it. Fine lineage `habitat_exposure_json` may include `predatorSourceMean` and `predatorSourceObservedDays`. Keeping source-observation coverage separate prevents historical exposure recorded before source decomposition from being interpreted as zero predator pressure. These are additive JSON fields in existing tables, so no SQLite schema migration is required.
+
+### Realized predation outcome persistence
+
+`wildlife_lineage` now has an optional `predation_outcomes_json` column containing durable fine-simulation hunt/flee/contact counters and counterpart-species breakdown. Existing databases are migrated in place with `ALTER TABLE ... ADD COLUMN`; legacy rows remain valid with no outcome evidence. The upsert keeps an existing JSON value when a sparse incoming lineage record omits the field. Because this evidence belongs to individual ancestry history rather than transient entity state, it survives fine-chunk unload, death and later world reloads.

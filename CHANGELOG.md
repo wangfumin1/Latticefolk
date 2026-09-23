@@ -34,6 +34,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Fitness-by-habitat evolution evidence across competition pressure, seasonal suitability, and disease pressure, including exposure/outcome correlations, low/mid/high cohorts, breeder rates, offspring/lifespan associations, and God View evidence without causal claims.
 - Species-specific predator-pressure observability derived from actual predator density and prey preference, with God View summaries, lineage lifetime exposure, and right-censored fitness-by-habitat associations without double-applying predation effects.
 - Predator/prey specialization evidence with persisted predator→prey pressure pairs, time-weighted per-predator lifetime exposure, separate source-observation coverage for legacy-safe statistics, and source-specific reproduction/offspring/lifespan associations plus breeder trait differentials.
+- Realized predation outcome evidence from deterministic fine action resolution: durable hunt attempts/hits/kills, flee attempts/successful escapes, attacks received/survived attacks, counterpart-species breakdown, God View success rates, and lineage trait differentials.
 
 ### Changed
 
