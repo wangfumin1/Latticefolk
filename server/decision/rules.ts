@@ -2,6 +2,7 @@ import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest,
 import { wildlifeLifeHistory } from '../../src/world/wildlifeLifeHistory.js';
 import { canWildlifePredate, isWildlifePredator, wildlifeSpeciesProfile } from '../../src/world/wildlifeSpecies.js';
 import { normalizeWildlifePhenotype, wildlifeBehaviorThresholds } from '../../src/world/wildlifePhenotype.js';
+import { normalizeWildlifeOrganismGenome, wildlifeResourceNicheScore } from '../../src/world/organismFamilies.js';
 
 function pick<T>(arr: T[], fallback: T): T {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : fallback;
@@ -186,7 +187,11 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     const animal=entry.wildlife;
     const profile=wildlifeSpeciesProfile(animal.species);
     const phenotype=normalizeWildlifePhenotype(animal.phenotype,animal.id);
+    const genome=normalizeWildlifeOrganismGenome(animal.species,animal.organismGenome,animal.id);
     const thresholds=wildlifeBehaviorThresholds(phenotype);
+    const forageResource=()=>entry.world.nearbyResources
+      .filter(resource=>resource.tags.some(tag=>profile.forageTags.includes(tag)))
+      .sort((a,b)=>wildlifeResourceNicheScore(animal.species,genome,b.tags,b.distance)-wildlifeResourceNicheScore(animal.species,genome,a.tags,a.distance)||a.distance-b.distance)[0];
     const nearbyPredator=entry.world.nearbyWildlife.find(x=>canWildlifePredate(x.species,animal.species)&&x.distance<thresholds.fleeDistance);
     const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.mateAvailable&&x.distance<8);
     let action:WildlifeAction='wander';
@@ -214,12 +219,12 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
         if(prey){action='hunt';targetWildlifeId=prey.id;reasonCode='predator_hunger';}
         else if(entry.allowedActions.includes(profile.feedingAction)){
           action=profile.feedingAction;
-          targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>profile.forageTags.includes(tag)))?.id;
+          targetObjectId=forageResource()?.id;
           reasonCode=profile.trophicRole==='omnivore'?'omnivore_forage':'predator_scavenge';
         }
       }else if(entry.allowedActions.includes(profile.feedingAction)){
         action=profile.feedingAction;
-        targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>profile.forageTags.includes(tag)))?.id;
+        targetObjectId=forageResource()?.id;
         reasonCode='hunger';
       }
     }else if((animal.diseaseLoad||0)>=thresholds.diseaseRestThreshold&&entry.allowedActions.includes('rest')){
@@ -232,7 +237,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
       action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';
     }else if(entry.allowedActions.includes(profile.feedingAction)){
       action=profile.feedingAction;
-      targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>profile.forageTags.includes(tag)))?.id;
+      targetObjectId=forageResource()?.id;
       reasonCode='opportunistic_forage';
     }
 

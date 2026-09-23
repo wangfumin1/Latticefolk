@@ -856,3 +856,48 @@ test('phenotype-by-biome fitness evidence is right-censored and excludes legacy-
   assert.ok((forest.lifespanAssociation.morphology.legLength||0)>.9);
 });
 
+test('organism genome evolution stats exclude legacy upgrades from trends and breeder differentials',()=>{
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<3;generation++){
+    for(let index=0;index<2;index++){
+      const stride=.94+generation*.04+index*.03;
+      const fruit=.92+generation*.05+index*.04;
+      sample.push({
+        entityId:`genome_g${generation}_${index}`,species:'badger',birthDay:generation*20+index,generation,
+        birthChunk:'forest',traitsAtBirth:traits(.6),origin:generation===0?'founder':'reproduction',
+        organismGenomeAtBirth:{
+          family:'mustelid',
+          material:{hueShift:generation*.004,lightnessShift:index*.005,accentShift:0},
+          niche:{grass:1,shrub:1.04-generation*.02,fruit,crop:.96},
+          locomotion:{stride,endurance:1.02}
+        },
+        organismGenomeProvenance:generation===0?'founder_seed':'birth',
+        offspringCount:index===1?2:0,reproductiveSuccess:index===1
+      });
+    }
+  }
+  sample.push({
+    entityId:'genome_legacy',species:'badger',birthDay:1,generation:20,birthChunk:'forest',
+    traitsAtBirth:traits(.6),origin:'founder',
+    organismGenomeAtBirth:{
+      family:'mustelid',
+      material:{hueShift:.025,lightnessShift:.06,accentShift:.02},
+      niche:{grass:1.06,shrub:1.14,fruit:.88,crop:1.10},
+      locomotion:{stride:.90,endurance:1.14}
+    },
+    organismGenomeProvenance:'legacy_upgrade',offspringCount:20,reproductiveSuccess:true
+  });
+  const stats=computeEvolutionStatistics(sample).find(entry=>entry.species==='badger')!.organismGenome;
+  assert.equal(stats.family,'mustelid');
+  assert.equal(stats.sampleSize,7);
+  assert.equal(stats.comparableSamples,6);
+  assert.equal(stats.founderSeedSamples,2);
+  assert.equal(stats.birthTrackedSamples,4);
+  assert.equal(stats.legacyUpgradeSamples,1);
+  assert.ok((stats.trendPerGeneration?.locomotion.stride||0)>0);
+  assert.ok((stats.trendPerGeneration?.niche.fruit||0)>0);
+  assert.ok((stats.breederDifferential?.locomotion.stride||0)>0);
+  assert.ok((stats.breederDifferential?.niche.fruit||0)>0);
+  assert.ok((stats.mean?.locomotion.endurance||0)>1);
+});
+

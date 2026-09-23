@@ -246,3 +246,24 @@ test('migration-drive phenotype lowers only the required habitat gain for an alr
   assert.equal(decide(state('rabbit_migrate_low',.75)).action,'wander');
 });
 
+test('individual organism niche genome changes bounded forage target ranking',()=>{
+  const genome={
+    family:'mustelid' as const,
+    material:{hueShift:0,lightnessShift:0,accentShift:0},
+    niche:{grass:.94,shrub:.88,fruit:1.14,crop:.90},
+    locomotion:{stride:1,endurance:1}
+  };
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'badger_niche',species:'badger',ageDays:500,hunger:82,thirst:20,energy:75,organismGenome:genome}),
+    world:world({nearbyResources:[
+      {id:'shrub_patch',tags:['food','forage','nature'],distance:3,resourceAmount:5},
+      {id:'fruit_patch',tags:['food','forage','fruit','apple'],distance:3,resourceAmount:5},
+      {id:'crop_patch',tags:['food','forage','farm','crop'],distance:3,resourceAmount:5}
+    ]}),
+    allowedActions:['forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'forage');
+  assert.equal(d.targetObjectId,'fruit_patch');
+});
+
