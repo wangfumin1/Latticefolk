@@ -92,3 +92,7 @@ Coarse disease transmission state is embedded in `CoarseChunkState` and persists
 ### Derived fitness evidence
 
 Fitness-by-habitat statistics are intentionally **not** stored as authoritative SQLite rows. The durable facts remain lineage records, offspring/death outcomes, and observation-bounded habitat exposure. Competition/season/disease correlations and low/mid/high exposure cohorts are recomputed deterministically from those facts by `src/world/evolution.ts` and through `GET /api/world/evolution`. This prevents stale aggregate statistics from diverging from the underlying lineage archive.
+
+### Species expansion compatibility
+
+Goat and wolf use the same existing persistence structures as rabbit/deer/boar/fox. Their coarse populations are stored in `coarse_chunks.state_json`; named fine individuals use the existing fine wildlife arrays; ancestry, traits, deaths, offspring, habitat exposure and migration history remain in `wildlife_lineage`; identity-preserving transfers remain in `wildlife_transfers`. Because species names are additive values inside existing JSON-backed state, no SQLite schema migration is required for this expansion. Older saves that contain only the original four species are normalized deterministically when coarse wildlife populations are next ensured.
