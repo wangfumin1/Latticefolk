@@ -756,9 +756,40 @@ export interface WildlifeMultifactorOutcomeEvidence {
   coefficients: WildlifeMultifactorFeatureCoefficient[];
 }
 
+export interface WildlifeMultifactorCoefficientStability {
+  kind: 'predation' | 'competition' | 'disease';
+  sourceSpecies: WildlifeSpecies;
+  comparableReplicates: number;
+  coefficientMean: number | null;
+  coefficientMin: number | null;
+  coefficientMax: number | null;
+  signConsistency: number | null;
+}
+
+export interface WildlifeMultifactorLeaveOneGenerationOutEvidence {
+  attemptedReplicates: number;
+  estimableReplicates: number;
+  comparableReplicates: number;
+  coefficients: WildlifeMultifactorCoefficientStability[];
+}
+
+export interface WildlifeMultifactorLocalWindowEvidence {
+  startGeneration: number;
+  endGeneration: number;
+  generations: number[];
+  model: WildlifeMultifactorOutcomeEvidence;
+}
+
+export interface WildlifeMultifactorOutcomeStabilityEvidence {
+  outcome: WildlifeMultifactorOutcome;
+  leaveOneGenerationOut: WildlifeMultifactorLeaveOneGenerationOutEvidence;
+  localWindows: WildlifeMultifactorLocalWindowEvidence[];
+}
+
 export interface WildlifeMultifactorSelectionEvidence {
   species: WildlifeSpecies;
   models: WildlifeMultifactorOutcomeEvidence[];
+  stability: WildlifeMultifactorOutcomeStabilityEvidence[];
 }
 
 export interface WildlifeBiomeSelectionStats {
