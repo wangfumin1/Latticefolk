@@ -205,7 +205,7 @@ The current development order is intentionally architecture-first:
 7. richer production chains and interactions;
 8. ✅ first ecological food-web/lifecycle systems;
 9. ✅ durable lineage, evolution statistics, and biome-linked selection observability;
-10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission, fitness-by-habitat, goat/wolf food-web expansion, predator-pressure observability, predator/prey specialization, realized hunting/escape evidence, predator/prey trait matching, multi-generation coevolution evidence, multi-species interaction-network observability, network-linked competition/disease source evidence, reciprocal generation-level source observability, and multi-factor interaction selection evidence; next: uncertainty-aware / time-local selection evidence and richer ecology, then a fuller physics layer.
+10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission, fitness-by-habitat, goat/wolf food-web expansion, predator-pressure observability, predator/prey specialization, realized hunting/escape evidence, predator/prey trait matching, multi-generation coevolution evidence, multi-species interaction-network observability, network-linked competition/disease source evidence, reciprocal generation-level source observability, and multi-factor interaction selection evidence with explicit severe-collinearity rejection; next: uncertainty-aware / time-local selection evidence and richer ecology, then a fuller physics layer.
 
 See the living [Roadmap](docs/roadmap.md) and [Long-term vision](docs/long-term-vision.md). Documentation is updated as each implementation stage lands.
 
