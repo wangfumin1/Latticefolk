@@ -267,3 +267,10 @@ test('fitness associations report missing evidence instead of zero when outcome 
   assert.equal(disease.reproductionAssociation,null);
   assert.equal(disease.offspringAssociation,null);
 });
+
+
+test('evolution statistics include newly configured goat and wolf species',()=>{
+  const stats=computeEvolutionStatistics([]);
+  assert.ok(stats.some(entry=>entry.species==='goat'));
+  assert.ok(stats.some(entry=>entry.species==='wolf'));
+});
