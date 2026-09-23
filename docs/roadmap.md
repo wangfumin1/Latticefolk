@@ -46,7 +46,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Additional wildlife/predators: goat and wolf participate in coarse carrying capacity, competition, seasonality, disease, trophic predation, fine lifecycle/behavior, migration, and evolution observability through centralized species semantics.
 - ✅ Predator-pressure adaptation evidence: actual predator density and shared prey preference produce species-specific pressure that is recorded in lifetime habitat exposure and correlated with reproduction/offspring/lifespan using the existing right-censored evidence layer.
 - ✅ Predator/prey specialization evidence: predator→prey pair pressure is persisted and fine lifetime exposure tracks time-weighted source pressure with separate source-observation coverage; God View exposes source-specific reproduction/offspring/lifespan associations and breeder trait differentials.
-- ⏭ Deeper ecology: add realized hunting/escape success evidence, richer multi-species food webs and niches, stronger disease ecology, and organism morphology/behavior diversity.
+- ✅ Realized hunting/escape evidence: deterministic fine action resolution durably records hunt attempts/hits/kills, flee attempts/successes, attacks received/survived attacks, counterpart-species breakdown and God View success rates/trait differentials.
+- ⏭ Deeper ecology: add predator/prey trait-matching evidence and generation trends, richer multi-species food webs and niches, stronger disease ecology, and organism morphology/behavior diversity.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.
