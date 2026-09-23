@@ -496,8 +496,12 @@ export interface WildlifePredationGenerationPerformance {
   successRate: number;
   terminalSuccesses: number;
   terminalSuccessRate: number;
+  traitMatchAttempts: number;
+  traitMatchSuccesses: number;
+  terminalTraitMatchSuccesses: number;
   attemptTraitAdvantageMean: WildlifeTraits;
   successTraitAdvantageMean: WildlifeTraits;
+  terminalTraitAdvantageMean: WildlifeTraits;
 }
 
 export interface WildlifePredationPairPerformance {
@@ -518,6 +522,9 @@ export interface WildlifePredationPairPerformance {
   traitMean: WildlifeTraits;
   successfulTraitMean: WildlifeTraits;
   successTraitDifferential: WildlifeTraits;
+  traitMatchAttempts: number;
+  traitMatchSuccesses: number;
+  terminalTraitMatchSuccesses: number;
   /** Actor minus counterpart trait means for role-specific attempts/successes. */
   attemptTraitAdvantageMean: WildlifeTraits;
   successTraitAdvantageMean: WildlifeTraits;
