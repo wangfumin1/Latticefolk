@@ -61,6 +61,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       habitatExposure:{
         observedDays:1.5,habitatMean:{ecology:64,food:59,water:68,danger:21,settlementLevel:2,plantBiomass:53},
         predatorSourceMean:{fox:35,wolf:12},predatorSourceObservedDays:1.2,
+        competitionSourceMean:{deer:22,goat:18},competitionSourceObservedDays:1.1,
+        diseaseSourceMean:{fox:9,deer:4},diseaseSourceObservedDays:.9,
         biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:1,lastChunk:'chunk_3_-1',lastBiome:'forest'
       },
       predationOutcomes:{
@@ -102,6 +104,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceObservedDays,1.2);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.fox,35);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.wolf,12);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.competitionSourceObservedDays,1.1);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.competitionSourceMean?.deer,22);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.diseaseSourceObservedDays,.9);
+  assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.diseaseSourceMean?.fox,9);
   assert.equal(loaded.wildlifeLineage?.[0]?.predationOutcomes?.asPrey.fleeAttempts,3);
   assert.equal(loaded.wildlifeLineage?.[0]?.predationOutcomes?.asPrey.byPredator.fox?.successfulEscapes,2);
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.toChunkId,'chunk_3_-1');
