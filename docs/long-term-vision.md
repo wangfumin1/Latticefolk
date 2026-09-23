@@ -205,4 +205,12 @@ Evolution observability can now ask whether one source remains associated with r
 
 The implementation is deliberately conservative: source coverage must overlap, at least two features must vary, sample counts scale with model width, and legacy unknowns are never filled with zeros. Before ridge fitting, the unregularized predictor matrix is checked for singularity, extreme pairwise correlation and variance inflation; severe collinearity is reported as unavailable and no coefficient is emitted. God View exposes standardized coefficients only for stable-enough designs together with coverage, model fit, maximum predictor correlation and maximum VIF.
 
-This is still not causal inference. The next evidence layer should add uncertainty and time locality—confidence/resampling or stability summaries, rolling generation/time windows, and regime comparisons—so a coefficient can be checked for persistence rather than trusted from one pooled world history. That should precede much larger species networks and morphology-driven evolution.
+This is still not causal inference.
+
+## Implemented milestone: stability and generation-local selection evidence
+
+Pooled multi-factor coefficients are now accompanied by deterministic sensitivity evidence. Latticefolk refits each outcome after omitting target-species generations, counts which refits remain estimable and feature-comparable, and summarizes coefficient ranges plus sign consistency. The probe set is bounded: up to 12 generations are sampled deterministically across the full available history, including the endpoints, so long-running worlds do not turn observability into unbounded refitting. This tests whether the pooled association is sensitive to representative cohort removal; it is explicitly a stability/sensitivity summary rather than a confidence interval.
+
+The same layer exposes local regimes using the target species' own generation history. It examines at most six recent endpoints and searches backward through at most eight target-species generations for the narrowest trailing window that passes the existing coverage, sample-size, outcome-variance and collinearity gates; an exhausted bounded search is reported explicitly. Because persisted lineage exposure is lifetime-aggregated, Latticefolk does not claim within-lifetime calendar-time resolution that it does not possess. These overlapping local windows are observational diagnostics and are never synchronized to another species' generation numbers.
+
+With pooled, source-specific, generation-level and stability-aware evidence now connected, the next ecology step can expand species, niches and organism morphology/behavior diversity while retaining measurable consequences instead of adding cosmetic biodiversity.
