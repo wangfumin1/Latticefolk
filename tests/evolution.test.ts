@@ -274,3 +274,46 @@ test('evolution statistics include newly configured goat and wolf species',()=>{
   assert.ok(stats.some(entry=>entry.species==='goat'));
   assert.ok(stats.some(entry=>entry.species==='wolf'));
 });
+
+
+test('lifetime habitat exposure preserves time-weighted predator pressure',()=>{
+  const safe={biome:'hills' as const,ecology:80,food:66,water:68,danger:22,settlementLevel:0,plantBiomass:70,competitionPressure:24,seasonalSuitability:76,diseasePressure:8,predatorPressure:10};
+  const hunted={...safe,predatorPressure:70};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,safe,'chunk_safe',1);
+  exposure=accumulateWildlifeHabitatExposure(exposure,hunted,'chunk_hunted',3);
+  assert.equal(exposure.observedDays,4);
+  assert.equal(exposure.habitatMean.predatorPressure,55);
+});
+
+test('fitness-by-habitat quantifies predator-pressure associations without causal labeling',()=>{
+  const sample:WildlifeLineageRecord[]=[
+    [8,3,130],[18,2,120],[28,1,110],
+    [42,1,95],[52,0,85],[62,0,75],
+    [74,0,65],[84,0,55],[94,0,45]
+  ].map(([pressure,offspring,lifespan],index)=>{
+    const habitat={
+      biome:'hills' as const,ecology:78,food:68,water:70,danger:25,settlementLevel:0,plantBiomass:69,
+      competitionPressure:35,seasonalSuitability:78,diseasePressure:12,predatorPressure:pressure!
+    };
+    const exposure=accumulateWildlifeHabitatExposure(undefined,habitat,'predator_fitness',1);
+    exposure.lastObservedDay=undefined;
+    return {
+      entityId:`predator_fit_${index}`,species:'goat' as const,birthDay:1,generation:Math.floor(index/3),
+      deathDay:1+lifespan!,deathReason:'predation' as const,birthChunk:'predator_fitness',
+      traitsAtBirth:traits(.3+index*.05,.8+index*.02),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<3?'founder' as const:'reproduction' as const,
+      offspringCount:offspring!,reproductiveSuccess:offspring!>0
+    };
+  });
+  const goat=computeEvolutionStatistics(sample).find(entry=>entry.species==='goat')!;
+  const predator=goat.exposureFitness.find(entry=>entry.dimension==='predatorPressure')!;
+  assert.equal(predator.sampleSize,9);
+  assert.notEqual(predator.reproductionAssociation,null);
+  assert.notEqual(predator.offspringAssociation,null);
+  assert.notEqual(predator.lifespanAssociation,null);
+  assert.ok(predator.reproductionAssociation!<0);
+  assert.ok(predator.offspringAssociation!<0);
+  assert.ok(predator.lifespanAssociation!<0);
+  assert.equal(predator.bands.find(band=>band.band==='low')?.population,3);
+  assert.equal(predator.bands.find(band=>band.band==='high')?.breederRate,0);
+});

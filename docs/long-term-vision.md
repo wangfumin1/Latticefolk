@@ -134,3 +134,11 @@ The wildlife model has expanded beyond the original rabbit/deer/boar/fox quartet
 A shared species/predator module now prevents coarse and fine simulation from maintaining separate food-web truths. Predator-prey legality, preference, fine damage and hunger relief are simulation-owned definitions; Decision Providers only choose legal bounded intentions. This is the first step toward a larger extensible food web rather than a growing set of one-off species branches.
 
 The next ecology work should extend predator pressure and multi-species adaptation observability, then broaden niches/species and eventually connect morphology genes, movement/body constraints and organism generation to these same authoritative ecological rules.
+
+## Implemented milestone: predator-pressure adaptation evidence
+
+The expanded food web now feeds the same measurable evolutionary evidence layer as competition, seasonality and disease. Rabbit, deer, boar, goat, fox and wolf receive species-specific predator pressure based on the real predator populations present in the chunk and the shared predator/prey preference graph. Pressure is observable even before a kill occurs, while actual mortality remains a separate deterministic predation event.
+
+Named fine individuals accumulate the predator pressure they actually experienced during observed lifetime habitat exposure. God View can compare low/medium/high pressure cohorts and reproduction, offspring and lifespan associations without claiming causality. This creates the first direct bridge from multi-trophic community composition to lineage-level adaptation evidence.
+
+The next ecology direction is more detailed predator/prey specialization and multi-species adaptation: prey-specific hunting success, escape/risk traits, richer niches and species, disease interactions, and eventually morphology/body genes that constrain movement and ecological roles.

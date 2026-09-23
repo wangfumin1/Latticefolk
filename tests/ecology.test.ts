@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
-import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
+import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, computeWildlifePredatorPressure, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -287,4 +287,50 @@ test('legacy four-species coarse wildlife state upgrades additively to goat and 
   assert.ok(populations.some(p=>p.species==='goat'));
   assert.ok(populations.some(p=>p.species==='wolf'));
   assert.equal(populations.length,6);
+});
+
+
+test('predator pressure follows actual predator density and prey preference without mutating prey counts',()=>{
+  const a=chunk('chunk_predator_pressure',20,{biome:'forest',ecology:88,water:78,food:74});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations)pop.count=0;
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const deer=populations.find(p=>p.species==='deer')!;
+  const goat=populations.find(p=>p.species==='goat')!;
+  const fox=populations.find(p=>p.species==='fox')!;
+  const wolf=populations.find(p=>p.species==='wolf')!;
+  rabbit.count=8;deer.count=5;goat.count=5;
+  const preyBefore={rabbit:rabbit.count,deer:deer.count,goat:goat.count};
+
+  const none=computeWildlifePredatorPressure(a,populations);
+  assert.equal(none.speciesPressure.rabbit,0);
+  assert.equal(none.speciesPressure.deer,0);
+  assert.equal(none.speciesPressure.goat,0);
+
+  fox.count=Math.max(1,fox.carryingCapacity*.7);
+  wolf.count=Math.max(1,wolf.carryingCapacity*.7);
+  const pressured=computeWildlifePredatorPressure(a,populations);
+  assert.ok(pressured.speciesPressure.rabbit>0);
+  assert.ok(pressured.speciesPressure.deer>0);
+  assert.ok(pressured.speciesPressure.goat>0);
+  assert.equal(pressured.speciesPressure.wolf,0);
+  assert.ok((pressured.strongestPair?.pressure||0)>0);
+  assert.equal(rabbit.count,preyBefore.rabbit);
+  assert.equal(deer.count,preyBefore.deer);
+  assert.equal(goat.count,preyBefore.goat);
+  assert.ok(Object.values(pressured.speciesPressure).every(value=>value>=0&&value<=100));
+});
+
+test('wolf density raises goat predator pressure monotonically',()=>{
+  const a=chunk('chunk_predator_density',21,{biome:'hills',ecology:86,water:70,food:72});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations)pop.count=0;
+  const goat=populations.find(p=>p.species==='goat')!;
+  const wolf=populations.find(p=>p.species==='wolf')!;
+  goat.count=6;
+  wolf.count=Math.max(.5,wolf.carryingCapacity*.2);
+  const low=computeWildlifePredatorPressure(a,populations).speciesPressure.goat;
+  wolf.count=Math.max(1.5,wolf.carryingCapacity*.9);
+  const high=computeWildlifePredatorPressure(a,populations).speciesPressure.goat;
+  assert.ok(high>low);
 });

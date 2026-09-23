@@ -10,8 +10,8 @@ const SPECIES=[...WILDLIFE_SPECIES];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
-const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0,seasonalSuitability:0,diseasePressure:0});
-const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure','seasonalSuitability','diseasePressure'];
+const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0,seasonalSuitability:0,diseasePressure:0,predatorPressure:0});
+const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure','seasonalSuitability','diseasePressure','predatorPressure'];
 const MIN_LIFETIME_EXPOSURE_DAYS=.02;
 
 export function accumulateWildlifeHabitatExposure(
@@ -88,7 +88,7 @@ function fitnessBand(value:number):WildlifeFitnessBandStats['band'] {
 }
 
 function habitatFitness(records:WildlifeLineageRecord[],asOfDay?:number):WildlifeHabitatFitnessStats[] {
-  const dimensions:WildlifeFitnessExposureDimension[]=['competitionPressure','seasonalSuitability','diseasePressure'];
+  const dimensions:WildlifeFitnessExposureDimension[]=['competitionPressure','seasonalSuitability','diseasePressure','predatorPressure'];
   return dimensions.map(dimension=>{
     const samples=records.map(record=>{
       const exposure=record.habitatExposure;
@@ -204,7 +204,8 @@ function habitatMean(records:WildlifeLineageRecord[],basis:'origin'|'lifetime'):
       plantBiomass:mean(habitats.map(value=>value.plantBiomass)),
       competitionPressure:mean(habitats.map(value=>Number(value.competitionPressure||0))),
       seasonalSuitability:mean(habitats.map(value=>Number(value.seasonalSuitability||0))),
-      diseasePressure:mean(habitats.map(value=>Number(value.diseasePressure||0)))
+      diseasePressure:mean(habitats.map(value=>Number(value.diseasePressure||0))),
+      predatorPressure:mean(habitats.map(value=>Number(value.predatorPressure||0)))
     };
   }
   const out=zeroHabitat();
