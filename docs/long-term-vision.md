@@ -198,3 +198,11 @@ Competition and disease source history now has a generational dimension. For any
 This closes the first evidence loop for predation, competition and disease: community-level interaction edges can be traced into individual lifetime exposure and then into generation-level reproductive and trait histories. The result remains a measurement system rather than an automatic causal-selection engine.
 
 The next step is multi-factor selection evidence. Real animals experience several pressures at once—multiple competitors, disease sources, predators, habitat quality and season—so stronger inference needs to distinguish correlated exposures rather than evaluating every edge only in isolation. That work should remain deterministic/observational and preserve explicit sample coverage before morphology genes and larger ecological networks are added.
+
+## Implemented milestone: multi-factor interaction selection evidence
+
+Evolution observability can now ask whether one source remains associated with reproductive or survival outcomes while other simultaneously observed interaction pressures are represented in the same model. Per-species models combine supported predator, competition, and disease source histories instead of evaluating every edge only in isolation.
+
+The implementation is deliberately conservative: source coverage must overlap, at least two features must vary, sample counts scale with model width, legacy unknowns are never filled with zeros, and ridge regularization stabilizes correlated predictors. God View exposes standardized coefficients together with coverage, model fit and maximum predictor correlation so users can see when a coefficient comes from a strongly collinear design.
+
+This is still not causal inference. The next evidence layer should add uncertainty and time locality—confidence/resampling or stability summaries, rolling generation/time windows, and regime comparisons—so a coefficient can be checked for persistence rather than trusted from one pooled world history. That should precede much larger species networks and morphology-driven evolution.
