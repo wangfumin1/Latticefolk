@@ -415,6 +415,38 @@ export interface WildlifeOrganismLocomotion {
   energyMultiplier: number;
 }
 
+export interface WildlifeOrganismGenomeVector {
+  material: {
+    hueShift: number;
+    lightnessShift: number;
+    accentShift: number;
+  };
+  niche: {
+    grass: number;
+    shrub: number;
+    fruit: number;
+    crop: number;
+  };
+  locomotion: {
+    stride: number;
+    endurance: number;
+  };
+}
+
+export interface WildlifeOrganismGenomeStats {
+  family: WildlifeOrganismFamily | null;
+  sampleSize: number;
+  comparableSamples: number;
+  birthTrackedSamples: number;
+  founderSeedSamples: number;
+  legacyUpgradeSamples: number;
+  mean: WildlifeOrganismGenomeVector | null;
+  variance: WildlifeOrganismGenomeVector | null;
+  trendPerGeneration: WildlifeOrganismGenomeVector | null;
+  breederMean: WildlifeOrganismGenomeVector | null;
+  breederDifferential: WildlifeOrganismGenomeVector | null;
+}
+
 export interface WildlifeFunctionalPhenotype {
   /** Multiplies trait-based movement speed. */
   movementSpeedMultiplier: number;
@@ -959,6 +991,7 @@ export interface WildlifeEvolutionStats {
   traitTrendPerGeneration: WildlifeTraits;
   phenotype: WildlifePhenotypeStats;
   phenotypeBiomeFitness: WildlifePhenotypeBiomeFitnessStats[];
+  organismGenome: WildlifeOrganismGenomeStats;
   mortality: Record<WildlifeDeathReason, number>;
   reproductiveSuccess: number;
   survivalToReproductionRate: number;
