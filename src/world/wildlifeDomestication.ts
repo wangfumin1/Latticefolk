@@ -107,6 +107,23 @@ export function setWildlifeDomesticationCommand(
   return {...current,command,lastInteractionDay:day};
 }
 
+export interface WildlifeRepresentativeIndividualization {
+  nextInitialOrdinaryCount:number;
+  nextFixedWeight:number;
+}
+
+export function individualizeWildlifeRepresentative(
+  initialOrdinaryCount:number,
+  existingFixedWeight:number
+):WildlifeRepresentativeIndividualization|undefined {
+  const ordinary=Math.max(0,Math.floor(initialOrdinaryCount));
+  const fixed=Math.max(0,existingFixedWeight);
+  if(fixed>1.0001)return undefined;
+  if(fixed>0)return {nextInitialOrdinaryCount:ordinary,nextFixedWeight:1};
+  if(ordinary<=0)return undefined;
+  return {nextInitialOrdinaryCount:ordinary-1,nextFixedWeight:1};
+}
+
 export function wildlifeDomesticationInteractions(
   animal:Pick<WildlifeState,'species'|'domestication'|'representedPopulation'>,
   ownerKind:WildlifeDomesticationOwnerKind='player',
