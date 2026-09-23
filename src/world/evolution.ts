@@ -4,8 +4,9 @@ import type {
   WildlifeLineageRecord, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
+import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
 
-const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
+const SPECIES=[...WILDLIFE_SPECIES];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
