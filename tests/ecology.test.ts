@@ -239,14 +239,16 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
 });
 
 
-test('wildlife ecology seeds all configured species including goat and wolf',()=>{
+test('wildlife ecology seeds all configured species including goat, wolf and badger',()=>{
   const a=chunk('chunk_species_expansion',17,{biome:'hills',ecology:86,water:70,food:72});
   const populations=ensureWildlifePopulations(a);
-  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf']);
+  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf','badger']);
   const goat=populations.find(p=>p.species==='goat')!;
   const wolf=populations.find(p=>p.species==='wolf')!;
+  const badger=populations.find(p=>p.species==='badger')!;
   assert.ok(goat.carryingCapacity>0);
   assert.ok(wolf.carryingCapacity>0);
+  assert.ok(badger.carryingCapacity>0);
 });
 
 test('wolf participates in coarse predation without creating or negative prey populations',()=>{
@@ -271,7 +273,7 @@ test('wolf participates in coarse predation without creating or negative prey po
 });
 
 
-test('legacy four-species coarse wildlife state upgrades additively to goat and wolf',()=>{
+test('legacy four-species coarse wildlife state upgrades additively to newer species profiles',()=>{
   const a=chunk('chunk_legacy_species',19,{biome:'forest',ecology:82,water:72,food:70});
   a.wildlife=[
     {species:'rabbit',count:7,carryingCapacity:10,health:80,diseaseLoad:2},
@@ -286,7 +288,8 @@ test('legacy four-species coarse wildlife state upgrades additively to goat and 
   assert.equal(populations.find(p=>p.species==='fox')?.count,1);
   assert.ok(populations.some(p=>p.species==='goat'));
   assert.ok(populations.some(p=>p.species==='wolf'));
-  assert.equal(populations.length,6);
+  assert.ok(populations.some(p=>p.species==='badger'));
+  assert.equal(populations.length,7);
 });
 
 
@@ -352,3 +355,37 @@ test('predator pressure retains per-pair source decomposition for the same prey'
   assert.ok(rabbitPairs.some(pair=>pair.predatorSpecies==='wolf'&&pair.pressure>0));
   assert.ok(rabbitPairs.every(pair=>pair.pressure>=0&&pair.pressure<=100));
 });
+
+test('profile-driven badger ecology combines plant consumption and rabbit predation',()=>{
+  const a=chunk('chunk_badger_omnivore',23,{biome:'forest',ecology:88,water:76,food:72});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){
+    pop.count=0;
+    pop.diseaseLoad=0;
+  }
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const badger=populations.find(p=>p.species==='badger')!;
+  rabbit.count=Math.max(5,rabbit.carryingCapacity*.6);
+  badger.count=Math.max(1,badger.carryingCapacity*.7);
+  a.plants={grass:65,shrub:70,fruit:78,crop:35};
+  const fruitBefore=a.plants.fruit;
+  const rabbitBefore=rabbit.count;
+
+  for(let i=0;i<6;i++)simulateWildlife(a,20,'clear',75);
+
+  assert.ok((a.trophicFlux?.herbivory||0)>0);
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(a.plants.fruit<fruitBefore);
+  assert.ok(rabbit.count<rabbitBefore);
+  assert.ok(badger.count>=0);
+});
+
+test('badger habitat suitability follows its centralized forest-biased profile',()=>{
+  const forest=chunk('chunk_badger_forest',24,{biome:'forest',ecology:82,food:70,water:70,danger:18});
+  const dryland=chunk('chunk_badger_dry',25,{biome:'dryland',ecology:82,food:70,water:70,danger:18});
+  forest.plants={grass:50,shrub:72,fruit:70,crop:30};
+  dryland.plants={grass:50,shrub:72,fruit:70,crop:30};
+  ensureWildlifePopulations(forest);ensureWildlifePopulations(dryland);
+  assert.ok(seasonalHabitatSuitability(forest,'badger',61)>seasonalHabitatSuitability(dryland,'badger',61));
+});
+
