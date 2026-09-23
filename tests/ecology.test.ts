@@ -116,6 +116,7 @@ test('niche partitioning keeps fox competition lower than crowded plant consumer
     if(p.species==='rabbit')p.count=30;
     else if(p.species==='deer')p.count=14;
     else if(p.species==='boar')p.count=11;
+    else if(p.species==='lynx')p.count=0;
     else p.count=5;
   }
   const state=computeWildlifeNicheCompetition(a,populations);
@@ -396,7 +397,7 @@ test('archetype-composed lynx enters coarse ecology and predation through shared
   for(const pop of populations){pop.count=0;pop.diseaseLoad=0;}
   const rabbit=populations.find(p=>p.species==='rabbit')!;
   const lynx=populations.find(p=>p.species==='lynx')!;
-  rabbit.count=Math.max(6,rabbit.carryingCapacity*.7);
+  rabbit.count=Math.max(6,rabbit.carryingCapacity*1.05);
   lynx.count=Math.max(1,lynx.carryingCapacity*.7);
   const rabbitBefore=rabbit.count;
   const pressure=computeWildlifePredatorPressure(a,populations);
