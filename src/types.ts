@@ -723,6 +723,13 @@ export interface WildlifeCoevolutionPairEvidence {
 }
 
 export type WildlifeMultifactorOutcome = 'reproduction' | 'offspring' | 'lifespan';
+export type WildlifeMultifactorModelStatus =
+  | 'estimable'
+  | 'insufficient_features'
+  | 'insufficient_samples'
+  | 'no_outcome_variance'
+  | 'unstable_collinearity'
+  | 'numerical_failure';
 
 export interface WildlifeMultifactorFeatureCoefficient {
   kind: 'predation' | 'competition' | 'disease';
@@ -737,6 +744,7 @@ export interface WildlifeMultifactorFeatureCoefficient {
 export interface WildlifeMultifactorOutcomeEvidence {
   outcome: WildlifeMultifactorOutcome;
   estimable: boolean;
+  status: WildlifeMultifactorModelStatus;
   baseSamples: number;
   samples: number;
   candidateFeatures: number;
@@ -744,6 +752,7 @@ export interface WildlifeMultifactorOutcomeEvidence {
   ridgeLambda: number;
   rSquared: number | null;
   maxFeatureCorrelation: number | null;
+  maxVarianceInflationFactor: number | null;
   coefficients: WildlifeMultifactorFeatureCoefficient[];
 }
 
