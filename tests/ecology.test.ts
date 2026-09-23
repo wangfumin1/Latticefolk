@@ -461,3 +461,44 @@ test('raccoon coarse ecology combines fruit forage and rabbit predation through 
   assert.ok(rabbit.count<controlRabbit.count,'raccoon predation should suppress rabbit growth relative to the no-raccoon control');
 });
 
+test('domesticated form reduces deterministic settlement carrying-capacity penalty',()=>{
+  const wildOpen=chunk('chunk_form_wild_open',32,{biome:'plains',settlementLevel:0,ecology:88,water:78,food:74,danger:18});
+  const wildTown=chunk('chunk_form_wild_town',33,{biome:'plains',settlementLevel:3,ecology:88,water:78,food:74,danger:18});
+  const domesticOpen=chunk('chunk_form_domestic_open',34,{biome:'plains',settlementLevel:0,ecology:88,water:78,food:74,danger:18});
+  const domesticTown=chunk('chunk_form_domestic_town',35,{biome:'plains',settlementLevel:3,ecology:88,water:78,food:74,danger:18});
+  for(const target of [wildOpen,wildTown,domesticOpen,domesticTown])target.plants={grass:80,shrub:52,fruit:28,crop:36};
+  const bisonOpen=ensureWildlifePopulations(wildOpen).find(pop=>pop.species==='bison')!;
+  const bisonTown=ensureWildlifePopulations(wildTown).find(pop=>pop.species==='bison')!;
+  const sheepOpen=ensureWildlifePopulations(domesticOpen).find(pop=>pop.species==='sheep')!;
+  const sheepTown=ensureWildlifePopulations(domesticTown).find(pop=>pop.species==='sheep')!;
+  const wildRetention=bisonTown.carryingCapacity/Math.max(.001,bisonOpen.carryingCapacity);
+  const domesticRetention=sheepTown.carryingCapacity/Math.max(.001,sheepOpen.carryingCapacity);
+  assert.ok(domesticRetention>wildRetention);
+  assert.ok(domesticRetention>.85);
+});
+
+test('monster form retains more habitat suitability under danger than matched wild predator ecology',()=>{
+  const safe=chunk('chunk_form_safe',36,{biome:'forest',settlementLevel:0,ecology:86,water:74,food:70,danger:10});
+  const dangerous=chunk('chunk_form_danger',37,{biome:'forest',settlementLevel:0,ecology:86,water:74,food:70,danger:82});
+  for(const target of [safe,dangerous])target.plants={grass:48,shrub:76,fruit:64,crop:20};
+  const lynxSafe=seasonalHabitatSuitability(safe,'lynx',61);
+  const lynxDanger=seasonalHabitatSuitability(dangerous,'lynx',61);
+  const wargSafe=seasonalHabitatSuitability(safe,'warg',61);
+  const wargDanger=seasonalHabitatSuitability(dangerous,'warg',61);
+  assert.ok(wargDanger/wargSafe>lynxDanger/lynxSafe);
+  assert.ok(wargDanger>lynxDanger);
+});
+
+test('monster warg enters coarse predator pressure through ordinary registry semantics',()=>{
+  const a=chunk('chunk_form_warg_predation',38,{biome:'forest',ecology:88,water:76,food:72});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){pop.count=0;pop.diseaseLoad=0;}
+  const sheep=populations.find(pop=>pop.species==='sheep')!;
+  const warg=populations.find(pop=>pop.species==='warg')!;
+  sheep.count=Math.max(4,sheep.carryingCapacity*.8);
+  warg.count=Math.max(1,warg.carryingCapacity*.7);
+  const pressure=computeWildlifePredatorPressure(a,populations);
+  assert.ok((pressure.speciesPressure.sheep||0)>0);
+  assert.ok((pressure.pairs||[]).some(pair=>pair.predatorSpecies==='warg'&&pair.preySpecies==='sheep'&&pair.pressure>0));
+});
+
