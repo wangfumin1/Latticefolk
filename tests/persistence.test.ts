@@ -39,6 +39,13 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
         predatorSourceMean:{fox:35,wolf:12},predatorSourceObservedDays:1.2,
         biomeDays:{plains:1.5},chunkDays:{'chunk_2_-1':1.5},observedTransitions:1,lastChunk:'chunk_3_-1',lastBiome:'forest'
       },
+      predationOutcomes:{
+        asPredator:{huntAttempts:0,huntHits:0,kills:0,byPrey:{}},
+        asPrey:{
+          fleeAttempts:3,successfulEscapes:2,attacksReceived:2,survivedAttacks:1,
+          byPredator:{fox:{fleeAttempts:3,successfulEscapes:2,attacksReceived:2,survivedAttacks:1}}
+        }
+      },
       migrationHistory:[{
         fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',day:2.5,fromBiome:'plains',toBiome:'forest',
         representedPopulation:2.5,reason:'behavioral_migration'
@@ -71,6 +78,8 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceObservedDays,1.2);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.fox,35);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.predatorSourceMean?.wolf,12);
+  assert.equal(loaded.wildlifeLineage?.[0]?.predationOutcomes?.asPrey.fleeAttempts,3);
+  assert.equal(loaded.wildlifeLineage?.[0]?.predationOutcomes?.asPrey.byPredator.fox?.successfulEscapes,2);
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
@@ -133,6 +142,10 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
         fromChunkId:'chunk_0_0',toChunkId:'chunk_1_0',day:2.25,fromBiome:'forest',toBiome:'plains',
         representedPopulation:1,reason:'behavioral_migration'
       }],
+      predationOutcomes:{
+        asPredator:{huntAttempts:0,huntHits:0,kills:0,byPrey:{}},
+        asPrey:{fleeAttempts:1,successfulEscapes:1,attacksReceived:0,survivedAttacks:0,byPredator:{fox:{fleeAttempts:1,successfulEscapes:1,attacksReceived:0,survivedAttacks:0}}}
+      },
       origin:'reproduction',offspringCount:0,reproductiveSuccess:false
     }]
   };
@@ -143,6 +156,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   assert.equal(migrated?.habitatExposure?.observedDays,.5);
   assert.equal(migrated?.habitatExposure?.lastBiome,'plains');
   assert.equal(migrated?.migrationHistory?.[0]?.fromChunkId,'chunk_0_0');
+  assert.equal(migrated?.predationOutcomes?.asPrey.successfulEscapes,1);
+  assert.equal(migrated?.predationOutcomes?.asPrey.byPredator.fox?.fleeAttempts,1);
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
