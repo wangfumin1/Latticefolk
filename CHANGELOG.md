@@ -41,7 +41,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Network-linked competition/disease source evidence: fine lineage exposure tracks time-weighted counterpart competition and incoming cross-species disease pressure with separate legacy-safe observation coverage; right-censored fitness statistics connect each source to reproduction, offspring, lifespan, and breeder trait differentials.
 - Generation-level competition/disease source evidence with independent target←source series on both sides of a species pair, source-pressure/reproductive/lifespan/trait trends, within-side correlations, partial/bilateral coverage, God View cards, and evolution API output without cross-species generation alignment.
 - Multi-factor interaction selection evidence using outcome-specific complete-case source features and standardized ridge models across predator, competition, and disease pressures, with explicit non-estimable states, coverage, R², pairwise-correlation/VIF diagnostics, severe-collinearity rejection, and standardized coefficients.
-- Deterministic uncertainty/stability observability for multi-factor evidence: leave-one-target-generation-out sensitivity, comparable-feature coefficient ranges/sign consistency, and data-adaptive generation-local windows that expose regime changes without inventing within-lifetime exposure time series.
+- Deterministic uncertainty/stability observability for multi-factor evidence: bounded leave-one-target-generation-out sensitivity (up to 12 history-spanning probes), comparable-feature coefficient ranges/sign consistency, and up to six generation-local windows with an eight-generation search horizon that expose regime changes without inventing within-lifetime exposure time series.
 
 ### Changed
 
