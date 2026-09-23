@@ -129,3 +129,14 @@ test('new family genomes preserve zero plant axes and bounded legal preferences'
   assert.ok(raccoonWeights.fruit>raccoonWeights.grass);
 });
 
+test('domesticated and monster forms reuse existing family genome envelopes',()=>{
+  const sheep=founderWildlifeOrganismGenome('sheep','sheep_form_founder');
+  const warg=founderWildlifeOrganismGenome('warg','warg_form_founder');
+  assert.equal(wildlifeOrganismFamily('sheep'),'bovid');
+  assert.equal(wildlifeOrganismFamily('warg'),'canid');
+  assert.equal(sheep.family,'bovid');
+  assert.equal(warg.family,'canid');
+  assert.ok(sheep.locomotion.endurance>=.98&&sheep.locomotion.endurance<=1.14);
+  assert.deepEqual(wildlifeGenomePlantForageWeights('warg',warg),{grass:0,shrub:0,fruit:0,crop:0});
+});
+
