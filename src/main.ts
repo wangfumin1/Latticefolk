@@ -1403,7 +1403,7 @@ class TownGame {
         const currentOrdinary=currentOrdinaryCounts[population.species]||0;
         let initialFixedWeight=0;
         for(const [id,weight] of runtime.fixedWildlifeWeights){
-          if(this.wildlifeLineage.get(id)?.species===population.species)initialFixedWeight+=weight;
+          if(runtime.initialWildlifeIds.has(id)&&this.wildlifeLineage.get(id)?.species===population.species)initialFixedWeight+=weight;
         }
         const currentFixedWeight=currentFixedWeights[population.species]||0;
         if(initialOrdinary<=0&&currentOrdinary<=0&&initialFixedWeight<=0&&currentFixedWeight<=0)continue;
@@ -2655,6 +2655,126 @@ class TownGame {
     const dialogueEpoch=this.perceptionEpoch;
     const req:DialogueRequest={locale:this.locale,speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:'玩家主动走近 NPC 并开始交谈。',intent:'greet',world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
     try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+8,0,100);this.remember(n,`玩家来和我说话：${d.text}`,2);this.log(`${n.state.name} 对玩家：${d.text} [${d.source}]`);}catch{if(dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'你好。');}
+  }
+
+  playerUseWildlife(animal:WildlifeRuntime) {
+    if(this.cameraMode!=='firstPerson')return;
+    let actions=wildlifeDomesticationInteractions(animal.state,'player','player');
+    const runtime=this.materializedChunks.get(animal.state.chunkId);
+    const existingFixed=runtime?.fixedWildlifeWeights.get(animal.state.id)||animal.state.representedPopulation||0;
+    if(existingFixed>1.0001)actions=actions.filter(action=>action!=='feed_tame');
+    if(actions.length===1){this.executePlayerWildlifeInteraction(animal,actions[0]!);return;}
+    this.openWildlifeInteractionMenu(animal,actions);
+  }
+
+  openWildlifeInteractionMenu(animal:WildlifeRuntime,actions:WildlifeDomesticationInteraction[]) {
+    if(this.cameraMode!=='firstPerson')return;
+    this.interactionOpen=true;
+    this.interactionWildlifeId=animal.state.id;
+    this.interactionObjectId=undefined;
+    ui.overlay.classList.add('hidden');
+    if(this.controls.isLocked)this.controls.unlock();
+    ui.interactionTitle.textContent=this.wildlifeName(animal.state.species);
+    const domestication=normalizeWildlifeDomestication(animal.state.species,animal.state.domestication);
+    ui.interactionMeta.textContent=domestication
+      ?i18n.t('wildlife.domestication.meta',{stage:i18n.t('wildlife.domestication.stage.'+domestication.stage),progress:domestication.progress.toFixed(0),command:i18n.t('wildlife.domestication.command.'+domestication.command)})
+      :i18n.t('wildlife.domestication.notEligible');
+    ui.interactionActions.innerHTML='';
+    for(const action of actions){
+      const button=document.createElement('button');
+      button.textContent=this.wildlifeInteractionLabel(action);
+      button.addEventListener('click',()=>{
+        const current=this.wildlife.get(this.interactionWildlifeId||'');
+        if(current)this.executePlayerWildlifeInteraction(current,action);
+        this.closeInteractionMenu(true);
+      });
+      ui.interactionActions.appendChild(button);
+    }
+    ui.interaction.classList.remove('hidden');
+  }
+
+  wildlifeInteractionLabel(action:WildlifeDomesticationInteraction) {
+    return i18n.t('wildlife.domestication.action.'+action);
+  }
+
+  individualizeDomesticatedWildlife(animal:WildlifeRuntime) {
+    const runtime=this.materializedChunks.get(animal.state.chunkId);
+    if(!runtime)return false;
+    const species=animal.state.species;
+    const existingFixed=runtime.fixedWildlifeWeights.get(animal.state.id)||animal.state.representedPopulation||0;
+    const countedInInitialOrdinary=runtime.initialWildlifeIds.has(animal.state.id)&&existingFixed<=0;
+    const split=individualizeWildlifeRepresentative(
+      runtime.initialWildlifeCounts[species]||0,
+      existingFixed,
+      countedInInitialOrdinary
+    );
+    if(!split)return false;
+    runtime.initialWildlifeCounts[species]=split.nextInitialOrdinaryCount;
+    runtime.fixedWildlifeWeights.set(animal.state.id,split.nextFixedWeight);
+    animal.state.representedPopulation=split.nextFixedWeight;
+    return true;
+  }
+
+  executePlayerWildlifeInteraction(animal:WildlifeRuntime,action:WildlifeDomesticationInteraction) {
+    if(this.cameraMode!=='firstPerson')return;
+    const state=animal.state;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const profile=wildlifeSpeciesProfile(state.species);
+    const current=normalizeWildlifeDomestication(state.species,state.domestication);
+
+    if(action==='inspect'){
+      const status=current
+        ?i18n.t('wildlife.domestication.meta',{stage:i18n.t('wildlife.domestication.stage.'+current.stage),progress:current.progress.toFixed(0),command:i18n.t('wildlife.domestication.command.'+current.command)})
+        :i18n.t('wildlife.domestication.notEligible');
+      this.toast(this.wildlifeName(state.species)+' · '+status);
+      return;
+    }
+    if(!current||profile.form.kind!=='domesticated')return;
+
+    if(action==='feed_tame'){
+      const existingFixed=this.materializedChunks.get(state.chunkId)?.fixedWildlifeWeights.get(state.id)||state.representedPopulation||0;
+      if(existingFixed>1.0001){
+        this.toast(i18n.t('wildlife.domestication.aggregateBlocked'));
+        return;
+      }
+      const food:ItemKind|undefined=this.playerInventory.grain>0?'grain':this.playerInventory.apple>0?'apple':undefined;
+      if(!food){
+        this.toast(i18n.t('wildlife.domestication.needFood'));
+        return;
+      }
+      const next=advanceWildlifeDomestication(state,currentDay,'player','player');
+      if(!next)return;
+      if(current.stage!=='bonded'&&next.stage==='bonded'&&!this.individualizeDomesticatedWildlife(animal)){
+        this.toast(i18n.t('wildlife.domestication.individualizeFailed'));
+        return;
+      }
+      this.playerInventory[food]--;
+      state.hunger=clamp(state.hunger-18,0,100);
+      state.domestication=next;
+      animal.nextDecisionAt=now()+250;
+      if(next.stage==='bonded'){
+        animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+        this.toast(i18n.t('wildlife.domestication.bonded',{name:this.wildlifeName(state.species)}));
+      }else{
+        this.toast(i18n.t('wildlife.domestication.progress',{progress:next.progress.toFixed(0)}));
+      }
+      return;
+    }
+
+    if(action==='release'){
+      state.domestication=releaseWildlifeDomestication(state.species,state.domestication,currentDay);
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;animal.nextDecisionAt=now()+250;
+      this.toast(i18n.t('wildlife.domestication.released',{name:this.wildlifeName(state.species)}));
+      return;
+    }
+
+    const command:Extract<WildlifeDomesticationInteraction,'command_follow'|'command_stay'|'command_graze'>=action;
+    const commandValue=command==='command_follow'?'follow':command==='command_stay'?'stay':'graze';
+    const next=setWildlifeDomesticationCommand(state.species,state.domestication,commandValue,currentDay,'player','player');
+    if(!next||next.command!==commandValue)return;
+    state.domestication=next;
+    animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;animal.nextDecisionAt=0;
+    this.toast(i18n.t('wildlife.domestication.commandSet',{command:i18n.t('wildlife.domestication.command.'+commandValue)}));
   }
 
   playerUse(o:RuntimeObject) {
