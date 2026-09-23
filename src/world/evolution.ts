@@ -341,7 +341,7 @@ function predatorSpecialization(records:WildlifeLineageRecord[],asOfDay?:number)
         ?{record,exposureDays:sourceDays,value}
         :undefined;
     }).filter((x):x is {record:WildlifeLineageRecord;exposureDays:number;value:number}=>Boolean(x));
-    if(!samples.length)return undefined;
+    if(!samples.length||!samples.some(sample=>sample.value>0))return undefined;
     const eligible=samples.filter(sample=>fitnessOutcomeEligible(sample.record,asOfDay));
     const breeders=eligible.filter(sample=>sample.record.offspringCount>0);
     const nonBreeders=eligible.filter(sample=>sample.record.offspringCount<=0);
