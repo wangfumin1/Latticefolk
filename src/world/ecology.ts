@@ -326,7 +326,7 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     const k=Math.max(.001,pop.carryingCapacity);
     const density=pop.count/k;
     const load=clamp(pop.diseaseLoad||0);
-    const targetPressure=diseasePressure.speciesPressure[pop.species];
+    const targetPressure=diseasePressure.speciesPressure[pop.species]||0;
     const transmission=Math.max(0,targetPressure-load)*.0065*dt;
     const recovery=(.0045+Math.max(0,chunk.ecology-55)*.000025)*dt;
     pop.diseaseLoad=clamp(load+transmission-recovery);
