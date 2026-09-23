@@ -556,7 +556,7 @@ export interface WildlifeMigrationEvent {
   fromBiome: ChunkBiome;
   toBiome: ChunkBiome;
   representedPopulation: number;
-  reason: 'behavioral_migration';
+  reason: 'behavioral_migration' | 'owner_follow';
 }
 
 export interface WildlifePredatorOutcomeCounter {
