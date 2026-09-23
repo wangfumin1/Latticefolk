@@ -1838,7 +1838,7 @@ class TownGame {
     const out:Partial<Record<WildlifeSpecies,number>>={};
     for(const predatorSpecies of WILDLIFE_SPECIES){
       if(!canWildlifePredate(predatorSpecies,preySpecies))continue;
-      out[predatorSpecies]=pressure.pairs.find(pair=>pair.predatorSpecies===predatorSpecies&&pair.preySpecies===preySpecies)?.pressure||0;
+      out[predatorSpecies]=pressure.pairs?.find(pair=>pair.predatorSpecies===predatorSpecies&&pair.preySpecies===preySpecies)?.pressure||0;
     }
     return Object.keys(out).length?out:undefined;
   }
