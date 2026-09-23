@@ -383,6 +383,38 @@ export interface WildlifePhenotype {
   behavior: WildlifeBehaviorPhenotype;
 }
 
+export type WildlifeOrganismFamily='lagomorph'|'cervid'|'suiform'|'caprine'|'canid'|'mustelid';
+
+export interface WildlifeOrganismGenome {
+  family: WildlifeOrganismFamily;
+  material: {
+    /** HSL hue offset applied to the species material palette. */
+    hueShift: number;
+    /** HSL lightness offset applied to the body/accent palette. */
+    lightnessShift: number;
+    /** Relative accent-vs-body hue separation. */
+    accentShift: number;
+  };
+  niche: {
+    /** Multipliers over non-zero species plant-use axes; zero species axes remain impossible. */
+    grass: number;
+    shrub: number;
+    fruit: number;
+    crop: number;
+  };
+  locomotion: {
+    /** Bounded stride tendency; contributes speed with an energy trade-off. */
+    stride: number;
+    /** Bounded endurance tendency; reduces locomotion cost with a small speed trade-off. */
+    endurance: number;
+  };
+}
+
+export interface WildlifeOrganismLocomotion {
+  speedMultiplier: number;
+  energyMultiplier: number;
+}
+
 export interface WildlifeFunctionalPhenotype {
   /** Multiplies trait-based movement speed. */
   movementSpeedMultiplier: number;
@@ -563,6 +595,9 @@ export interface WildlifeLineageRecord {
   phenotypeAtDeath?: WildlifePhenotype;
   /** Distinguishes tracked birth inheritance from deterministic founder seeding and legacy upgrade observation. */
   phenotypeProvenance?: WildlifePhenotypeProvenance;
+  organismGenomeAtBirth?: WildlifeOrganismGenome;
+  organismGenomeAtDeath?: WildlifeOrganismGenome;
+  organismGenomeProvenance?: WildlifePhenotypeProvenance;
   birthHabitat?: WildlifeHabitatSnapshot;
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
@@ -952,6 +987,8 @@ export interface WildlifeState {
   traits: WildlifeTraits;
   /** Additive for save compatibility; runtime normalizes missing legacy values deterministically. */
   phenotype?: WildlifePhenotype;
+  /** Family-constrained material/niche/locomotion genes; additive for legacy saves. */
+  organismGenome?: WildlifeOrganismGenome;
   currentAction: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;
