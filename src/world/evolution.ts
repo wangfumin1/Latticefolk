@@ -3,7 +3,7 @@ import type {
   WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
   WildlifeInteractionSourceFitnessStats, WildlifeInteractionSourceGenerationCohort, WildlifeInteractionSourceGenerationEvidence,
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
-  WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorSelectionEvidence,
+  WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorOutcomeStabilityEvidence, WildlifeMultifactorSelectionEvidence,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
   WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
@@ -598,6 +598,8 @@ const MULTIFACTOR_MIN_FEATURE_SAMPLES=6;
 const MULTIFACTOR_MIN_COMPLETE_SAMPLES=8;
 const MULTIFACTOR_MAX_PAIRWISE_CORRELATION=.98;
 const MULTIFACTOR_MAX_VIF=10;
+const MULTIFACTOR_MAX_LOCAL_WINDOWS=6;
+const MULTIFACTOR_MIN_STABILITY_REPLICATES=3;
 const EPS=1e-10;
 
 function sourceFeatureValue(record:WildlifeLineageRecord,feature:MultifactorFeature):number|undefined {
@@ -665,14 +667,37 @@ function multifactorPredictorDiagnostics(xColumns:number[][]) {
   };
 }
 
+function multifactorOutcomeRecords(
+  records:WildlifeLineageRecord[],
+  outcome:WildlifeMultifactorOutcome,
+  asOfDay?:number
+) {
+  return outcome==='lifespan'
+    ?records.filter(record=>record.deathDay!==undefined)
+    :records.filter(record=>fitnessOutcomeEligible(record,asOfDay));
+}
+
+function multifactorFeatureKey(feature:{kind:MultifactorFeature['kind'];sourceSpecies:WildlifeSpecies}) {
+  return `${feature.kind}:${feature.sourceSpecies}`;
+}
+
+function sameMultifactorFeatureSet(a:WildlifeMultifactorOutcomeEvidence,b:WildlifeMultifactorOutcomeEvidence) {
+  if(a.coefficients.length!==b.coefficients.length)return false;
+  const left=a.coefficients.map(multifactorFeatureKey).sort();
+  const right=b.coefficients.map(multifactorFeatureKey).sort();
+  return left.every((key,index)=>key===right[index]);
+}
+
+function multifactorCoefficientSign(value:number) {
+  return value>EPS?1:value<-EPS?-1:0;
+}
+
 function fitMultifactorOutcome(
   records:WildlifeLineageRecord[],
   outcome:WildlifeMultifactorOutcome,
   asOfDay?:number
 ):WildlifeMultifactorOutcomeEvidence {
-  const base=outcome==='lifespan'
-    ?records.filter(record=>record.deathDay!==undefined)
-    :records.filter(record=>fitnessOutcomeEligible(record,asOfDay));
+  const base=multifactorOutcomeRecords(records,outcome,asOfDay);
   const outcomeValue=(record:WildlifeLineageRecord)=>outcome==='reproduction'
     ?(record.offspringCount>0?1:0)
     :outcome==='offspring'
@@ -796,17 +821,92 @@ function fitMultifactorOutcome(
     coefficients
   };
 }
+function multifactorOutcomeStability(
+  records:WildlifeLineageRecord[],
+  outcome:WildlifeMultifactorOutcome,
+  pooledModel:WildlifeMultifactorOutcomeEvidence,
+  asOfDay?:number
+):WildlifeMultifactorOutcomeStabilityEvidence {
+  const base=multifactorOutcomeRecords(records,outcome,asOfDay);
+  const generations=[...new Set(base.map(record=>record.generation))].sort((a,b)=>a-b);
+  const replicates=generations.map(generation=>
+    fitMultifactorOutcome(records.filter(record=>record.generation!==generation),outcome,asOfDay)
+  );
+  const estimableReplicates=replicates.filter(model=>model.estimable);
+  const comparableReplicates=pooledModel.estimable
+    ?estimableReplicates.filter(model=>sameMultifactorFeatureSet(pooledModel,model))
+    :[];
+
+  const coefficients=pooledModel.coefficients.map(feature=>{
+    const values=comparableReplicates.map(model=>
+      model.coefficients.find(candidate=>multifactorFeatureKey(candidate)===multifactorFeatureKey(feature))?.standardizedCoefficient
+    ).filter((value):value is number=>typeof value==='number'&&Number.isFinite(value));
+    const pooled=feature.standardizedCoefficient;
+    const pooledSign=pooled===null?0:multifactorCoefficientSign(pooled);
+    const signConsistency=pooledSign!==0&&values.length>=MULTIFACTOR_MIN_STABILITY_REPLICATES
+      ?values.filter(value=>multifactorCoefficientSign(value)===pooledSign).length/values.length
+      :null;
+    return {
+      kind:feature.kind,
+      sourceSpecies:feature.sourceSpecies,
+      comparableReplicates:values.length,
+      coefficientMean:values.length?mean(values):null,
+      coefficientMin:values.length?Math.min(...values):null,
+      coefficientMax:values.length?Math.max(...values):null,
+      signConsistency
+    };
+  });
+
+  const localWindows:WildlifeMultifactorOutcomeStabilityEvidence['localWindows']=[];
+  const endpointGenerations=generations.slice(-MULTIFACTOR_MAX_LOCAL_WINDOWS);
+  for(const endGeneration of endpointGenerations){
+    const endIndex=generations.indexOf(endGeneration);
+    let chosen:WildlifeMultifactorOutcomeStabilityEvidence['localWindows'][number]|undefined;
+    for(let startIndex=endIndex;startIndex>=0;startIndex--){
+      const windowGenerations=generations.slice(startIndex,endIndex+1);
+      const generationSet=new Set(windowGenerations);
+      const model=fitMultifactorOutcome(
+        records.filter(record=>generationSet.has(record.generation)),
+        outcome,
+        asOfDay
+      );
+      chosen={
+        startGeneration:windowGenerations[0]!,
+        endGeneration,
+        generations:windowGenerations,
+        model
+      };
+      if(model.estimable)break;
+    }
+    if(chosen)localWindows.push(chosen);
+  }
+
+  return {
+    outcome,
+    basis:'target_species_generation',
+    leaveOneGenerationOut:{
+      attemptedReplicates:replicates.length,
+      estimableReplicates:estimableReplicates.length,
+      comparableReplicates:comparableReplicates.length,
+      coefficients
+    },
+    localWindows
+  };
+}
+
 function multifactorSelection(
   records:WildlifeLineageRecord[],
   species:WildlifeSpecies,
   asOfDay?:number
 ):WildlifeMultifactorSelectionEvidence {
+  const outcomes=['reproduction','offspring','lifespan'] as const;
+  const models=outcomes.map(outcome=>fitMultifactorOutcome(records,outcome,asOfDay));
   return {
     species,
-    models:(['reproduction','offspring','lifespan'] as const).map(outcome=>fitMultifactorOutcome(records,outcome,asOfDay))
+    models,
+    stability:models.map(model=>multifactorOutcomeStability(records,model.outcome,model,asOfDay))
   };
 }
-
 function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPredationStats {
   const total={
     huntAttempts:0,huntHits:0,kills:0,
