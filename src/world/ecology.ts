@@ -1,5 +1,5 @@
 import type {
-  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifeSpecies, WorldSeason
+  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
 } from '../types';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies } from './wildlifeSpecies.js';
 
@@ -250,7 +250,7 @@ export function computeWildlifePredatorPressure(
   populations:CoarseWildlifePopulation[]
 ) {
   const speciesPressure=Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
-  const pairs:NonNullable<CoarseChunkState['wildlifePredatorPressure']>['pairs']=[];
+  const pairs:WildlifePredatorPressurePair[]=[];
   let strongestPair:NonNullable<CoarseChunkState['wildlifePredatorPressure']>['strongestPair'];
 
   for(const preySpecies of SPECIES){
