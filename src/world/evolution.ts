@@ -436,17 +436,17 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
         sums.huntAttempts+=pair.huntAttempts||0;
         sums.huntHits+=pair.huntHits||0;
         sums.kills+=pair.kills||0;
-        if(pair.attemptTraitDeltaSum){
+        if(pair.attemptTraitDeltaSum&&(pair.attemptTraitMatchCount||0)>0){
           attemptTraitSum=addTraitTotals(attemptTraitSum,pair.attemptTraitDeltaSum);
-          traitMatchAttempts+=pair.huntAttempts||0;
+          traitMatchAttempts+=pair.attemptTraitMatchCount||0;
         }
-        if(pair.hitTraitDeltaSum){
+        if(pair.hitTraitDeltaSum&&(pair.hitTraitMatchCount||0)>0){
           successTraitSum=addTraitTotals(successTraitSum,pair.hitTraitDeltaSum);
-          traitMatchSuccesses+=pair.huntHits||0;
+          traitMatchSuccesses+=pair.hitTraitMatchCount||0;
         }
-        if(pair.killTraitDeltaSum){
+        if(pair.killTraitDeltaSum&&(pair.killTraitMatchCount||0)>0){
           terminalTraitSum=addTraitTotals(terminalTraitSum,pair.killTraitDeltaSum);
-          terminalTraitMatchSuccesses+=pair.kills||0;
+          terminalTraitMatchSuccesses+=pair.killTraitMatchCount||0;
         }
       }else{
         const pair=record.predationOutcomes?.asPrey.byPredator?.[counterpartSpecies];
@@ -455,13 +455,17 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
         sums.successfulEscapes+=pair.successfulEscapes||0;
         sums.attacksReceived+=pair.attacksReceived||0;
         sums.survivedAttacks+=pair.survivedAttacks||0;
-        if(pair.fleeTraitDeltaSum){
+        if(pair.fleeTraitDeltaSum&&(pair.fleeTraitMatchCount||0)>0){
           attemptTraitSum=addTraitTotals(attemptTraitSum,pair.fleeTraitDeltaSum);
-          traitMatchAttempts+=pair.fleeAttempts||0;
+          traitMatchAttempts+=pair.fleeTraitMatchCount||0;
         }
-        if(pair.escapeTraitDeltaSum){
+        if(pair.escapeTraitDeltaSum&&(pair.escapeTraitMatchCount||0)>0){
           successTraitSum=addTraitTotals(successTraitSum,pair.escapeTraitDeltaSum);
-          traitMatchSuccesses+=pair.successfulEscapes||0;
+          traitMatchSuccesses+=pair.escapeTraitMatchCount||0;
+        }
+        if(pair.survivedAttackTraitDeltaSum&&(pair.survivedAttackTraitMatchCount||0)>0){
+          terminalTraitSum=addTraitTotals(terminalTraitSum,pair.survivedAttackTraitDeltaSum);
+          terminalTraitMatchSuccesses+=pair.survivedAttackTraitMatchCount||0;
         }
       }
     }
@@ -481,17 +485,17 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
           successes+=pair.huntHits||0;
           terminalAttempts+=pair.huntAttempts||0;
           terminalSuccesses+=pair.kills||0;
-          if(pair.attemptTraitDeltaSum){
+          if(pair.attemptTraitDeltaSum&&(pair.attemptTraitMatchCount||0)>0){
             cohortAttemptTrait=addTraitTotals(cohortAttemptTrait,pair.attemptTraitDeltaSum);
-            cohortTraitAttempts+=pair.huntAttempts||0;
+            cohortTraitAttempts+=pair.attemptTraitMatchCount||0;
           }
-          if(pair.hitTraitDeltaSum){
+          if(pair.hitTraitDeltaSum&&(pair.hitTraitMatchCount||0)>0){
             cohortSuccessTrait=addTraitTotals(cohortSuccessTrait,pair.hitTraitDeltaSum);
-            cohortTraitSuccesses+=pair.huntHits||0;
+            cohortTraitSuccesses+=pair.hitTraitMatchCount||0;
           }
-          if(pair.killTraitDeltaSum){
+          if(pair.killTraitDeltaSum&&(pair.killTraitMatchCount||0)>0){
             cohortTerminalTrait=addTraitTotals(cohortTerminalTrait,pair.killTraitDeltaSum);
-            cohortTerminalTraitSuccesses+=pair.kills||0;
+            cohortTerminalTraitSuccesses+=pair.killTraitMatchCount||0;
           }
         }else{
           const pair=record.predationOutcomes?.asPrey.byPredator?.[counterpartSpecies];
@@ -500,13 +504,17 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
           successes+=pair.successfulEscapes||0;
           terminalAttempts+=pair.attacksReceived||0;
           terminalSuccesses+=pair.survivedAttacks||0;
-          if(pair.fleeTraitDeltaSum){
+          if(pair.fleeTraitDeltaSum&&(pair.fleeTraitMatchCount||0)>0){
             cohortAttemptTrait=addTraitTotals(cohortAttemptTrait,pair.fleeTraitDeltaSum);
-            cohortTraitAttempts+=pair.fleeAttempts||0;
+            cohortTraitAttempts+=pair.fleeTraitMatchCount||0;
           }
-          if(pair.escapeTraitDeltaSum){
+          if(pair.escapeTraitDeltaSum&&(pair.escapeTraitMatchCount||0)>0){
             cohortSuccessTrait=addTraitTotals(cohortSuccessTrait,pair.escapeTraitDeltaSum);
-            cohortTraitSuccesses+=pair.successfulEscapes||0;
+            cohortTraitSuccesses+=pair.escapeTraitMatchCount||0;
+          }
+          if(pair.survivedAttackTraitDeltaSum&&(pair.survivedAttackTraitMatchCount||0)>0){
+            cohortTerminalTrait=addTraitTotals(cohortTerminalTrait,pair.survivedAttackTraitDeltaSum);
+            cohortTerminalTraitSuccesses+=pair.survivedAttackTraitMatchCount||0;
           }
         }
       }
