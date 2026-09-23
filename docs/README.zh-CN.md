@@ -35,6 +35,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - 更丰富的疾病传播：coarse 显式拆分环境、同种接触、跨种接触和迁徙输入四类 disease pressure；fine wildlife 按真实邻近个体、距离和固定跨种接触系数传播，God View 与 lineage exposure 都可观察疾病压力。
 - fitness-by-habitat 证据：把 lifetime competition、seasonal suitability、disease pressure、predator pressure 与繁殖成功、后代数、寿命做关联分析；存活未成年个体在达到成年前从 reproduction/offspring 结果中右删失，幼年死亡仍保留为完整未繁殖结果；样本不足或无方差时显示不可估计而不是伪装成 0，并按低/中/高暴露 cohort 展示 breeder rate 与 trait differential，不宣称因果。
 - predator-pressure 可观测性：依据实际 predator population density 与共享 prey preference 为每个物种计算 0–100 捕食压力；该值只进入 God View、lineage lifetime exposure 与 fitness evidence，不额外扣 health 或 population，真实死亡仍由 deterministic predation 结算。
+- predator/prey specialization 证据：coarse 保留 predator→prey 压力来源分解，fine lineage 只在实际观测期累计按捕食者来源拆分的时间加权压力；旧历史没有来源数据时保持“未知”而不是补成 0，God View 可按 fox/wolf 等来源查看繁殖、后代数、寿命关联和 breeder trait differential。
 - 扩展 wildlife food web：新增山羊与狼，并把物种列表、predator/prey graph、捕食偏好/伤害/饥饿恢复集中为 simulation-owned 定义；二者完整进入 coarse carrying capacity / competition / season / disease / trophic flow、fine hunt/flee / lifecycle / migration 以及 evolution observability。
 
 ## 本地运行
@@ -72,7 +73,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → ✅ 生态位竞争 → ✅ 季节迁徙驱动 → ✅ 更丰富的疾病传播 → ✅ fitness-by-habitat → ✅ 山羊/狼与共享 predator graph → ✅ predator-pressure adaptation observability → **predator/prey specialization、更丰富食物网与 multi-species adaptation** → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → ✅ 生态位竞争 → ✅ 季节迁徙驱动 → ✅ 更丰富的疾病传播 → ✅ fitness-by-habitat → ✅ 山羊/狼与共享 predator graph → ✅ predator-pressure adaptation observability → ✅ predator/prey specialization evidence → **realized hunting/escape success、更丰富食物网与 multi-species adaptation** → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 
