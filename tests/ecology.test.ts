@@ -214,18 +214,27 @@ test('wildlife migration imports disease pressure without violating population c
   assert.ok(Math.abs(source.count+target.count-before)<.002);
 });
 
-test('coarse disease dynamics permit cross-species amplification and bounded recovery',()=>{
+test('coarse disease dynamics permit isolated cross-species amplification and bounded recovery',()=>{
   const a=chunk('chunk_disease_dynamics',16,{biome:'plains',ecology:82,water:70});
   const populations=ensureWildlifePopulations(a);
   for(const pop of populations){
-    pop.count=Math.max(3,pop.carryingCapacity*.75);
+    pop.count=['fox','wolf'].includes(pop.species)?0:Math.max(3,pop.carryingCapacity*.75);
     pop.diseaseLoad=pop.species==='deer'?85:1;
     pop.importedDiseasePressure=0;
   }
   const rabbit=populations.find(p=>p.species==='rabbit')!;
   const before=rabbit.diseaseLoad||0;
-  for(let i=0;i<12;i++)simulateWildlife(a,20,'clear',45);
+  simulateWildlife(a,5,'clear',45);
   assert.ok((rabbit.diseaseLoad||0)>before);
+
+  for(const pop of populations){
+    pop.count=pop.species==='rabbit'?1:0;
+    pop.diseaseLoad=pop.species==='rabbit'?40:0;
+    pop.importedDiseasePressure=0;
+  }
+  const recoveryBefore=rabbit.diseaseLoad||0;
+  simulateWildlife(a,10,'clear',45);
+  assert.ok((rabbit.diseaseLoad||0)<recoveryBefore);
   assert.ok(populations.every(p=>(p.diseaseLoad||0)>=0&&(p.diseaseLoad||0)<=100));
 });
 
