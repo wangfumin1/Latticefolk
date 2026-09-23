@@ -7,6 +7,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
+import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -17,7 +18,7 @@ import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlife
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeInteractionNetwork, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -188,6 +189,8 @@ class TownGame {
   coevolutionCacheEpoch = -1;
   coevolutionCacheDay = -1;
   coevolutionCache: WildlifeCoevolutionPairEvidence[] = [];
+  interactionNetworkCacheAt = 0;
+  interactionNetworkCache?: WildlifeInteractionNetwork;
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
@@ -2023,6 +2026,34 @@ class TownGame {
     return i18n.t(`wildlife.${species}`);
   }
 
+  activeInteractionNetwork() {
+    const current=now();
+    if(!this.interactionNetworkCache||current-this.interactionNetworkCacheAt>1000){
+      const chunks=[...this.coarseWorld.activeChunkIds]
+        .map(id=>this.coarseWorld.chunks.get(id))
+        .filter((chunk):chunk is CoarseChunkState=>Boolean(chunk));
+      this.interactionNetworkCache=computeWildlifeInteractionNetwork(chunks);
+      this.interactionNetworkCacheAt=current;
+    }
+    return this.interactionNetworkCache;
+  }
+
+  renderInteractionNetworkEvidence(network:WildlifeInteractionNetwork) {
+    const edgeLabel=(edge:WildlifeInteractionNetwork['edges'][number])=>{
+      const arrow=edge.directed?'→':'↔';
+      return `${this.escape(this.wildlifeName(edge.fromSpecies))} ${arrow} ${this.escape(this.wildlifeName(edge.toSpecies))} ${edge.meanPressure.toFixed(1)} (max ${edge.maxPressure.toFixed(1)}, ${edge.activeChunks}/${edge.coverageChunks})`;
+    };
+    const top=network.edges.slice().sort((a,b)=>b.meanPressure-a.meanPressure||b.maxPressure-a.maxPressure).slice(0,8);
+    const nodes=network.nodes.slice().sort((a,b)=>
+      (b.predationIncoming+b.predationOutgoing+b.competitionPressure+b.diseaseIncoming+b.diseaseOutgoing)-
+      (a.predationIncoming+a.predationOutgoing+a.competitionPressure+a.diseaseIncoming+a.diseaseOutgoing)
+    ).slice(0,6);
+    return `<div class="evo-lineage"><b>${i18n.t('evolution.interactionNetwork')}</b> · active chunks ${network.chunks} · coverage P/C/D ${network.coverage.predation}/${network.coverage.competition}/${network.coverage.disease}
+      ${top.length?`<div class="evo-traits">${top.map(edge=>`${i18n.t(`evolution.interaction.${edge.kind}`)}: ${edgeLabel(edge)}`).join('<br>')}</div>`:''}
+      ${nodes.length?`<div class="evo-traits">${nodes.map(node=>`${this.escape(this.wildlifeName(node.species))} n~${node.population.toFixed(1)} · pred in/out ${node.predationIncoming.toFixed(1)}/${node.predationOutgoing.toFixed(1)} · comp ${node.competitionPressure.toFixed(1)} · disease in/out ${node.diseaseIncoming.toFixed(1)}/${node.diseaseOutgoing.toFixed(1)}`).join('<br>')}</div>`:''}
+    </div>`;
+  }
+
   renderCoevolutionSideEvidence(side:WildlifeCoevolutionSideEvidence) {
     const number=(value:number|null,digits=2)=>value===null?'—':value.toFixed(digits);
     const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
@@ -2651,6 +2682,7 @@ class TownGame {
     ui.evolution.classList.remove('hidden');
     const stats=this.evolutionStatistics();
     const coevolution=this.coevolutionStatistics();
+    const interactionNetwork=this.activeInteractionNetwork();
     const active=stats.filter(entry=>entry.historicalPopulation>0);
     const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
     const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
@@ -2723,8 +2755,9 @@ class TownGame {
       .sort((a,b)=>b.offspringCount-a.offspringCount||b.generation-a.generation).slice(0,4);
     const leaders=top.length?`<div class="evo-lineage"><b>${i18n.t('evolution.topLineages')}</b><div>${top.map(record=>`${this.escape(record.entityId)} · ${this.escape(this.wildlifeName(record.species))} · G${record.generation} · ${record.offspringCount}`).join('<br>')}</div></div>`:'';
 
+    const networkCard=this.renderInteractionNetworkEvidence(interactionNetwork);
     const coevolutionCards=coevolution.slice(0,6).map(pair=>this.renderCoevolutionPairEvidence(pair)).join('');
-    ui.evolution.innerHTML=`<div class="evo-title">${i18n.t('evolution.title')} <span>${this.wildlifeLineage.size}</span></div>${cards||`<div class="small">${i18n.t('evolution.empty')}</div>`}${coevolutionCards}${ancestry}${leaders}`;
+    ui.evolution.innerHTML=`<div class="evo-title">${i18n.t('evolution.title')} <span>${this.wildlifeLineage.size}</span></div>${networkCard}${cards||`<div class="small">${i18n.t('evolution.empty')}</div>`}${coevolutionCards}${ancestry}${leaders}`;
   }
 
   worldSeason(){
