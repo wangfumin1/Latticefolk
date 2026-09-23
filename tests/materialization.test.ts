@@ -61,7 +61,7 @@ test('wetland wilderness exposes natural water for wildlife and player interacti
 });
 
 
-test('fine materialization supports goat and wolf identities from coarse wildlife',()=>{
+test('fine materialization supports profile-driven goat, wolf and badger identities',()=>{
   const expanded:CoarseChunkState={
     ...chunk,id:'chunk_species_fine',cx:4,cz:4,biome:'hills',
     wildlife:[
@@ -70,11 +70,17 @@ test('fine materialization supports goat and wolf identities from coarse wildlif
       {species:'boar',count:2,carryingCapacity:4,health:80},
       {species:'goat',count:5,carryingCapacity:8,health:80},
       {species:'fox',count:1,carryingCapacity:3,health:80},
-      {species:'wolf',count:2,carryingCapacity:3,health:80}
+      {species:'wolf',count:2,carryingCapacity:3,health:80},
+      {species:'badger',count:2,carryingCapacity:4,health:80}
     ]
   };
   const plan=planFineChunk(expanded,24);
   assert.ok(plan.wildlife.some(animal=>animal.species==='goat'));
   assert.ok(plan.wildlife.some(animal=>animal.species==='wolf'));
+  assert.ok(plan.wildlife.some(animal=>animal.species==='badger'));
   assert.ok(plan.wildlife.filter(animal=>animal.species==='wolf').length<=1);
+  assert.ok(plan.wildlife.filter(animal=>animal.species==='badger').length<=1);
+  const badger=plan.wildlife.find(animal=>animal.species==='badger')!;
+  assert.ok(badger.traits.speed>1.8&&badger.traits.speed<2.7);
+  assert.ok(badger.traits.size>.6&&badger.traits.size<1);
 });
