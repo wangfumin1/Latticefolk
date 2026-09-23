@@ -442,15 +442,22 @@ test('raccoon coarse ecology combines fruit forage and rabbit predation through 
   rabbit.count=Math.max(5,rabbit.carryingCapacity*.7);
   raccoon.count=Math.max(1,raccoon.carryingCapacity*.7);
   a.plants={grass:62,shrub:70,fruit:82,crop:36};
-  const rabbitBefore=rabbit.count;
+  const control=structuredClone(a);
+  control.id='chunk_raccoon_control';
+  const controlRaccoon=control.wildlife!.find(pop=>pop.species==='raccoon')!;
+  const controlRabbit=control.wildlife!.find(pop=>pop.species==='rabbit')!;
+  controlRaccoon.count=0;
   const fruitBefore=a.plants.fruit;
   const pressure=computeWildlifePredatorPressure(a,populations);
   assert.ok((pressure.speciesPressure.rabbit||0)>0);
   assert.ok((pressure.pairs||[]).some(pair=>pair.predatorSpecies==='raccoon'&&pair.preySpecies==='rabbit'));
-  for(let i=0;i<6;i++)simulateWildlife(a,20,'clear',45);
+  for(let i=0;i<6;i++){
+    simulateWildlife(a,20,'clear',45);
+    simulateWildlife(control,20,'clear',45);
+  }
   assert.ok((a.trophicFlux?.herbivory||0)>0);
   assert.ok((a.trophicFlux?.predation||0)>0);
   assert.ok(a.plants.fruit<fruitBefore);
-  assert.ok(rabbit.count<rabbitBefore);
+  assert.ok(rabbit.count<controlRabbit.count,'raccoon predation should suppress rabbit growth relative to the no-raccoon control');
 });
 
