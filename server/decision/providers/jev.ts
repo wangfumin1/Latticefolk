@@ -551,6 +551,7 @@ export class JevDecisionProvider implements DecisionProvider {
         health:Number(entry.wildlife.health.toFixed(1)),hunger:Number(entry.wildlife.hunger.toFixed(1)),
         thirst:Number(entry.wildlife.thirst.toFixed(1)),energy:Number(entry.wildlife.energy.toFixed(1)),
         sex:entry.wildlife.sex,generation:entry.wildlife.generation,traits:entry.wildlife.traits,
+        phenotype:entry.wildlife.phenotype,
         allowedActions:entry.allowedActions,
         currentHabitat:entry.world.currentHabitat,
         nearbyChunks:entry.world.nearbyChunks,
@@ -558,7 +559,7 @@ export class JevDecisionProvider implements DecisionProvider {
         nearbyWildlife:entry.world.nearbyWildlife
       })),
       world:{gameTime:requests[0]!.world.gameTime,minuteOfDay:requests[0]!.world.minuteOfDay,weather:requests[0]!.world.weather},
-      authority:'Select behavior and supplied targets only. Never directly mutate health, needs, reproduction, population, resources, or genetics.'
+      authority:'Select behavior and supplied targets only. Phenotype is inherited read-only context. Never directly mutate health, needs, reproduction, population, resources, phenotype, or genetics.'
     };
 
     try{
