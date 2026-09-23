@@ -28,7 +28,8 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 - 決定論的なニッチ競争。ウサギ/シカ/イノシシ/ヤギ/キツネ/オオカミの固定 resource profile から pairwise niche overlap を計算し、他種の密度から competition pressure を導出します。圧力は effective carrying capacity と健康に有界に作用し、God View と lineage habitat exposure に記録されます。
 - 季節移動ドライバ。species×biome の春夏秋冬の適性を forage・水・ecology・danger と組み合わせて seasonal suitability を計算し、隣接 habitat が 8 点以上良い場合は低強度の保存的移動を単独で駆動できます。fine wildlife も合法候補内でのみこの信号を利用します。
 - より豊かな疾病伝播。coarse では環境・同種接触・異種接触・移動流入の disease pressure を分離し、fine wildlife は実際の近接個体・距離・固定の異種接触係数から伝播します。God View と lineage exposure にも疾病圧を残します。
-- fitness-by-habitat エビデンス。生涯の competition、seasonal suitability、disease pressure と繁殖・子孫数・寿命の関連を測定します。生存中の未成熟個体は成年まで reproduction/offspring 結果から右打ち切りし、未成熟死亡は完了した非繁殖結果として保持します。標本不足や無分散では 0 ではなく推定不能として表示し、低/中/高曝露 cohort の breeder rate と trait differential を God View に示します。因果とは断定しません。
+- fitness-by-habitat エビデンス。生涯の competition、seasonal suitability、disease pressure、predator pressure と繁殖・子孫数・寿命の関連を測定します。生存中の未成熟個体は成年まで reproduction/offspring 結果から右打ち切りし、未成熟死亡は完了した非繁殖結果として保持します。標本不足や無分散では 0 ではなく推定不能として表示し、低/中/高曝露 cohort の breeder rate と trait differential を God View に示します。因果とは断定しません。
+- predator-pressure 観測。実際の predator population density と共有 prey preference から各種の 0–100 捕食圧を決定論的に算出し、God View・lineage lifetime exposure・fitness evidence にのみ使います。追加の health/population 減少は行わず、実際の死亡は deterministic predation のみが処理します。
 - wildlife food web の拡張。ヤギとオオカミを追加し、species list、predator/prey graph、捕食 preference/damage/hunger relief を simulation-owned 定義として集中管理します。両種は coarse carrying capacity / competition / season / disease / trophic flow、fine hunt/flee / lifecycle / migration、evolution observability に同じ規則で参加します。
 
 ## 起動
@@ -53,7 +54,7 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 
 ## ロードマップ
 
-✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → ✅ seasonal movement → ✅ richer disease transmission → ✅ fitness-by-habitat → ✅ goat/wolf + shared predator graph → **richer food web / predator-pressure / multi-species adaptation observability** → physics。
+✅ coarse↔fine → ✅ SQLite → ✅ conserved chunk flows → ✅ Region / World decisions → ✅ dynamic streaming → ✅ semantic procedural settlements → ✅ production chains → ✅ first lifecycle ecology → ✅ durable ancestry / evolution statistics → ✅ selection pressure / biome adaptation observability → ✅ observed lifetime habitat exposure → ✅ identity-preserving fine migration → ✅ niche competition → ✅ seasonal movement → ✅ richer disease transmission → ✅ fitness-by-habitat → ✅ goat/wolf + shared predator graph → ✅ predator-pressure adaptation observability → **predator/prey specialization / richer food web / multi-species adaptation** → physics。
 
 詳細は [Roadmap](roadmap.md) と [Architecture](architecture.md) を参照してください。
 
