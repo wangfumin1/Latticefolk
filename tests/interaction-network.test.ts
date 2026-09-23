@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
+import { WILDLIFE_SPECIES } from '../src/world/wildlifeSpecies.js';
 import { computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, ensureWildlifePopulations } from '../src/world/ecology.js';
 
 const base=(id:string,cx:number):CoarseChunkState=>({
@@ -19,8 +20,9 @@ test('coarse ecology retains full competition and disease pair decompositions',(
   const competition=computeWildlifeNicheCompetition(chunk,populations);
   const disease=computeWildlifeDiseasePressure(chunk,populations,'clear');
 
-  assert.equal(competition.pairs?.length,21);
-  assert.equal(disease.pairs?.length,42);
+  const speciesCount=WILDLIFE_SPECIES.length;
+  assert.equal(competition.pairs?.length,speciesCount*(speciesCount-1)/2);
+  assert.equal(disease.pairs?.length,speciesCount*(speciesCount-1));
   assert.ok(disease.pairs?.some(pair=>pair.fromSpecies==='fox'&&pair.toSpecies==='rabbit'));
   assert.ok(competition.pairs?.some(pair=>
     (pair.speciesA==='rabbit'&&pair.speciesB==='deer')||(pair.speciesA==='deer'&&pair.speciesB==='rabbit')
