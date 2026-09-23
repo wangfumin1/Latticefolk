@@ -182,3 +182,11 @@ Latticefolk now has one observational graph for three major wildlife interaction
 The network explicitly carries evidence coverage. Old chunks that predate a pair decomposition do not masquerade as zero-pressure observations, while measured zero edges inside covered chunks remain valid zeros. God View stays bounded to active chunks; the server can separately summarize all persisted discovered chunks for research/export workflows.
 
 The next ecology step is to connect these multi-species network exposures back to durable lineage and selection evidence: for example whether sustained competition centrality, incoming disease pressure, or changing multi-predator exposure corresponds to reproductive and inherited-trait trends. After that, richer species, niches and morphology genes can use the same network/evidence architecture instead of adding isolated special cases.
+
+## Implemented milestone: network-linked niche and disease evidence
+
+The multi-species network now connects back to durable individual history. Named animals accumulate which species actually contributed niche-competition pressure and which species contributed incoming disease-transmission pressure during the periods that individual was observed in fine simulation. This turns a community graph into lineage-level exposure evidence without making the graph authoritative.
+
+Source-specific exposure can be compared with reproduction, offspring count, lifespan and breeder trait differentials using the same eligibility/censoring rules as other evolution evidence. Legacy history without pair decomposition remains explicitly unknown. The system still avoids automatic causal claims: source-specific associations are measurements that can support later hypotheses about competition-mediated or disease-mediated selection.
+
+The next step is to move these source signals into generation-level evidence analogous to predator/prey coevolution, so competition and disease relationships can be inspected across generations and reciprocal species responses before adding larger food webs, new niches and morphology genes.
