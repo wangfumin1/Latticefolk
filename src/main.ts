@@ -1562,7 +1562,7 @@ class TownGame {
       if(action==='hunt')return isWildlifePredator(state.species);
       return true;
     });
-    return [...new Set(actions)];
+    return domesticationCommandAllowedActions(state.species,state.domestication,[...new Set(actions)]);
   }
 
   wildlifeMigrationCandidate(state:WildlifeState,chunk:CoarseChunkState):WildlifeMigrationCandidate {
@@ -1662,7 +1662,52 @@ class TownGame {
     }
   }
 
+  applyDomesticationCommand(animal:WildlifeRuntime,decision:WildlifeDecisionResult) {
+    const state=animal.state;
+    const domestication=normalizeWildlifeDomestication(state.species,state.domestication);
+    if(domestication?.stage!=='bonded'||domestication.ownerKind!=='player'||domestication.ownerId!=='player'||domestication.command==='autonomous')return false;
+    if(domesticationPreservesSurvivalAction(state,decision.action))return false;
+
+    animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;
+    state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
+    state.lastDecisionAt=Date.now();
+
+    if(domestication.command==='follow'){
+      if(this.cameraMode!=='firstPerson'){
+        state.currentAction='rest';animal.actionResolved=true;animal.nextDecisionAt=now()+1500;return true;
+      }
+      const distance=dist(state.position,this.playerPosition);
+      if(distance<=2.4){
+        state.currentAction='rest';animal.actionResolved=true;animal.nextDecisionAt=now()+1000;return true;
+      }
+      state.currentAction='wander';
+      animal.path=this.findPath(state.position,this.playerPosition);
+      animal.actionResolved=animal.path.length===0;
+      animal.nextDecisionAt=now()+1200;
+      return true;
+    }
+
+    if(domestication.command==='stay'){
+      state.currentAction='rest';animal.actionResolved=true;animal.nextDecisionAt=now()+1800;return true;
+    }
+
+    const feedingAction=wildlifeSpeciesProfile(state.species).feedingAction;
+    state.currentAction=feedingAction;
+    const object=this.findWildlifeResource(animal,feedingAction);
+    if(object){
+      state.targetObjectId=object.state.id;
+      animal.path=this.findPath(state.position,object.state.position);
+      animal.actionResolved=animal.path.length===0;
+    }else{
+      state.currentAction='rest';
+      animal.actionResolved=true;
+    }
+    animal.nextDecisionAt=now()+1800;
+    return true;
+  }
+
   applyWildlifeDecision(animal:WildlifeRuntime,decision:WildlifeDecisionResult) {
+    if(this.applyDomesticationCommand(animal,decision))return;
     const s=animal.state;
     s.currentAction=decision.action;s.targetObjectId=decision.targetObjectId;s.targetWildlifeId=decision.targetWildlifeId;s.targetChunkId=decision.targetChunkId;s.lastDecisionAt=Date.now();
     animal.path=[];animal.pathIndex=0;animal.actionResolved=false;
