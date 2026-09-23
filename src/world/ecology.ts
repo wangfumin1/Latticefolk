@@ -1,5 +1,5 @@
 import type {
-  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
+  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeCompetitionPair, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
 } from '../types';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies } from './wildlifeSpecies.js';
 
@@ -111,6 +111,7 @@ export function computeWildlifeDiseasePressure(
   const crossSpeciesPressure=speciesRecord();
   const importedPressure=speciesRecord();
   const speciesPressure=speciesRecord();
+  const pairs:WildlifeDiseasePair[]=[];
   let strongestPair:WildlifeDiseasePair|undefined;
 
   for(const target of populations){
@@ -121,15 +122,15 @@ export function computeWildlifeDiseasePressure(
 
     let cross=0;
     for(const source of populations){
-      if(source.species===target.species||source.count<=0)continue;
+      if(source.species===target.species)continue;
       const sourceDensity=source.carryingCapacity>0?Math.min(2.5,source.count/source.carryingCapacity):2;
-      const pairPressure=clamp(
+      const pairPressure=round(clamp(
         (source.diseaseLoad||0)*sourceDensity*wildlifeDiseaseContactCoefficient(source.species,target.species)*.55
-      );
+      ));
       cross+=pairPressure;
-      if(!strongestPair||pairPressure>strongestPair.pressure){
-        strongestPair={fromSpecies:source.species,toSpecies:target.species,pressure:round(pairPressure)};
-      }
+      const pair={fromSpecies:source.species,toSpecies:target.species,pressure:pairPressure};
+      pairs.push(pair);
+      if(pairPressure>0&&(!strongestPair||pairPressure>strongestPair.pressure))strongestPair=pair;
     }
     crossSpeciesPressure[target.species]=round(clamp(cross));
     speciesPressure[target.species]=round(clamp(
@@ -141,9 +142,10 @@ export function computeWildlifeDiseasePressure(
   }
 
   const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
+  pairs.sort((a,b)=>b.pressure-a.pressure||a.fromSpecies.localeCompare(b.fromSpecies)||a.toSpecies.localeCompare(b.toSpecies));
   chunk.wildlifeDisease={
     environmentalPressure:round(environmentalPressure),
-    speciesPressure,localContactPressure,crossSpeciesPressure,importedPressure,meanPressure,strongestPair
+    speciesPressure,localContactPressure,crossSpeciesPressure,importedPressure,meanPressure,pairs,strongestPair
   };
   return chunk.wildlifeDisease;
 }
@@ -293,6 +295,7 @@ export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populatio
   }
 
   const speciesPressure=Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
+  const pairs:WildlifeCompetitionPair[]=[];
   let strongestPair:NonNullable<CoarseChunkState['nicheCompetition']>['strongestPair'];
   for(let i=0;i<SPECIES.length;i++){
     for(let j=i+1;j<SPECIES.length;j++){
@@ -300,10 +303,10 @@ export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populatio
       const overlap=nicheOverlap(a,b);
       if(overlap<=0)continue;
       const da=density.get(a)||0,db=density.get(b)||0;
-      const pairPressure=clamp(overlap*((da+db)/2)*100,0,100);
-      if(!strongestPair||pairPressure>strongestPair.pressure){
-        strongestPair={speciesA:a,speciesB:b,nicheOverlap:round(overlap),pressure:round(pairPressure)};
-      }
+      const pairPressure=round(clamp(overlap*((da+db)/2)*100,0,100));
+      const pair={speciesA:a,speciesB:b,nicheOverlap:round(overlap),pressure:pairPressure};
+      pairs.push(pair);
+      if(pairPressure>0&&(!strongestPair||pairPressure>strongestPair.pressure))strongestPair=pair;
       speciesPressure[a]+=overlap*db;
       speciesPressure[b]+=overlap*da;
     }
@@ -319,8 +322,9 @@ export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populatio
     pop.carryingCapacity=round((fundamental.get(species)||0)*(1-competitionPenalty));
   }
 
+  pairs.sort((a,b)=>b.pressure-a.pressure||a.speciesA.localeCompare(b.speciesA)||a.speciesB.localeCompare(b.speciesB));
   const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
-  chunk.nicheCompetition={speciesPressure,meanPressure,strongestPair};
+  chunk.nicheCompetition={speciesPressure,meanPressure,pairs,strongestPair};
   return chunk.nicheCompetition;
 }
 

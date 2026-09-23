@@ -174,3 +174,11 @@ Predator/prey evidence now reaches across generations without pretending differe
 Within each species-side history, Latticefolk can measure whether interaction performance trends with generation, whether breeder rate or offspring output changes with performance, and whether trait means move alongside realized outcomes. Sparse or invariant series remain non-estimable. Bilateral evidence means both sides have actual interaction history; a one-sided archive remains explicitly partial.
 
 This still does not label a relationship as “coevolving” automatically. The purpose is to provide durable, inspectable evidence from which stronger selection and reciprocal-adaptation tests can later be built. The next ecology direction is to extend the same evidence model beyond one predator/prey pair into richer interaction networks, competition niches, disease-mediated selection and eventually morphology-constrained organisms.
+
+## Implemented milestone: multi-species interaction network
+
+Latticefolk now has one observational graph for three major wildlife interaction channels: predation, niche competition and cross-species disease transmission. This makes community structure inspectable above any single predator/prey pair without introducing a new simulation authority layer. A species node can simultaneously show incoming predation, outgoing predation, competition burden, incoming disease pressure and outgoing disease pressure.
+
+The network explicitly carries evidence coverage. Old chunks that predate a pair decomposition do not masquerade as zero-pressure observations, while measured zero edges inside covered chunks remain valid zeros. God View stays bounded to active chunks; the server can separately summarize all persisted discovered chunks for research/export workflows.
+
+The next ecology step is to connect these multi-species network exposures back to durable lineage and selection evidence: for example whether sustained competition centrality, incoming disease pressure, or changing multi-predator exposure corresponds to reproductive and inherited-trait trends. After that, richer species, niches and morphology genes can use the same network/evidence architecture instead of adding isolated special cases.

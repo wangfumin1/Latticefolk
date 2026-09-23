@@ -39,6 +39,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - realized hunting/escape 证据：只有 deterministic fine action resolution 才记录 hunt attempt/hit/kill、flee attempt/success、attack received/survived，并按 counterpart species 分解；Decision Provider 只能选 hunt/flee 与合法目标，不能宣告成功。God View 展示命中率、击杀率、逃脱率、受击存活率及成功个体相对已观测 cohort 的 trait differential。
 - predator/prey trait matching：实际发生交互的两个个体会记录 actor−counterpart trait delta；predator 按 attempt/hit/kill，prey 按 flee attempt/escape 与 attack/survival 分层统计，并保存独立 paired-snapshot count，避免旧 realized outcomes 没有 trait snapshot 时被当作 0 或稀释新样本。God View 还展示最近几代的实际成功率和配对性状优势。
 - multi-generation coevolution evidence：对每个真实 predator→prey pair 分别保留 predator-side 与 prey-side 的独立 generation series，不把两个物种相同 generation 编号当成同步 cohort；每侧关联 realized performance、成年/繁殖资格后的 breeder rate、offspring mean、trait mean 与实际配对性状优势。相关性至少需要 3 个有效代点，趋势至少需要 2 个点；证据不足或无方差时保持不可估计，不自动宣称存在共进化。
+- multi-species interaction network：把 predation、对称 niche competition、定向 cross-species disease transmission 统一为只读生态网络。每种 interaction 都有独立 coverage；旧 chunk 缺完整 pair decomposition 时保持未知，不当成 0。God View 只聚合 bounded active window，`/api/world/interactions` 则聚合持久化 discovered chunks；网络不会反向修改 population、health 或决策候选。
 - 扩展 wildlife food web：新增山羊与狼，并把物种列表、predator/prey graph、捕食偏好/伤害/饥饿恢复集中为 simulation-owned 定义；二者完整进入 coarse carrying capacity / competition / season / disease / trophic flow、fine hunt/flee / lifecycle / migration 以及 evolution observability。
 
 ## 本地运行
@@ -76,7 +77,7 @@ API Key 只应存在于服务端环境变量。
 
 ## 开发路线
 
-当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → ✅ 生态位竞争 → ✅ 季节迁徙驱动 → ✅ 更丰富的疾病传播 → ✅ fitness-by-habitat → ✅ 山羊/狼与共享 predator graph → ✅ predator-pressure adaptation observability → ✅ predator/prey specialization evidence → ✅ realized hunting/escape evidence → ✅ predator/prey trait matching + generation trends → ✅ multi-generation coevolution evidence → **更丰富 multi-species interaction networks / niches / disease selection** → 完整物理层。
+当前顺序为：✅ coarse↔fine chunk 双向转换 → ✅ SQLite 世界持久化 → ✅ 跨 chunk 守恒流 → ✅ Region / World 决策层 → ✅ 动态 chunk streaming → ✅ 语义化程序聚落 → ✅ 生产链 → ✅ 第一版生态与生命周期 → ✅ durable ancestry / evolution statistics → ✅ 环境选择压力与 biome adaptation 可观测性 → ✅ 实际观测的 lifetime habitat exposure → ✅ 可保留个体身份的 fine migration / transfer → ✅ 生态位竞争 → ✅ 季节迁徙驱动 → ✅ 更丰富的疾病传播 → ✅ fitness-by-habitat → ✅ 山羊/狼与共享 predator graph → ✅ predator-pressure adaptation observability → ✅ predator/prey specialization evidence → ✅ realized hunting/escape evidence → ✅ predator/prey trait matching + generation trends → ✅ multi-generation coevolution evidence → ✅ multi-species interaction-network observability → **network-linked niche / disease selection evidence、更丰富生态** → 完整物理层。
 
 完整内容见 [Roadmap](roadmap.md)、[长期愿景](long-term-vision.md)、[架构](architecture.md)、[Decision Provider](decision-providers.md)、[语料库](dialogue-library.md) 和 [国际化](i18n.md)。
 
