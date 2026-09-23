@@ -345,6 +345,8 @@ export interface WildlifeHabitatExposure {
   habitatMean: Omit<WildlifeHabitatSnapshot,'biome'>;
   /** Time-weighted predator-source pressure for the observed prey species; absent in legacy/unobserved records. */
   predatorSourceMean?: Partial<Record<WildlifeSpecies,number>>;
+  /** Days with explicit predator-source decomposition; kept separate so legacy unknown history is not treated as zero pressure. */
+  predatorSourceObservedDays?: number;
   biomeDays: Partial<Record<ChunkBiome,number>>;
   chunkDays: Record<string,number>;
   observedTransitions: number;
