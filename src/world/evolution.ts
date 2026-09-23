@@ -1,7 +1,7 @@
 import type {
   WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeFitnessBandStats, WildlifeFitnessExposureDimension,
   WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
-  WildlifeLineageRecord, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats, WildlifeRealizedPredationStats,
+  WildlifeLineageRecord, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats, WildlifeRealizedPredationStats,
   WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
@@ -11,6 +11,12 @@ const SPECIES=[...WILDLIFE_SPECIES];
 const TRAITS:(keyof WildlifeTraits)[]=['speed','size','fertility','wariness'];
 
 const zeroTraits=():WildlifeTraits=>({speed:0,size:0,fertility:0,wariness:0});
+const addTraitTotals=(a:WildlifeTraits,b:WildlifeTraits):WildlifeTraits=>({
+  speed:a.speed+b.speed,size:a.size+b.size,fertility:a.fertility+b.fertility,wariness:a.wariness+b.wariness
+});
+const meanTraitTotals=(sum:WildlifeTraits,count:number):WildlifeTraits=>count>0?({
+  speed:sum.speed/count,size:sum.size/count,fertility:sum.fertility/count,wariness:sum.wariness/count
+}):zeroTraits();
 const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,water:0,danger:0,settlementLevel:0,plantBiomass:0,competitionPressure:0,seasonalSuitability:0,diseasePressure:0,predatorPressure:0});
 const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure','seasonalSuitability','diseasePressure','predatorPressure'];
 const MIN_LIFETIME_EXPOSURE_DAYS=.02;
@@ -415,28 +421,108 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
         :((outcomes.asPrey.byPredator?.[counterpartSpecies]?.successfulEscapes||0)>0
           ||(outcomes.asPrey.byPredator?.[counterpartSpecies]?.survivedAttacks||0)>0);
     });
+
     const sums={
       huntAttempts:0,huntHits:0,kills:0,
       fleeAttempts:0,successfulEscapes:0,attacksReceived:0,survivedAttacks:0
     };
+    let attemptTraitSum=zeroTraits(),successTraitSum=zeroTraits(),terminalTraitSum=zeroTraits();
+    let traitMatchAttempts=0,traitMatchSuccesses=0,terminalTraitMatchSuccesses=0;
+
     for(const record of observed){
       if(role==='predator'){
         const pair=record.predationOutcomes?.asPredator.byPrey?.[counterpartSpecies];
-        if(pair){
-          sums.huntAttempts+=pair.huntAttempts||0;
-          sums.huntHits+=pair.huntHits||0;
-          sums.kills+=pair.kills||0;
+        if(!pair)continue;
+        sums.huntAttempts+=pair.huntAttempts||0;
+        sums.huntHits+=pair.huntHits||0;
+        sums.kills+=pair.kills||0;
+        if(pair.attemptTraitDeltaSum){
+          attemptTraitSum=addTraitTotals(attemptTraitSum,pair.attemptTraitDeltaSum);
+          traitMatchAttempts+=pair.huntAttempts||0;
+        }
+        if(pair.hitTraitDeltaSum){
+          successTraitSum=addTraitTotals(successTraitSum,pair.hitTraitDeltaSum);
+          traitMatchSuccesses+=pair.huntHits||0;
+        }
+        if(pair.killTraitDeltaSum){
+          terminalTraitSum=addTraitTotals(terminalTraitSum,pair.killTraitDeltaSum);
+          terminalTraitMatchSuccesses+=pair.kills||0;
         }
       }else{
         const pair=record.predationOutcomes?.asPrey.byPredator?.[counterpartSpecies];
-        if(pair){
-          sums.fleeAttempts+=pair.fleeAttempts||0;
-          sums.successfulEscapes+=pair.successfulEscapes||0;
-          sums.attacksReceived+=pair.attacksReceived||0;
-          sums.survivedAttacks+=pair.survivedAttacks||0;
+        if(!pair)continue;
+        sums.fleeAttempts+=pair.fleeAttempts||0;
+        sums.successfulEscapes+=pair.successfulEscapes||0;
+        sums.attacksReceived+=pair.attacksReceived||0;
+        sums.survivedAttacks+=pair.survivedAttacks||0;
+        if(pair.fleeTraitDeltaSum){
+          attemptTraitSum=addTraitTotals(attemptTraitSum,pair.fleeTraitDeltaSum);
+          traitMatchAttempts+=pair.fleeAttempts||0;
+        }
+        if(pair.escapeTraitDeltaSum){
+          successTraitSum=addTraitTotals(successTraitSum,pair.escapeTraitDeltaSum);
+          traitMatchSuccesses+=pair.successfulEscapes||0;
         }
       }
     }
+
+    const generations=[...new Set(observed.map(record=>record.generation))].sort((a,b)=>a-b);
+    const generationTrend:WildlifePredationGenerationPerformance[]=generations.map(generation=>{
+      const cohort=observed.filter(record=>record.generation===generation);
+      let attempts=0,successes=0,terminalAttempts=0,terminalSuccesses=0;
+      let cohortAttemptTrait=zeroTraits(),cohortSuccessTrait=zeroTraits(),cohortTerminalTrait=zeroTraits();
+      let cohortTraitAttempts=0,cohortTraitSuccesses=0,cohortTerminalTraitSuccesses=0;
+
+      for(const record of cohort){
+        if(role==='predator'){
+          const pair=record.predationOutcomes?.asPredator.byPrey?.[counterpartSpecies];
+          if(!pair)continue;
+          attempts+=pair.huntAttempts||0;
+          successes+=pair.huntHits||0;
+          terminalAttempts+=pair.huntAttempts||0;
+          terminalSuccesses+=pair.kills||0;
+          if(pair.attemptTraitDeltaSum){
+            cohortAttemptTrait=addTraitTotals(cohortAttemptTrait,pair.attemptTraitDeltaSum);
+            cohortTraitAttempts+=pair.huntAttempts||0;
+          }
+          if(pair.hitTraitDeltaSum){
+            cohortSuccessTrait=addTraitTotals(cohortSuccessTrait,pair.hitTraitDeltaSum);
+            cohortTraitSuccesses+=pair.huntHits||0;
+          }
+          if(pair.killTraitDeltaSum){
+            cohortTerminalTrait=addTraitTotals(cohortTerminalTrait,pair.killTraitDeltaSum);
+            cohortTerminalTraitSuccesses+=pair.kills||0;
+          }
+        }else{
+          const pair=record.predationOutcomes?.asPrey.byPredator?.[counterpartSpecies];
+          if(!pair)continue;
+          attempts+=pair.fleeAttempts||0;
+          successes+=pair.successfulEscapes||0;
+          terminalAttempts+=pair.attacksReceived||0;
+          terminalSuccesses+=pair.survivedAttacks||0;
+          if(pair.fleeTraitDeltaSum){
+            cohortAttemptTrait=addTraitTotals(cohortAttemptTrait,pair.fleeTraitDeltaSum);
+            cohortTraitAttempts+=pair.fleeAttempts||0;
+          }
+          if(pair.escapeTraitDeltaSum){
+            cohortSuccessTrait=addTraitTotals(cohortSuccessTrait,pair.escapeTraitDeltaSum);
+            cohortTraitSuccesses+=pair.successfulEscapes||0;
+          }
+        }
+      }
+
+      return {
+        generation,observedIndividuals:cohort.length,
+        attempts,successes,successRate:attempts?successes/attempts:0,
+        terminalAttempts,terminalSuccesses,terminalSuccessRate:terminalAttempts?terminalSuccesses/terminalAttempts:0,
+        traitMatchAttempts:cohortTraitAttempts,traitMatchSuccesses:cohortTraitSuccesses,
+        terminalTraitMatchSuccesses:cohortTerminalTraitSuccesses,
+        attemptTraitAdvantageMean:meanTraitTotals(cohortAttemptTrait,cohortTraitAttempts),
+        successTraitAdvantageMean:meanTraitTotals(cohortSuccessTrait,cohortTraitSuccesses),
+        terminalTraitAdvantageMean:meanTraitTotals(cohortTerminalTrait,cohortTerminalTraitSuccesses)
+      };
+    });
+
     const average=traitMean(observed);
     const successAverage=successful.length?traitMean(successful):average;
     return {
@@ -448,7 +534,12 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
       attackSurvivalRate:sums.attacksReceived?sums.survivedAttacks/sums.attacksReceived:0,
       traitMean:average,
       successfulTraitMean:successAverage,
-      successTraitDifferential:subtractTraits(successAverage,average)
+      successTraitDifferential:subtractTraits(successAverage,average),
+      traitMatchAttempts,traitMatchSuccesses,terminalTraitMatchSuccesses,
+      attemptTraitAdvantageMean:meanTraitTotals(attemptTraitSum,traitMatchAttempts),
+      successTraitAdvantageMean:meanTraitTotals(successTraitSum,traitMatchSuccesses),
+      terminalTraitAdvantageMean:meanTraitTotals(terminalTraitSum,terminalTraitMatchSuccesses),
+      generationTrend
     };
   }).sort((a,b)=>{
     const activity=(x:WildlifePredationPairPerformance)=>x.huntAttempts+x.fleeAttempts+x.attacksReceived;
