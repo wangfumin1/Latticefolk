@@ -30,7 +30,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 - biome 选择压力观测：谱系记录出生/死亡环境，God View 按 biome 展示繁殖者相对 cohort 的标准化 trait 差值、跨代同向一致性、样本量及“样本不足/弱信号/持续信号”，不把相关性直接写成因果。
 - 生命周期 habitat 暴露：个体只在实际 fine simulation 期间累计环境暴露天数、时间加权 ecology/food/water/danger、biome/chunk 时长和已观测迁移；coarse 时段不会伪造为命名个体轨迹，并可在 God View 对比出生 biome 与 lifetime dominant biome 的选择证据。
 - 可保留身份的 fine wildlife migration：命名个体只能迁往合法相邻 chunk，保留 entity ID、父母、代数、traits、妊娠和 habitat history；确定性模拟负责 carrying capacity、coarse 数量守恒、代表权重、transit persistence 与迁徙 provenance。
-- 确定性生态位竞争：兔/鹿/野猪/狐狸使用固定资源 profile 计算 pairwise niche overlap，并结合其他物种密度形成 competition pressure；压力会有界降低有效 carrying capacity、影响健康，并进入 God View 与 lineage habitat exposure。
+- 确定性生态位竞争：兔/鹿/野猪/山羊/狐狸/狼使用固定资源 profile 计算 pairwise niche overlap，并结合其他物种密度形成 competition pressure；压力会有界降低有效 carrying capacity、影响健康，并进入 God View 与 lineage habitat exposure。
 - 季节迁徙驱动：物种×biome 的春夏秋冬适宜度结合当前 forage、水、生态和危险形成 seasonal suitability；高出至少 8 分的相邻 habitat 可独立产生低幅度守恒迁徙，fine wildlife 也只能在合法候选中参考该信号。
 - 更丰富的疾病传播：coarse 显式拆分环境、同种接触、跨种接触和迁徙输入四类 disease pressure；fine wildlife 按真实邻近个体、距离和固定跨种接触系数传播，God View 与 lineage exposure 都可观察疾病压力。
 - fitness-by-habitat 证据：把 lifetime competition、seasonal suitability、disease pressure 与繁殖成功、后代数、寿命做关联分析；存活未成年个体在达到成年前从 reproduction/offspring 结果中右删失，幼年死亡仍保留为完整未繁殖结果；样本不足或无方差时显示不可估计而不是伪装成 0，并按低/中/高暴露 cohort 展示 breeder rate 与 trait differential，不宣称因果。
