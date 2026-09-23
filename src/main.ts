@@ -18,7 +18,7 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
-import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
+import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -1674,7 +1674,7 @@ class TownGame {
       }))
       .filter(x=>x.distance<=12).sort((a,b)=>a.distance-b.distance).slice(0,12);
     const decisionState=structuredClone(animal.state);
-    if(decisionState.domestication)decisionState.domestication={...decisionState.domestication,ownerId:undefined};
+    decisionState.domestication=wildlifeDomesticationDecisionState(animal.state.species,animal.state.domestication);
     return {
       wildlife:decisionState,
       world:{
@@ -2012,7 +2012,8 @@ class TownGame {
       };
       const phenotype=inheritWildlifePhenotype(motherPhenotype,fatherPhenotype,id);
       const organismGenome=inheritWildlifeOrganismGenome(s.species,motherGenome,fatherGenome,id);
-      const domestication=inheritedWildlifeDomestication(s.species,s.domestication,fatherState?.domestication,currentDay);
+      const fatherDomestication=fatherState?.domestication??fatherLineage?.domesticationAtDeath??fatherLineage?.domesticationAtBirth;
+      const domestication=inheritedWildlifeDomestication(s.species,s.domestication,fatherDomestication,currentDay);
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
