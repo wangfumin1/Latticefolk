@@ -494,6 +494,7 @@ export interface WildlifePredationGenerationPerformance {
   attempts: number;
   successes: number;
   successRate: number;
+  terminalAttempts: number;
   terminalSuccesses: number;
   terminalSuccessRate: number;
   traitMatchAttempts: number;
