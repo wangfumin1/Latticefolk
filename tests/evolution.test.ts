@@ -500,3 +500,130 @@ test('interaction source generations preserve one-sided disease evidence as part
   assert.equal(rabbitSide.pressureBreederAssociation,null);
   assert.equal(rabbitSide.pressureTraitAssociation.wariness,null);
 });
+
+
+test('multi-factor selection separates simultaneous orthogonal interaction sources',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:82,food:72,water:74,danger:22,settlementLevel:0,plantBiomass:76,
+    competitionPressure:45,seasonalSuitability:80,diseasePressure:32,predatorPressure:38
+  };
+  const levels=[10,50,90];
+  const sample:WildlifeLineageRecord[]=[];
+  let index=0;
+  for(let a=0;a<3;a++)for(let b=0;b<3;b++)for(let c=0;c<3;c++){
+    const predation=levels[a]!,competition=levels[b]!,disease=levels[c]!;
+    const rawOffspring=1+a-b+c;
+    const offspring=Math.max(0,rawOffspring);
+    const lifespan=180+35*a-25*b+15*c;
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,`multifactor_${index}`,1,
+      {fox:predation},{goat:competition},{deer:disease}
+    );
+    exposure.lastObservedDay=undefined;
+    sample.push({
+      entityId:`multifactor_${index}`,species:'rabbit',birthDay:1,
+      deathDay:1+lifespan,deathReason:'other',generation:Math.floor(index/9),
+      birthChunk:`multifactor_${index}`,traitsAtBirth:traits(.3+a*.08+c*.03,.8+b*.04),
+      birthHabitat:habitat,habitatExposure:exposure,origin:index<9?'founder':'reproduction',
+      offspringCount:offspring,reproductiveSuccess:offspring>0
+    });
+    index++;
+  }
+
+  const evidence=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!.multifactorSelection;
+  const offspring=evidence.models.find(model=>model.outcome==='offspring')!;
+  const lifespan=evidence.models.find(model=>model.outcome==='lifespan')!;
+  const reproduction=evidence.models.find(model=>model.outcome==='reproduction')!;
+
+  assert.equal(offspring.estimable,true);
+  assert.equal(offspring.samples,27);
+  assert.equal(offspring.selectedFeatures,3);
+  assert.ok((offspring.maxFeatureCorrelation||0)<1e-9);
+  assert.ok((offspring.rSquared||0)>.7);
+  assert.equal(lifespan.estimable,true);
+  assert.ok((lifespan.rSquared||0)>.9);
+  assert.equal(reproduction.estimable,true);
+
+  const coefficient=(model:typeof offspring,kind:'predation'|'competition'|'disease',source:'fox'|'goat'|'deer')=>
+    model.coefficients.find(feature=>feature.kind===kind&&feature.sourceSpecies===source)?.standardizedCoefficient;
+
+  assert.ok(coefficient(offspring,'predation','fox')!>0);
+  assert.ok(coefficient(offspring,'competition','goat')!<0);
+  assert.ok(coefficient(offspring,'disease','deer')!>0);
+  assert.ok(coefficient(lifespan,'predation','fox')!>0);
+  assert.ok(coefficient(lifespan,'competition','goat')!<0);
+  assert.ok(coefficient(lifespan,'disease','deer')!>0);
+  assert.ok(coefficient(reproduction,'competition','goat')!<0);
+});
+
+test('multi-factor selection never zero-imputes disjoint legacy source coverage',()=>{
+  const habitat={
+    biome:'forest' as const,ecology:76,food:68,water:72,danger:28,settlementLevel:0,plantBiomass:78,
+    competitionPressure:30,seasonalSuitability:74,diseasePressure:0,predatorPressure:30
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let index=0;index<16;index++){
+    const predatorObserved=index<8;
+    const pressure=10+(index%8)*10;
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,`multifactor_missing_${index}`,1,
+      predatorObserved?{fox:pressure}:undefined,
+      predatorObserved?undefined:{goat:pressure},
+      undefined
+    );
+    exposure.lastObservedDay=undefined;
+    sample.push({
+      entityId:`multifactor_missing_${index}`,species:'rabbit',birthDay:1,
+      deathDay:180+index,deathReason:'other',generation:index%3,birthChunk:`multifactor_missing_${index}`,
+      traitsAtBirth:traits(.4+index*.01,.8),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<4?'founder':'reproduction',offspringCount:index%2,reproductiveSuccess:index%2===1
+    });
+  }
+
+  const model=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!
+    .multifactorSelection.models.find(entry=>entry.outcome==='offspring')!;
+
+  assert.equal(model.candidateFeatures,2);
+  assert.equal(model.estimable,false);
+  assert.equal(model.selectedFeatures,1);
+  assert.equal(model.samples,8);
+  assert.equal(model.coefficients.length,1);
+  assert.equal(model.coefficients[0]?.coverageSamples,8);
+  assert.equal(model.coefficients[0]?.standardizedCoefficient,null);
+});
+
+test('multi-factor selection rejects severe predictor collinearity instead of emitting ridge coefficients',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:80,food:74,water:72,danger:30,settlementLevel:0,plantBiomass:76,
+    competitionPressure:35,seasonalSuitability:78,diseasePressure:24,predatorPressure:32
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let index=0;index<18;index++){
+    const pressure=10+index*3;
+    const disease=12+(index%4)*11;
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,`multifactor_collinear_${index}`,1,
+      {fox:pressure},{goat:pressure*2},{deer:disease}
+    );
+    exposure.lastObservedDay=undefined;
+    const offspring=(index%5)<2?2:0;
+    sample.push({
+      entityId:`multifactor_collinear_${index}`,species:'rabbit',birthDay:1,
+      deathDay:170+index*4,deathReason:'other',generation:index%4,birthChunk:`multifactor_collinear_${index}`,
+      traitsAtBirth:traits(.35+index*.01,.8),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<5?'founder':'reproduction',offspringCount:offspring,reproductiveSuccess:offspring>0
+    });
+  }
+
+  const model=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!
+    .multifactorSelection.models.find(entry=>entry.outcome==='offspring')!;
+
+  assert.equal(model.candidateFeatures,3);
+  assert.equal(model.selectedFeatures,3);
+  assert.equal(model.estimable,false);
+  assert.equal(model.status,'unstable_collinearity');
+  assert.ok((model.maxFeatureCorrelation||0)>.999);
+  assert.equal(model.maxVarianceInflationFactor,null);
+  assert.ok(model.coefficients.every(feature=>feature.standardizedCoefficient===null));
+});
+
