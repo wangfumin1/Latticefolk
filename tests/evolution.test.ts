@@ -317,3 +317,47 @@ test('fitness-by-habitat quantifies predator-pressure associations without causa
   assert.equal(predator.bands.find(band=>band.band==='low')?.population,3);
   assert.equal(predator.bands.find(band=>band.band==='high')?.breederRate,0);
 });
+
+
+test('predator-source exposure excludes legacy unknown days from source means',()=>{
+  const habitat={biome:'forest' as const,ecology:80,food:68,water:70,danger:24,settlementLevel:0,plantBiomass:72,competitionPressure:20,seasonalSuitability:76,diseasePressure:8,predatorPressure:30};
+  let exposure=accumulateWildlifeHabitatExposure(undefined,habitat,'legacy_chunk',2);
+  exposure=accumulateWildlifeHabitatExposure(exposure,habitat,'source_chunk',1,{fox:20,wolf:0});
+  exposure=accumulateWildlifeHabitatExposure(exposure,habitat,'source_chunk',3,{fox:80,wolf:40});
+  assert.equal(exposure.observedDays,6);
+  assert.equal(exposure.predatorSourceObservedDays,4);
+  assert.equal(exposure.predatorSourceMean?.fox,65);
+  assert.equal(exposure.predatorSourceMean?.wolf,30);
+});
+
+test('predator specialization separates fox pressure from zero wolf exposure',()=>{
+  const sample:WildlifeLineageRecord[]=[
+    [8,3,130],[18,2,120],[28,1,110],
+    [42,1,95],[52,0,85],[62,0,75],
+    [74,0,65],[84,0,55],[94,0,45]
+  ].map(([foxPressure,offspring,lifespan],index)=>{
+    const habitat={
+      biome:'plains' as const,ecology:78,food:70,water:68,danger:24,settlementLevel:0,plantBiomass:70,
+      competitionPressure:30,seasonalSuitability:75,diseasePressure:10,predatorPressure:foxPressure!
+    };
+    const exposure=accumulateWildlifeHabitatExposure(undefined,habitat,'predator_source_fitness',1,{fox:foxPressure!,wolf:0});
+    exposure.lastObservedDay=undefined;
+    return {
+      entityId:`predator_source_${index}`,species:'rabbit' as const,birthDay:1,generation:Math.floor(index/3),
+      deathDay:1+lifespan!,deathReason:'predation' as const,birthChunk:'predator_source_fitness',
+      traitsAtBirth:traits(.25+index*.05,.55+index*.01),birthHabitat:habitat,habitatExposure:exposure,
+      origin:index<3?'founder' as const:'reproduction' as const,
+      offspringCount:offspring!,reproductiveSuccess:offspring!>0
+    };
+  });
+  const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
+  const fox=rabbit.predatorSpecialization.find(entry=>entry.predatorSpecies==='fox');
+  const wolf=rabbit.predatorSpecialization.find(entry=>entry.predatorSpecies==='wolf');
+  assert.ok(fox);
+  assert.equal(fox!.sampleSize,9);
+  assert.notEqual(fox!.reproductionAssociation,null);
+  assert.ok(fox!.reproductionAssociation!<0);
+  assert.ok(fox!.offspringAssociation!<0);
+  assert.ok(fox!.lifespanAssociation!<0);
+  assert.equal(wolf,undefined);
+});
