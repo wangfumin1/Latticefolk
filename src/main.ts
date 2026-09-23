@@ -13,7 +13,7 @@ import { craftAtWorkstation } from './world/production';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
-import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage } from './world/wildlifeSpecies';
+import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile } from './world/wildlifeSpecies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -1188,37 +1188,62 @@ class TownGame {
 
   makeProceduralAnimal(state:WildlifeState) {
     const g=new THREE.Group();
-    const palette:Record<WildlifeSpecies,{body:number;accent:number}>={
-      rabbit:{body:0xb8a48d,accent:0xe4d4c1},
-      deer:{body:0x9a6945,accent:0xd2b28f},
-      boar:{body:0x5d4a3c,accent:0x796354},
-      goat:{body:0xc2b8a0,accent:0xe4dcc8},
-      fox:{body:0xc86f35,accent:0xf0d0a5},
-      wolf:{body:0x696d72,accent:0xb0b3b7}
-    };
-    const color=palette[state.species];
+    const morphology=wildlifeSpeciesProfile(state.species).morphology;
     const scale=Math.max(.55,state.traits.size);
-    const body=new THREE.Mesh(new THREE.BoxGeometry(1.15*scale,.65*scale,.55*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:.95}));
-    body.position.y=.55*scale;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.48*scale,.48*scale,.48*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:.95}));
-    head.position.set(0,.72*scale,.52*scale);
+    const bodyMaterial=new THREE.MeshStandardMaterial({color:morphology.body,roughness:.95});
+    const accentMaterial=new THREE.MeshStandardMaterial({color:morphology.accent,roughness:.95});
+    const featureMaterial=new THREE.MeshStandardMaterial({color:morphology.featureColor??morphology.body,roughness:1});
+    const bodyCenter=(morphology.legHeight*.5+morphology.bodyY*.45)*scale;
+    const headZ=morphology.bodyZ*.95*scale;
+    const headY=bodyCenter+morphology.bodyY*.26*scale;
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(morphology.bodyX*scale,morphology.bodyY*scale,morphology.bodyZ*scale),
+      bodyMaterial
+    );
+    body.position.y=bodyCenter;
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(morphology.headSize*scale,morphology.headSize*scale,morphology.headSize*scale),
+      accentMaterial
+    );
+    head.position.set(0,headY,headZ);
     g.add(body,head);
-    for(const sx of [-.38,.38])for(const sz of [-.18,.18]){
-      const leg=new THREE.Mesh(new THREE.BoxGeometry(.14*scale,.5*scale,.14*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));
-      leg.position.set(sx*scale,.25*scale,sz*scale);g.add(leg);
+    for(const sx of [-.33,.33])for(const sz of [-.33,.33]){
+      const leg=new THREE.Mesh(
+        new THREE.BoxGeometry(.14*scale,morphology.legHeight*scale,.14*scale),
+        bodyMaterial
+      );
+      leg.position.set(sx*morphology.bodyX*scale,morphology.legHeight*.5*scale,sz*morphology.bodyZ*scale);
+      g.add(leg);
     }
-    if(state.species==='rabbit'){
-      for(const x of [-.12,.12]){const ear=new THREE.Mesh(new THREE.BoxGeometry(.1*scale,.55*scale,.1*scale),new THREE.MeshStandardMaterial({color:color.accent,roughness:1}));ear.position.set(x*scale,1.18*scale,.48*scale);g.add(ear);}
-    }else if(state.species==='deer'){
-      for(const x of [-.16,.16]){const antler=new THREE.Mesh(new THREE.BoxGeometry(.06*scale,.48*scale,.06*scale),new THREE.MeshStandardMaterial({color:0x5b4331,roughness:1}));antler.position.set(x*scale,1.08*scale,.5*scale);g.add(antler);}
-    }else if(state.species==='goat'){
-      for(const x of [-.15,.15]){
-        const horn=new THREE.Mesh(new THREE.BoxGeometry(.07*scale,.42*scale,.07*scale),new THREE.MeshStandardMaterial({color:0x75684f,roughness:1}));
-        horn.position.set(x*scale,1.03*scale,.48*scale);horn.rotation.x=-.22;g.add(horn);
+    for(const feature of morphology.features){
+      if(feature==='long_ears'){
+        for(const x of [-.12,.12]){
+          const ear=new THREE.Mesh(new THREE.BoxGeometry(.1*scale,.55*scale,.1*scale),accentMaterial);
+          ear.position.set(x*scale,headY+.46*scale,headZ);g.add(ear);
+        }
+      }else if(feature==='antlers'){
+        for(const x of [-.16,.16]){
+          const antler=new THREE.Mesh(new THREE.BoxGeometry(.06*scale,.48*scale,.06*scale),featureMaterial);
+          antler.position.set(x*scale,headY+.36*scale,headZ);g.add(antler);
+        }
+      }else if(feature==='horns'){
+        for(const x of [-.15,.15]){
+          const horn=new THREE.Mesh(new THREE.BoxGeometry(.07*scale,.42*scale,.07*scale),featureMaterial);
+          horn.position.set(x*scale,headY+.31*scale,headZ);horn.rotation.x=-.22;g.add(horn);
+        }
+      }else if(feature==='tail'){
+        const tailLength=morphology.tailLength??.6;
+        const tail=new THREE.Mesh(new THREE.BoxGeometry(.25*scale,.25*scale,tailLength*scale),bodyMaterial);
+        tail.position.set(0,bodyCenter,-(morphology.bodyZ*.5+tailLength*.52)*scale);tail.rotation.x=-.35;g.add(tail);
+      }else if(feature==='dorsal_stripe'){
+        const stripe=new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(.12,morphology.bodyX*.16)*scale,.045*scale,morphology.bodyZ*1.04*scale),
+          featureMaterial
+        );
+        stripe.position.set(0,bodyCenter+morphology.bodyY*.51*scale,0);g.add(stripe);
+        const faceStripe=new THREE.Mesh(new THREE.BoxGeometry(.12*scale,.05*scale,morphology.headSize*1.02*scale),featureMaterial);
+        faceStripe.position.set(0,headY+morphology.headSize*.48*scale,headZ);g.add(faceStripe);
       }
-    }else if(state.species==='fox'||state.species==='wolf'){
-      const tailLength=state.species==='wolf'?.82:.75;
-      const tail=new THREE.Mesh(new THREE.BoxGeometry(.25*scale,.25*scale,tailLength*scale),new THREE.MeshStandardMaterial({color:color.body,roughness:1}));tail.position.set(0,.55*scale,-.67*scale);tail.rotation.x=-.35;g.add(tail);
     }
     g.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
     return g;
@@ -1439,16 +1464,16 @@ class TownGame {
   }
 
   wildlifeAllowedActions(state:WildlifeState):WildlifeAction[] {
-    const actions:WildlifeAction[]=['wander','rest','drink','forage','flee'];
+    const profile=wildlifeSpeciesProfile(state.species);
+    const actions:WildlifeAction[]=['wander','rest','drink','flee',profile.feedingAction];
     const life=this.wildlifeLifeHistory(state.species);
     const currentDay=this.day+this.minuteOfDay/1440;
     const pregnant=state.sex==='female'&&Boolean(state.pregnantUntilDay&&state.pregnantUntilDay>currentDay);
     const baseline=this.materializedChunks.get(state.chunkId)?.initialWildlifeIds.has(state.id)??false;
     if(state.ageDays>=life.adultAge&&!pregnant)actions.push('seek_mate');
     if(baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
-    if(['rabbit','deer','boar','goat'].includes(state.species))actions.push('graze');
     if(isWildlifePredator(state.species))actions.push('hunt');
-    return actions;
+    return [...new Set(actions)];
   }
 
   wildlifeMigrationCandidate(state:WildlifeState,chunk:CoarseChunkState):WildlifeMigrationCandidate {
@@ -1591,10 +1616,15 @@ class TownGame {
 
   findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
     const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
+    const forageTags=wildlifeSpeciesProfile(animal.state.species).forageTags;
     const wanted=(o:RuntimeObject)=>{
       if(action==='drink')return o.state.tags.includes('water')||o.state.kind==='well';
-      if(action==='graze')return o.state.kind==='farm_plot'||o.state.kind==='bush'||o.state.kind==='flower'||(o.state.kind==='tree'&&o.state.tags.includes('apple'))||o.state.tags.includes('food');
-      return o.state.tags.includes('forage')||o.state.tags.includes('food')||o.state.kind==='bush'||o.state.kind==='flower';
+      if(action==='graze'||action==='forage'){
+        return o.state.tags.some(tag=>forageTags.includes(tag))
+          ||o.state.kind==='bush'||o.state.kind==='flower'
+          ||(o.state.kind==='tree'&&o.state.tags.includes('apple'));
+      }
+      return false;
     };
     return candidates.filter(wanted).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
   }
@@ -1616,11 +1646,18 @@ class TownGame {
         s.thirst=clamp(s.thirst-58,0,100);s.energy=clamp(s.energy-1,0,100);break;
       case 'graze':
       case 'forage': {
+        const profile=wildlifeSpeciesProfile(s.species);
         s.hunger=clamp(s.hunger-(s.currentAction==='graze'?34:28),0,100);
         if(object&&typeof object.state.resourceAmount==='number')object.state.resourceAmount=Math.max(0,object.state.resourceAmount-.25);
-        else if(s.currentAction==='graze'){
+        else {
           const chunk=this.coarseWorld.chunks.get(s.chunkId);
-          if(chunk?.plants)chunk.plants.grass=clamp(chunk.plants.grass-.35,0,100);
+          if(chunk?.plants){
+            const amount=.35,weights=profile.plantConsumptionWeights;
+            chunk.plants.grass=clamp(chunk.plants.grass-amount*weights.grass,0,100);
+            chunk.plants.shrub=clamp(chunk.plants.shrub-amount*weights.shrub,0,100);
+            chunk.plants.fruit=clamp(chunk.plants.fruit-amount*weights.fruit,0,100);
+            chunk.plants.crop=clamp(chunk.plants.crop-amount*weights.crop,0,100);
+          }
         }
         break;
       }
@@ -1648,7 +1685,7 @@ class TownGame {
             const relief=wildlifeHungerRelief(s.species,other.state.species);
             other.state.health=clamp(other.state.health-damage,0,100);
             s.hunger=clamp(s.hunger-relief,0,100);
-            s.energy=clamp(s.energy-(s.species==='wolf'?10:8),0,100);
+            s.energy=clamp(s.energy-wildlifeSpeciesProfile(s.species).huntEnergyCost,0,100);
             hit=damage>0;
             kill=other.state.health<=0;
             if(hit){
