@@ -119,8 +119,8 @@ test('niche partitioning keeps fox competition lower than crowded plant consumer
     else p.count=5;
   }
   const state=computeWildlifeNicheCompetition(a,populations);
-  assert.ok(state.speciesPressure.rabbit>state.speciesPressure.fox);
-  assert.ok(state.speciesPressure.deer>state.speciesPressure.fox);
+  assert.ok((state.speciesPressure.rabbit||0)>(state.speciesPressure.fox||0));
+  assert.ok((state.speciesPressure.deer||0)>(state.speciesPressure.fox||0));
   assert.ok(Object.values(state.speciesPressure).every(value=>value>=0&&value<=100));
   assert.ok(populations.every(p=>p.carryingCapacity>=0&&(p.competitionPressure||0)>=0&&(p.competitionPressure||0)<=100));
 });
@@ -183,8 +183,8 @@ test('wildlife disease pressure separates environmental, local and cross-species
   }
   const pressure=computeWildlifeDiseasePressure(a,populations,'rain');
   assert.ok(pressure.environmentalPressure>0);
-  assert.ok(pressure.crossSpeciesPressure.rabbit>0);
-  assert.ok(pressure.speciesPressure.rabbit>pressure.localContactPressure.rabbit);
+  assert.ok((pressure.crossSpeciesPressure.rabbit||0)>0);
+  assert.ok((pressure.speciesPressure.rabbit||0)>(pressure.localContactPressure.rabbit||0));
   assert.ok(pressure.strongestPair);
   assert.ok(Object.values(pressure.speciesPressure).every(value=>value>=0&&value<=100));
 });
@@ -313,9 +313,9 @@ test('predator pressure follows actual predator density and prey preference with
   fox.count=Math.max(1,fox.carryingCapacity*.7);
   wolf.count=Math.max(1,wolf.carryingCapacity*.7);
   const pressured=computeWildlifePredatorPressure(a,populations);
-  assert.ok(pressured.speciesPressure.rabbit>0);
-  assert.ok(pressured.speciesPressure.deer>0);
-  assert.ok(pressured.speciesPressure.goat>0);
+  assert.ok((pressured.speciesPressure.rabbit||0)>0);
+  assert.ok((pressured.speciesPressure.deer||0)>0);
+  assert.ok((pressured.speciesPressure.goat||0)>0);
   assert.equal(pressured.speciesPressure.wolf,0);
   assert.ok((pressured.strongestPair?.pressure||0)>0);
   assert.equal(rabbit.count,preyBefore.rabbit);
@@ -332,9 +332,9 @@ test('wolf density raises goat predator pressure monotonically',()=>{
   const wolf=populations.find(p=>p.species==='wolf')!;
   goat.count=6;
   wolf.count=Math.max(.5,wolf.carryingCapacity*.2);
-  const low=computeWildlifePredatorPressure(a,populations).speciesPressure.goat;
+  const low=computeWildlifePredatorPressure(a,populations).speciesPressure.goat||0;
   wolf.count=Math.max(1.5,wolf.carryingCapacity*.9);
-  const high=computeWildlifePredatorPressure(a,populations).speciesPressure.goat;
+  const high=computeWildlifePredatorPressure(a,populations).speciesPressure.goat||0;
   assert.ok(high>low);
 });
 
