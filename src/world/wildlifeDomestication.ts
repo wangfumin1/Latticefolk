@@ -144,6 +144,17 @@ export function wildlifeDomesticationInteractions(
   return actions;
 }
 
+export function shouldWildlifeFollowPlayerAcrossChunk(
+  species:WildlifeSpecies,
+  value:WildlifeDomesticationState|undefined
+) {
+  const current=normalizeWildlifeDomestication(species,value);
+  return current?.stage==='bonded'
+    &&current.ownerKind==='player'
+    &&current.ownerId==='player'
+    &&current.command==='follow';
+}
+
 export function domesticationCommandAllowedActions(
   species:WildlifeSpecies,
   value:WildlifeDomesticationState|undefined,
