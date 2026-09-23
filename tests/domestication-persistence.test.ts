@@ -69,6 +69,10 @@ test('domestication state persists through fine chunks transfers and durable lin
       domesticationAtDeath:{
         tameProgress:100,ownerId:'player',command:'stay',breedingAllowed:true,claimedDay:1,lastInteractionDay:4.9
       },
+      migrationHistory:[{
+        fromChunkId:'chunk_0_0',toChunkId:'chunk_1_0',day:4.5,
+        fromBiome:'plains',toBiome:'forest',representedPopulation:1.5,reason:'owner_follow'
+      }],
       origin:'reproduction',
       offspringCount:2,
       reproductiveSuccess:true
@@ -91,6 +95,7 @@ test('domestication state persists through fine chunks transfers and durable lin
   assert.equal(loaded.wildlifeLineage?.[0]?.domesticationAtDeath?.command,'stay');
   assert.equal(loaded.wildlifeLineage?.[0]?.domesticationAtDeath?.breedingAllowed,true);
   assert.equal(loaded.wildlifeLineage?.[0]?.domesticationAtDeath?.lastInteractionDay,4.9);
+  assert.equal(loaded.wildlifeLineage?.[0]?.migrationHistory?.[0]?.reason,'owner_follow');
 
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
