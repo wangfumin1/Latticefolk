@@ -267,3 +267,29 @@ test('individual organism niche genome changes bounded forage target ranking',()
   assert.equal(d.targetObjectId,'fruit_patch');
 });
 
+test('archetype-composed lynx hunts through the shared predator graph',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'lynx_1',species:'lynx',ageDays:500,hunger:84,thirst:20,energy:76}),
+    world:world({nearbyWildlife:[
+      {id:'rabbit_for_lynx',species:'rabbit',sex:'female',ageDays:180,distance:3,health:82,currentAction:'graze',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'rabbit_for_lynx');
+});
+
+test('lynx can flee wolf because legality comes from the same shared prey graph',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'lynx_prey',species:'lynx',ageDays:500,hunger:20,thirst:20,energy:78}),
+    world:world({nearbyWildlife:[
+      {id:'wolf_threat',species:'wolf',sex:'male',ageDays:700,distance:3,health:90,currentAction:'hunt',mateAvailable:true}
+    ]}),
+    allowedActions:['flee','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'flee');
+  assert.equal(d.targetWildlifeId,'wolf_threat');
+});
+

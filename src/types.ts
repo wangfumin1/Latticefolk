@@ -244,7 +244,7 @@ export type ChunkStrategy = 'sustain' | 'grow_settlement' | 'conserve' | 'extrac
 export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate';
 export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
-export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'goat' | 'fox' | 'wolf' | 'badger';
+export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'goat' | 'fox' | 'wolf' | 'badger' | 'lynx';
 export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate' | 'migrate';
 export type WorldSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 
@@ -383,7 +383,7 @@ export interface WildlifePhenotype {
   behavior: WildlifeBehaviorPhenotype;
 }
 
-export type WildlifeOrganismFamily='lagomorph'|'cervid'|'suiform'|'caprine'|'canid'|'mustelid';
+export type WildlifeOrganismFamily='lagomorph'|'cervid'|'suiform'|'caprine'|'canid'|'mustelid'|'felid';
 
 export interface WildlifeOrganismGenome {
   family: WildlifeOrganismFamily;

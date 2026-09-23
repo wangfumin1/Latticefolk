@@ -116,6 +116,7 @@ test('niche partitioning keeps fox competition lower than crowded plant consumer
     if(p.species==='rabbit')p.count=30;
     else if(p.species==='deer')p.count=14;
     else if(p.species==='boar')p.count=11;
+    else if(p.species==='lynx')p.count=0;
     else p.count=5;
   }
   const state=computeWildlifeNicheCompetition(a,populations);
@@ -218,7 +219,7 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
   const a=chunk('chunk_disease_dynamics',16,{biome:'plains',ecology:82,water:70});
   const populations=ensureWildlifePopulations(a);
   for(const pop of populations){
-    pop.count=['fox','wolf','badger'].includes(pop.species)?0:Math.max(3,pop.carryingCapacity*.75);
+    pop.count=['fox','wolf','badger','lynx'].includes(pop.species)?0:Math.max(3,pop.carryingCapacity*.75);
     pop.diseaseLoad=pop.species==='deer'?85:1;
     pop.importedDiseasePressure=0;
   }
@@ -239,16 +240,18 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
 });
 
 
-test('wildlife ecology seeds all configured species including goat, wolf and badger',()=>{
+test('wildlife ecology seeds all configured species including goat, wolf, badger and lynx',()=>{
   const a=chunk('chunk_species_expansion',17,{biome:'hills',ecology:86,water:70,food:72});
   const populations=ensureWildlifePopulations(a);
-  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf','badger']);
+  assert.deepEqual(populations.map(p=>p.species),['rabbit','deer','boar','goat','fox','wolf','badger','lynx']);
   const goat=populations.find(p=>p.species==='goat')!;
   const wolf=populations.find(p=>p.species==='wolf')!;
   const badger=populations.find(p=>p.species==='badger')!;
+  const lynx=populations.find(p=>p.species==='lynx')!;
   assert.ok(goat.carryingCapacity>0);
   assert.ok(wolf.carryingCapacity>0);
   assert.ok(badger.carryingCapacity>0);
+  assert.ok(lynx.carryingCapacity>0);
 });
 
 test('wolf participates in coarse predation without creating or negative prey populations',()=>{
@@ -289,7 +292,8 @@ test('legacy four-species coarse wildlife state upgrades additively to newer spe
   assert.ok(populations.some(p=>p.species==='goat'));
   assert.ok(populations.some(p=>p.species==='wolf'));
   assert.ok(populations.some(p=>p.species==='badger'));
-  assert.equal(populations.length,7);
+  assert.ok(populations.some(p=>p.species==='lynx'));
+  assert.equal(populations.length,8);
 });
 
 
@@ -385,5 +389,30 @@ test('badger habitat suitability follows its centralized forest-biased profile',
   dryland.plants={grass:50,shrub:72,fruit:70,crop:30};
   ensureWildlifePopulations(forest);ensureWildlifePopulations(dryland);
   assert.ok(seasonalHabitatSuitability(forest,'badger',61)>seasonalHabitatSuitability(dryland,'badger',61));
+});
+
+test('archetype-composed lynx enters coarse ecology and predation through shared profile loops',()=>{
+  const a=chunk('chunk_lynx_archetype',26,{biome:'forest',ecology:90,water:76,food:74});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){pop.count=0;pop.diseaseLoad=0;}
+  const rabbit=populations.find(p=>p.species==='rabbit')!;
+  const lynx=populations.find(p=>p.species==='lynx')!;
+  rabbit.count=Math.max(6,rabbit.carryingCapacity*1.05);
+  lynx.count=Math.max(1,lynx.carryingCapacity*.7);
+  const rabbitBefore=rabbit.count;
+  const pressure=computeWildlifePredatorPressure(a,populations);
+  assert.ok((pressure.speciesPressure.rabbit||0)>0);
+  assert.ok((pressure.pairs||[]).some(pair=>pair.predatorSpecies==='lynx'&&pair.preySpecies==='rabbit'&&pair.pressure>0));
+  for(let i=0;i<5;i++)simulateWildlife(a,20,'clear',75);
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(rabbit.count<rabbitBefore);
+  assert.ok(lynx.count>=0);
+});
+
+test('lynx habitat suitability is inherited from reusable temperate forest-hills archetype',()=>{
+  const forest=chunk('chunk_lynx_forest',27,{biome:'forest',ecology:84,food:72,water:70,danger:18});
+  const dryland=chunk('chunk_lynx_dry',28,{biome:'dryland',ecology:84,food:72,water:70,danger:18});
+  ensureWildlifePopulations(forest);ensureWildlifePopulations(dryland);
+  assert.ok(seasonalHabitatSuitability(forest,'lynx',61)>seasonalHabitatSuitability(dryland,'lynx',61));
 });
 

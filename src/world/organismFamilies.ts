@@ -21,9 +21,10 @@ export const ORGANISM_FAMILY_TEMPLATES:Record<WildlifeOrganismFamily,FamilyTempl
   suiform:{family:'suiform',species:['boar'],material:{hueShift:[-.025,.025],lightnessShift:[-.06,.06],accentShift:[-.02,.02]},niche:{grass:[1,1],shrub:[.90,1.10],fruit:[.90,1.12],crop:[.90,1.12]},locomotion:{stride:[.90,1.08],endurance:[.94,1.12]}},
   caprine:{family:'caprine',species:['goat'],material:{hueShift:[-.03,.03],lightnessShift:[-.08,.08],accentShift:[-.025,.025]},niche:{grass:[.90,1.12],shrub:[.90,1.12],fruit:[.92,1.08],crop:[.94,1.06]},locomotion:{stride:[.92,1.12],endurance:[.94,1.12]}},
   canid:{family:'canid',species:['fox','wolf'],material:{hueShift:[-.04,.04],lightnessShift:[-.07,.07],accentShift:[-.03,.03]},niche:{grass:[1,1],shrub:[1,1],fruit:[1,1],crop:[1,1]},locomotion:{stride:[.92,1.12],endurance:[.92,1.12]}},
-  mustelid:{family:'mustelid',species:['badger'],material:{hueShift:[-.025,.025],lightnessShift:[-.065,.065],accentShift:[-.02,.02]},niche:{grass:[.94,1.06],shrub:[.88,1.14],fruit:[.88,1.14],crop:[.90,1.10]},locomotion:{stride:[.90,1.08],endurance:[.96,1.14]}}
+  mustelid:{family:'mustelid',species:['badger'],material:{hueShift:[-.025,.025],lightnessShift:[-.065,.065],accentShift:[-.02,.02]},niche:{grass:[.94,1.06],shrub:[.88,1.14],fruit:[.88,1.14],crop:[.90,1.10]},locomotion:{stride:[.90,1.08],endurance:[.96,1.14]}},
+  felid:{family:'felid',species:['lynx'],material:{hueShift:[-.03,.03],lightnessShift:[-.075,.075],accentShift:[-.025,.025]},niche:{grass:[1,1],shrub:[1,1],fruit:[1,1],crop:[1,1]},locomotion:{stride:[.94,1.12],endurance:[.92,1.10]}}
 };
-const FAMILY_BY_SPECIES:Record<WildlifeSpecies,WildlifeOrganismFamily>={rabbit:'lagomorph',deer:'cervid',boar:'suiform',goat:'caprine',fox:'canid',wolf:'canid',badger:'mustelid'};
+const FAMILY_BY_SPECIES:Record<WildlifeSpecies,WildlifeOrganismFamily>={rabbit:'lagomorph',deer:'cervid',boar:'suiform',goat:'caprine',fox:'canid',wolf:'canid',badger:'mustelid',lynx:'felid'};
 export const wildlifeOrganismFamily=(species:WildlifeSpecies)=>FAMILY_BY_SPECIES[species];
 const templateFor=(species:WildlifeSpecies)=>ORGANISM_FAMILY_TEMPLATES[wildlifeOrganismFamily(species)];
 

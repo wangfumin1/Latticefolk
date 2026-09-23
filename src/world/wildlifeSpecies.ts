@@ -1,8 +1,9 @@
 import type { ChunkBiome, WildlifeAction, WildlifeSpecies, WorldSeason } from '../types.js';
+import { composeWildlifeSpeciesProfile, WILDLIFE_BODY_ARCHETYPES, WILDLIFE_ECOLOGY_ARCHETYPES, WILDLIFE_HABITAT_ARCHETYPES, WILDLIFE_LIFE_ARCHETYPES } from './wildlifeArchetypes.js';
 
 export type WildlifeTrophicRole='herbivore'|'omnivore'|'predator';
 export type WildlifeNicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
-export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe';
+export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe'|'ear_tufts';
 
 export interface WildlifeLifeHistoryProfile {
   adultAge:number;
@@ -36,6 +37,8 @@ export interface WildlifeMorphologyProfile {
 }
 
 export interface WildlifeSpeciesProfile {
+  /** Optional reusable archetype definition used to compose this species profile. */
+  archetypeId?:string;
   trophicRole:WildlifeTrophicRole;
   biomeAffinity:Record<ChunkBiome,number>;
   seasonalBiomeAffinity:Record<WorldSeason,Record<ChunkBiome,number>>;
@@ -59,7 +62,7 @@ export interface WildlifeSpeciesProfile {
 const zeroPlants:Record<'grass'|'shrub'|'fruit'|'crop',number>={grass:0,shrub:0,fruit:0,crop:0};
 const seasonal=(spring:Record<ChunkBiome,number>,summer:Record<ChunkBiome,number>,autumn:Record<ChunkBiome,number>,winter:Record<ChunkBiome,number>)=>({spring,summer,autumn,winter});
 
-export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger'];
+export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger','lynx'];
 
 export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesProfile>={
   rabbit:{
@@ -178,7 +181,8 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
       boar:{preference:.48,damage:58,hungerRelief:44},
       goat:{preference:.68,damage:86,hungerRelief:50},
       fox:{preference:.08,damage:72,hungerRelief:24},
-      badger:{preference:.14,damage:65,hungerRelief:20}
+      badger:{preference:.14,damage:65,hungerRelief:20},
+      lynx:{preference:.12,damage:68,hungerRelief:22}
     }
   },
   badger:{
@@ -199,7 +203,19 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     morphology:{body:0x454944,accent:0xd8d5c8,bodyX:1.28,bodyY:.56,bodyZ:.62,headSize:.44,legHeight:.38,features:['tail','dorsal_stripe'],featureColor:0xf0ead8,tailLength:.42},
     lifeHistory:{adultAge:280,maxAge:3600,gestationDays:11,birthCooldown:24,litterMin:1,litterMax:2},
     prey:{rabbit:{preference:.55,damage:90,hungerRelief:36}}
-  }
+  },
+  lynx:composeWildlifeSpeciesProfile({
+    id:'temperate_felid_mesopredator',
+    habitat:WILDLIFE_HABITAT_ARCHETYPES.temperateForestHills,
+    ecology:WILDLIFE_ECOLOGY_ARCHETYPES.mediumAmbushPredator,
+    body:WILDLIFE_BODY_ARCHETYPES.mediumFelid,
+    life:WILDLIFE_LIFE_ARCHETYPES.mediumSolitaryPredator,
+    prey:{
+      rabbit:{preference:.88,damage:100,hungerRelief:44},
+      goat:{preference:.32,damage:58,hungerRelief:36},
+      deer:{preference:.18,damage:46,hungerRelief:30}
+    }
+  })
 };
 
 export const WILDLIFE_HERBIVORES:readonly WildlifeSpecies[]=WILDLIFE_SPECIES.filter(species=>WILDLIFE_SPECIES_PROFILES[species].trophicRole==='herbivore');

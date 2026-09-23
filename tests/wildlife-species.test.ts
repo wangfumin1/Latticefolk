@@ -14,6 +14,7 @@ import { wildlifeLifeHistory } from '../src/world/wildlifeLifeHistory.js';
 
 test('wildlife species profiles cover every configured species and biome/season axis',()=>{
   assert.ok(WILDLIFE_SPECIES.includes('badger'));
+  assert.ok(WILDLIFE_SPECIES.includes('lynx'));
   for(const species of WILDLIFE_SPECIES){
     const profile=wildlifeSpeciesProfile(species);
     for(const biome of ['plains','forest','hills','wetlands','dryland'] as const){
@@ -49,3 +50,22 @@ test('badger profile is a true omnivore with both forage and predation semantics
   assert.ok(wildlifeHungerRelief('badger','rabbit')>0);
   assert.ok(canWildlifePredate('wolf','badger'));
 });
+
+test('lynx validates reusable generated archetype composition without species-specific simulation branches',()=>{
+  const lynx=wildlifeSpeciesProfile('lynx');
+  assert.equal(lynx.archetypeId,'temperate_felid_mesopredator');
+  assert.equal(lynx.trophicRole,'predator');
+  assert.equal(lynx.herbivoryRate,0);
+  assert.deepEqual(lynx.plantConsumptionWeights,{grass:0,shrub:0,fruit:0,crop:0});
+  assert.ok(lynx.biomeAffinity.forest>lynx.biomeAffinity.plains);
+  assert.ok(lynx.biomeAffinity.hills>lynx.biomeAffinity.wetlands);
+  assert.ok(lynx.morphology.features.includes('tail'));
+  assert.ok(lynx.morphology.features.includes('ear_tufts'));
+  assert.ok(lynx.fine.speed>2.8);
+  assert.ok(canWildlifePredate('lynx','rabbit'));
+  assert.ok(canWildlifePredate('lynx','goat'));
+  assert.ok(canWildlifePredate('wolf','lynx'));
+  assert.ok(WILDLIFE_PREDATORS.includes('lynx'));
+  assert.ok(!WILDLIFE_HERBIVORES.includes('lynx'));
+});
+

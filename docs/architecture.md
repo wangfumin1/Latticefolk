@@ -297,7 +297,7 @@ Fine simulation applies those multipliers to basal hunger/thirst/energy drain, p
 
 ## Constrained organism-family genome
 
-A separate `WildlifeOrganismGenome` generalizes individual variation beyond the first morphology/behavior phenotype without replacing species semantics. Every wildlife species maps to one simulation-owned family template: lagomorph, cervid, suiform, caprine, canid or mustelid. The template bounds three gene groups: material palette offsets, plant-niche preference multipliers, and locomotion stride/endurance. Founder values are deterministic by entity identity; offspring values come from parental midpoint plus bounded deterministic mutation.
+A separate `WildlifeOrganismGenome` generalizes individual variation beyond the first morphology/behavior phenotype without replacing species semantics. Every wildlife species maps to one simulation-owned family template: lagomorph, cervid, suiform, caprine, canid, mustelid or felid. The template bounds three gene groups: material palette offsets, plant-niche preference multipliers, and locomotion stride/endurance. Founder values are deterministic by entity identity; offspring values come from parental midpoint plus bounded deterministic mutation.
 
 The family layer is deliberately subordinate to `WildlifeSpeciesProfile`. Species profiles still define trophic role, legal prey edges, legal plant axes, life history, coarse carrying capacity and coarse ecological flow. Genome normalization always forces the correct family and clamps values to that template. Plant-niche genes only redistribute weights across axes where the species already has non-zero plant use; a wolf therefore keeps zero grass/shrub/fruit/crop use regardless of its genome. Fine plant consumption is renormalized to the species baseline total, so individual preference does not manufacture extra resource demand.
 
@@ -308,6 +308,14 @@ The local fallback may rank already-legal forage candidates using the genome's n
 The Decision Provider never defines trophic relationships, species parameters, morphology, or numerical outcomes. Fallback and Jev only choose among legal `hunt`, `flee`, `migrate`, `seek_mate`, and other bounded actions/targets produced from simulation-owned semantics. A goat can flee a wolf because the shared graph says a wolf can predate goats; a wolf can hunt a goat because the same graph supplies that prey relation. This keeps coarse and fine LOD behavior aligned and prevents provider-specific food-web drift.
 
 Species additions reuse existing persistence: coarse populations remain embedded in chunk JSON, fine individuals remain ordinary `WildlifeState` records, ancestry remains in `wildlife_lineage`, and transit identities remain in `wildlife_transfers`. No new authority path or species-specific persistence table is introduced.
+
+## Reusable organism archetype composition
+
+`wildlifeArchetypes.ts` separates four reusable, simulation-owned modules: habitat affinity/seasonality, ecology and trophic niche, fine procedural body/trait baseline, and life history. `composeWildlifeSpeciesProfile` copies those modules plus a species-specific legal prey map into the same `WildlifeSpeciesProfile` contract already consumed everywhere else. The composer does not generate runtime state, populations, outcomes or free-form capabilities; it only constructs bounded configuration.
+
+Lynx is the first validation species. Its profile is composed from temperate forest/hills habitat, medium ambush-predator ecology, medium-felid body and solitary-predator life-history modules, then registered like every existing wildlife species. Because coarse ecology, materialization, disease, competition, predator pressure, migration, lifecycle, lineage, evolution and decision candidate construction iterate the shared species registry, lynx enters those systems without a lynx-specific simulation branch. The only new renderer primitive is generic `ear_tufts`, which is a reusable morphology feature alongside tail, horns, antlers and dorsal stripe.
+
+The composition layer remains below deterministic authority. A composed ecology module may define a species' legal trophic role and prey table as static game configuration, but neither Jev nor another Decision Provider can create or mutate those rules at runtime. Family-genome normalization still constrains each individual inside its registered family envelope, and coarse resource/predation accounting continues to use the species profile rather than individual provider output. God View can display `archetypeId` for inspection, but camera state and observer presence have no effect on profile selection or world generation.
 
 ## Predator-pressure adaptation evidence
 
