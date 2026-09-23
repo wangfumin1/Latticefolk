@@ -16,6 +16,7 @@ import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeL
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile } from './world/wildlifeSpecies';
 import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlifePhenotype, wildlifeFunctionalPhenotype } from './world/wildlifePhenotype';
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
+import { stepWildlifeMovementController } from './world/wildlifeMovement';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -145,6 +146,9 @@ interface WildlifeRuntime {
   mesh: THREE.Group;
   path: Vec2[];
   pathIndex: number;
+  /** Transient fine-controller state; authoritative position remains WildlifeState.position. */
+  moveSpeed: number;
+  heading: number;
   nextDecisionAt: number;
   actionResolved: boolean;
   removed?: boolean;
@@ -1185,7 +1189,7 @@ class TownGame {
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
-    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
+    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,moveSpeed:0,heading:g.rotation.y,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return true;
   }
@@ -1491,23 +1495,41 @@ class TownGame {
   }
 
   moveWildlife(animal:WildlifeRuntime,dt:number) {
-    if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;return;}
+    if(animal.pathIndex>=animal.path.length){
+      animal.path=[];animal.pathIndex=0;animal.moveSpeed=0;
+      return;
+    }
     const p=animal.path[animal.pathIndex]!;
     const pos=animal.mesh.position;
     const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
-    if(d<.12){animal.pathIndex++;if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}return;}
     const fastAction=['flee','hunt','migrate'].includes(animal.state.currentAction);
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(animal.state.phenotype,animal.state.id));
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const locomotion=wildlifeOrganismLocomotion(genome);
     const movement=wildlifeSpeciesProfile(animal.state.species).movement;
-    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*movement.speedMultiplier*(fastAction?1.18:1);
-    pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
-    animal.state.energy=clamp(
-      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
-      0,100
+    const targetSpeed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*movement.speedMultiplier*(fastAction?1.18:1);
+    const desiredHeading=d>.0001?Math.atan2(dx,dz):animal.heading;
+    const step=stepWildlifeMovementController(
+      {speed:animal.moveSpeed,heading:animal.heading},
+      movement,targetSpeed,desiredHeading,d,dt
     );
-    animal.mesh.rotation.y=Math.atan2(dx,dz);
+    animal.moveSpeed=step.speed;animal.heading=step.heading;
+    if(step.travelDistance>0&&d>.0001){
+      pos.x+=dx/d*step.travelDistance;
+      pos.z+=dz/d*step.travelDistance;
+      const movementFraction=Math.max(.12,step.speedRatio);
+      animal.state.energy=clamp(
+        animal.state.energy-dt*.018*movementFraction*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
+        0,100
+      );
+    }
+    animal.mesh.rotation.y=animal.heading;
+    if(step.arrived){
+      animal.pathIndex++;
+      if(animal.pathIndex>=animal.path.length){
+        animal.path=[];animal.pathIndex=0;animal.moveSpeed=0;
+      }
+    }
   }
 
   wildlifeAllowedActions(state:WildlifeState):WildlifeAction[] {
