@@ -14,6 +14,7 @@ import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEn
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile } from './world/wildlifeSpecies';
+import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlifePhenotype } from './world/wildlifePhenotype';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -1175,6 +1176,7 @@ class TownGame {
   spawnWildlife(state:WildlifeState) {
     const archived=this.wildlifeLineage.get(state.id);
     if(archived?.deathDay!==undefined)return false;
+    state.phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
@@ -1188,7 +1190,8 @@ class TownGame {
 
   makeProceduralAnimal(state:WildlifeState) {
     const g=new THREE.Group();
-    const morphology=wildlifeSpeciesProfile(state.species).morphology;
+    const phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
+    const morphology=effectiveWildlifeMorphology(state.species,phenotype);
     const scale=Math.max(.55,state.traits.size);
     const bodyMaterial=new THREE.MeshStandardMaterial({color:morphology.body,roughness:.95});
     const accentMaterial=new THREE.MeshStandardMaterial({color:morphology.accent,roughness:.95});
@@ -1833,6 +1836,11 @@ class TownGame {
     const room=population?Math.max(0,Math.ceil(population.carryingCapacity*.45)-current):life.litterMax;
     const litter=Math.min(room,life.litterMin+Math.floor(this.deterministicUnit(`${s.id}:litter:${this.day}`)*(life.litterMax-life.litterMin+1)));
     const fatherTraits=fatherState?.traits??fatherLineage?.traitsAtDeath??fatherLineage?.traitsAtBirth??s.traits;
+    const motherPhenotype=normalizeWildlifePhenotype(s.phenotype,s.id);
+    s.phenotype=motherPhenotype;
+    const fatherPhenotype=fatherState
+      ?normalizeWildlifePhenotype(fatherState.phenotype,fatherState.id)
+      :(fatherLineage?.phenotypeAtDeath??fatherLineage?.phenotypeAtBirth??motherPhenotype);
     const fatherGeneration=fatherState?.generation??fatherLineage?.generation??s.generation;
     for(let i=0;i<litter;i++){
       const generation=Math.max(s.generation,fatherGeneration)+1;
@@ -1843,10 +1851,11 @@ class TownGame {
         fertility:clamp(this.inheritTrait(s.traits.fertility,fatherTraits.fertility,`${id}:fertility`),.15,1),
         wariness:clamp(this.inheritTrait(s.traits.wariness,fatherTraits.wariness,`${id}:wariness`),.1,1)
       };
+      const phenotype=inheritWildlifePhenotype(motherPhenotype,fatherPhenotype,id);
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-        generation,traits,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
+        generation,traits,phenotype,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
         diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??fatherLineage?.entityId??s.pregnantById
       };
       if(this.spawnWildlife(baby)){
@@ -1992,10 +2001,16 @@ class TownGame {
   ensureWildlifeLineage(state:WildlifeState) {
     const existing=this.wildlifeLineage.get(state.id);
     if(existing){
+      let changed=false;
       if(!existing.birthHabitat){
         existing.birthHabitat=this.wildlifeHabitatSnapshot(existing.birthChunk||state.chunkId,existing.species);
-        if(existing.birthHabitat)this.lineageEpoch++;
+        changed=Boolean(existing.birthHabitat);
       }
+      if(!existing.phenotypeAtBirth&&state.phenotype){
+        existing.phenotypeAtBirth=structuredClone(state.phenotype);
+        changed=true;
+      }
+      if(changed)this.lineageEpoch++;
       return existing;
     }
     const record:WildlifeLineageRecord={
@@ -2007,6 +2022,7 @@ class TownGame {
       generation:state.generation,
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
+      phenotypeAtBirth:state.phenotype?structuredClone(state.phenotype):undefined,
       birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
@@ -2062,6 +2078,7 @@ class TownGame {
       record.deathReason=reason;
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
+      record.phenotypeAtDeath=animal.state.phenotype?structuredClone(animal.state.phenotype):record.phenotypeAtBirth?structuredClone(record.phenotypeAtBirth):undefined;
       record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId,animal.state.species);
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
@@ -2677,7 +2694,7 @@ class TownGame {
         ui.npc.classList.remove('hidden');
         const lineage=this.wildlifeLineage.get(s.id);
         const coarsePopulation=this.coarseWorld.chunks.get(s.chunkId)?.wildlife?.find(entry=>entry.species===s.species);
-        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease?.speciesPressure[s.species]??coarsePopulation.diseaseLoad??0).toFixed(0)} · ${i18n.t('evolution.predatorPressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifePredatorPressure?.speciesPressure[s.species]??coarsePopulation.predatorPressure??0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
+        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div><div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${s.phenotype?`<div>morph L ${s.phenotype.morphology.bodyLength.toFixed(2)} · H ${s.phenotype.morphology.bodyHeight.toFixed(2)} · leg ${s.phenotype.morphology.legLength.toFixed(2)} · head ${s.phenotype.morphology.headScale.toFixed(2)} · behavior forage ${s.phenotype.behavior.forageDrive.toFixed(2)} · migrate ${s.phenotype.behavior.migrationDrive.toFixed(2)} · risk ${s.phenotype.behavior.riskTolerance.toFixed(2)} · recover ${s.phenotype.behavior.recoveryDrive.toFixed(2)}</div>`:''}${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease?.speciesPressure[s.species]??coarsePopulation.diseaseLoad??0).toFixed(0)} · ${i18n.t('evolution.predatorPressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifePredatorPressure?.speciesPressure[s.species]??coarsePopulation.predatorPressure??0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
       }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
