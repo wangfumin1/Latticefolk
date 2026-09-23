@@ -3,6 +3,7 @@ import type {
   WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
   WildlifeInteractionSourceFitnessStats, WildlifeInteractionSourceGenerationCohort, WildlifeInteractionSourceGenerationEvidence,
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
+  WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorSelectionEvidence,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
   WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
@@ -467,11 +468,14 @@ function interactionSourceFitness(
   return results.sort((a,b)=>a.kind.localeCompare(b.kind)||b.pressureMean-a.pressureMean||b.sampleSize-a.sampleSize||a.sourceSpecies.localeCompare(b.sourceSpecies));
 }
 
-type SourceEvidenceKind='competition'|'disease';
+type InteractionSourceKind='predation'|'competition'|'disease';
+type SourceEvidenceKind=Exclude<InteractionSourceKind,'predation'>;
 
-const sourceExposureConfig=(kind:SourceEvidenceKind)=>kind==='competition'
-  ?{meanKey:'competitionSourceMean' as const,daysKey:'competitionSourceObservedDays' as const}
-  :{meanKey:'diseaseSourceMean' as const,daysKey:'diseaseSourceObservedDays' as const};
+const sourceExposureConfig=(kind:InteractionSourceKind)=>kind==='predation'
+  ?{meanKey:'predatorSourceMean' as const,daysKey:'predatorSourceObservedDays' as const}
+  :kind==='competition'
+    ?{meanKey:'competitionSourceMean' as const,daysKey:'competitionSourceObservedDays' as const}
+    :{meanKey:'diseaseSourceMean' as const,daysKey:'diseaseSourceObservedDays' as const};
 
 function interactionSourceGenerationSide(
   all:WildlifeLineageRecord[],
@@ -581,6 +585,190 @@ export function computeWildlifeInteractionSelectionEvidence(
     const activity=(entry:WildlifeReciprocalInteractionSelectionEvidence)=>entry.sideA.observedIndividuals+entry.sideB.observedIndividuals;
     return a.kind.localeCompare(b.kind)||activity(b)-activity(a)||a.speciesA.localeCompare(b.speciesA)||a.speciesB.localeCompare(b.speciesB);
   });
+}
+
+interface MultifactorFeature {
+  kind: InteractionSourceKind;
+  sourceSpecies: WildlifeSpecies;
+}
+
+const MULTIFACTOR_RIDGE_LAMBDA=.25;
+const MULTIFACTOR_MAX_FEATURES=6;
+const MULTIFACTOR_MIN_FEATURE_SAMPLES=6;
+const MULTIFACTOR_MIN_COMPLETE_SAMPLES=8;
+const EPS=1e-10;
+
+function sourceFeatureValue(record:WildlifeLineageRecord,feature:MultifactorFeature):number|undefined {
+  if(feature.sourceSpecies===record.species)return undefined;
+  const exposure=record.habitatExposure;
+  if(!exposure)return undefined;
+  const config=sourceExposureConfig(feature.kind);
+  if(Number(exposure[config.daysKey]||0)<MIN_LIFETIME_EXPOSURE_DAYS)return undefined;
+  const value=exposure[config.meanKey]?.[feature.sourceSpecies];
+  return typeof value==='number'&&Number.isFinite(value)?value:undefined;
+}
+
+function solveLinearSystem(matrix:number[][],vector:number[]):number[]|undefined {
+  const n=vector.length;
+  const a=matrix.map((row,index)=>[...row,vector[index]!]);
+  for(let col=0;col<n;col++){
+    let pivot=col;
+    for(let row=col+1;row<n;row++)if(Math.abs(a[row]![col]!)>Math.abs(a[pivot]![col]!))pivot=row;
+    if(Math.abs(a[pivot]![col]!)<EPS)return undefined;
+    [a[col],a[pivot]]=[a[pivot]!,a[col]!];
+    const scale=a[col]![col]!;
+    for(let j=col;j<=n;j++)a[col]![j]/=scale;
+    for(let row=0;row<n;row++){
+      if(row===col)continue;
+      const factor=a[row]![col]!;
+      if(Math.abs(factor)<EPS)continue;
+      for(let j=col;j<=n;j++)a[row]![j]-=factor*a[col]![j]!;
+    }
+  }
+  return a.map(row=>row[n]!);
+}
+
+function fitMultifactorOutcome(
+  records:WildlifeLineageRecord[],
+  outcome:WildlifeMultifactorOutcome,
+  asOfDay?:number
+):WildlifeMultifactorOutcomeEvidence {
+  const base=outcome==='lifespan'
+    ?records.filter(record=>record.deathDay!==undefined)
+    :records.filter(record=>fitnessOutcomeEligible(record,asOfDay));
+  const outcomeValue=(record:WildlifeLineageRecord)=>outcome==='reproduction'
+    ?(record.offspringCount>0?1:0)
+    :outcome==='offspring'
+      ?record.offspringCount
+      :Math.max(0,(record.deathDay??record.birthDay)-record.birthDay);
+
+  const keys=new Map<string,MultifactorFeature>();
+  for(const record of base){
+    const exposure=record.habitatExposure;
+    if(!exposure)continue;
+    for(const kind of ['predation','competition','disease'] as const){
+      const config=sourceExposureConfig(kind);
+      if(Number(exposure[config.daysKey]||0)<MIN_LIFETIME_EXPOSURE_DAYS)continue;
+      const means=exposure[config.meanKey];
+      if(!means)continue;
+      for(const sourceSpecies of SPECIES){
+        if(sourceSpecies===record.species)continue;
+        const value=means[sourceSpecies];
+        if(typeof value==='number'&&Number.isFinite(value)&&value>0)keys.set(`${kind}:${sourceSpecies}`,{kind,sourceSpecies});
+      }
+    }
+  }
+
+  const candidates=[...keys.values()].map(feature=>{
+    const values=base.map(record=>sourceFeatureValue(record,feature)).filter((value):value is number=>value!==undefined);
+    return {
+      feature,
+      coverageSamples:values.length,
+      coverageRate:base.length?values.length/base.length:0,
+      spread:variance(values),
+      max:values.length?Math.max(...values):0
+    };
+  }).filter(candidate=>candidate.coverageSamples>=MULTIFACTOR_MIN_FEATURE_SAMPLES&&candidate.spread>EPS&&candidate.max>0)
+    .sort((a,b)=>b.coverageSamples-a.coverageSamples||b.spread-a.spread||a.feature.kind.localeCompare(b.feature.kind)||a.feature.sourceSpecies.localeCompare(b.feature.sourceSpecies));
+
+  const selected:typeof candidates=[];
+  for(const candidate of candidates){
+    if(selected.length>=MULTIFACTOR_MAX_FEATURES)break;
+    const proposed=[...selected,candidate];
+    const rows=base.filter(record=>proposed.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
+    const minimum=Math.max(MULTIFACTOR_MIN_COMPLETE_SAMPLES,proposed.length*3);
+    if(rows.length>=minimum)selected.push(candidate);
+  }
+
+  let stable=selected;
+  let rows=base.filter(record=>stable.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
+  let changed=true;
+  while(changed&&stable.length){
+    changed=false;
+    const filtered=stable.filter(entry=>variance(rows.map(record=>sourceFeatureValue(record,entry.feature)!))>EPS);
+    if(filtered.length!==stable.length){
+      stable=filtered;
+      rows=base.filter(record=>stable.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
+      changed=true;
+    }
+  }
+
+  const minimum=Math.max(MULTIFACTOR_MIN_COMPLETE_SAMPLES,stable.length*3);
+  const y=rows.map(outcomeValue);
+  const yMean=mean(y);
+  const yVariance=variance(y,yMean);
+  const estimable=stable.length>=2&&rows.length>=minimum&&yVariance>EPS;
+  const coefficients:WildlifeMultifactorFeatureCoefficient[]=stable.map(entry=>{
+    const values=rows.map(record=>sourceFeatureValue(record,entry.feature)!);
+    return {
+      kind:entry.feature.kind,
+      sourceSpecies:entry.feature.sourceSpecies,
+      coverageSamples:entry.coverageSamples,
+      coverageRate:entry.coverageRate,
+      mean:mean(values),
+      stdDev:Math.sqrt(Math.max(0,variance(values))),
+      standardizedCoefficient:null
+    };
+  });
+
+  if(!estimable){
+    return {
+      outcome,estimable:false,baseSamples:base.length,samples:rows.length,
+      candidateFeatures:candidates.length,selectedFeatures:stable.length,
+      ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,rSquared:null,maxFeatureCorrelation:null,coefficients
+    };
+  }
+
+  const ySd=Math.sqrt(yVariance);
+  const standardizedY=y.map(value=>(value-yMean)/ySd);
+  const xColumns=coefficients.map((coefficient,index)=>{
+    const values=rows.map(record=>sourceFeatureValue(record,stable[index]!.feature)!);
+    return values.map(value=>(value-coefficient.mean)/coefficient.stdDev);
+  });
+  const p=xColumns.length;
+  const matrix=Array.from({length:p},()=>Array(p).fill(0) as number[]);
+  const vector=Array(p).fill(0) as number[];
+  for(let j=0;j<p;j++){
+    for(let k=0;k<p;k++)matrix[j]![k]=mean(rows.map((_,index)=>xColumns[j]![index]!*xColumns[k]![index]!))+(j===k?MULTIFACTOR_RIDGE_LAMBDA:0);
+    vector[j]=mean(rows.map((_,index)=>xColumns[j]![index]!*standardizedY[index]!));
+  }
+  const beta=solveLinearSystem(matrix,vector);
+  if(!beta){
+    return {
+      outcome,estimable:false,baseSamples:base.length,samples:rows.length,
+      candidateFeatures:candidates.length,selectedFeatures:stable.length,
+      ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,rSquared:null,maxFeatureCorrelation:null,coefficients
+    };
+  }
+  for(let j=0;j<coefficients.length;j++)coefficients[j]!.standardizedCoefficient=beta[j]!;
+  coefficients.sort((a,b)=>Math.abs(b.standardizedCoefficient||0)-Math.abs(a.standardizedCoefficient||0)||a.kind.localeCompare(b.kind)||a.sourceSpecies.localeCompare(b.sourceSpecies));
+
+  const predictions=rows.map((_,index)=>beta.reduce((sum,value,j)=>sum+value*xColumns[j]![index]!,0));
+  const residual=mean(standardizedY.map((value,index)=>(value-predictions[index]!)**2));
+  let maxFeatureCorrelation=0;
+  for(let j=0;j<p;j++)for(let k=j+1;k<p;k++){
+    maxFeatureCorrelation=Math.max(maxFeatureCorrelation,Math.abs(mean(rows.map((_,index)=>xColumns[j]![index]!*xColumns[k]![index]!))));
+  }
+
+  return {
+    outcome,estimable:true,baseSamples:base.length,samples:rows.length,
+    candidateFeatures:candidates.length,selectedFeatures:stable.length,
+    ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,
+    rSquared:1-residual,
+    maxFeatureCorrelation:p>1?maxFeatureCorrelation:null,
+    coefficients
+  };
+}
+
+function multifactorSelection(
+  records:WildlifeLineageRecord[],
+  species:WildlifeSpecies,
+  asOfDay?:number
+):WildlifeMultifactorSelectionEvidence {
+  return {
+    species,
+    models:(['reproduction','offspring','lifespan'] as const).map(outcome=>fitMultifactorOutcome(records,outcome,asOfDay))
+  };
 }
 
 function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPredationStats {
@@ -956,6 +1144,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       exposureFitness:habitatFitness(speciesRecords,asOfDay),
       predatorSpecialization:predatorSpecialization(speciesRecords,asOfDay),
       interactionSourceFitness:interactionSourceFitness(speciesRecords,asOfDay),
+      multifactorSelection:multifactorSelection(speciesRecords,species,asOfDay),
       realizedPredation:realizedPredation(speciesRecords)
     };
   });
