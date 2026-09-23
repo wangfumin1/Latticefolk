@@ -5,7 +5,8 @@ import {
   founderWildlifePhenotype,
   inheritWildlifePhenotype,
   normalizeWildlifePhenotype,
-  wildlifeBehaviorThresholds
+  wildlifeBehaviorThresholds,
+  wildlifeFunctionalPhenotype
 } from '../src/world/wildlifePhenotype.js';
 
 test('founder wildlife phenotype is deterministic and bounded around the species baseline',()=>{
@@ -68,3 +69,43 @@ test('behavior phenotype thresholds change bounded fallback tendencies monotonic
   assert.ok(a.diseaseRestThreshold>b.diseaseRestThreshold);
   assert.ok(a.energyRestThreshold<b.energyRestThreshold);
 });
+
+test('functional phenotype exposes bounded speed-efficiency trade-offs instead of pure buffs',()=>{
+  const neutral=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype({
+    morphology:{bodyLength:1,bodyHeight:1,legLength:1,headScale:1,tailScale:1},
+    behavior:{forageDrive:1,migrationDrive:1,riskTolerance:1,recoveryDrive:1}
+  },'neutral_function'));
+  const longLegged=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype({
+    morphology:{bodyLength:1,bodyHeight:1,legLength:1.2,headScale:1,tailScale:1},
+    behavior:{forageDrive:1,migrationDrive:1,riskTolerance:1,recoveryDrive:1}
+  },'long_legged_function'));
+  const bulky=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype({
+    morphology:{bodyLength:1.2,bodyHeight:1.18,legLength:.8,headScale:1.1,tailScale:1},
+    behavior:{forageDrive:1,migrationDrive:1,riskTolerance:1,recoveryDrive:1}
+  },'bulky_function'));
+  assert.ok(longLegged.movementSpeedMultiplier>neutral.movementSpeedMultiplier);
+  assert.ok(longLegged.movementEnergyMultiplier>neutral.movementEnergyMultiplier,'speed gain must carry a locomotion cost');
+  assert.ok(bulky.maintenanceMultiplier>neutral.maintenanceMultiplier);
+  assert.ok(bulky.movementSpeedMultiplier<neutral.movementSpeedMultiplier);
+  for(const profile of [neutral,longLegged,bulky]){
+    assert.ok(profile.movementSpeedMultiplier>=.88&&profile.movementSpeedMultiplier<=1.12);
+    assert.ok(profile.movementEnergyMultiplier>=.90&&profile.movementEnergyMultiplier<=1.14);
+    assert.ok(profile.maintenanceMultiplier>=.90&&profile.maintenanceMultiplier<=1.12);
+  }
+});
+
+test('forage and recovery function remain narrow deterministic efficiencies',()=>{
+  const low=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype({
+    morphology:{bodyLength:1,bodyHeight:1.1,legLength:1,headScale:.85,tailScale:1},
+    behavior:{forageDrive:.75,migrationDrive:1,riskTolerance:1,recoveryDrive:.75}
+  },'low_efficiency'));
+  const high=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype({
+    morphology:{bodyLength:1,bodyHeight:.9,legLength:1,headScale:1.15,tailScale:1},
+    behavior:{forageDrive:1.25,migrationDrive:1,riskTolerance:1,recoveryDrive:1.25}
+  },'high_efficiency'));
+  assert.ok(high.forageEfficiency>low.forageEfficiency);
+  assert.ok(high.recoveryEfficiency>low.recoveryEfficiency);
+  assert.ok(low.forageEfficiency>=.92&&high.forageEfficiency<=1.08);
+  assert.ok(low.recoveryEfficiency>=.92&&high.recoveryEfficiency<=1.08);
+});
+
