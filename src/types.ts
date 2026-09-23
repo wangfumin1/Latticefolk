@@ -566,6 +566,59 @@ export interface WildlifeRealizedPredationStats {
   pairs: WildlifePredationPairPerformance[];
 }
 
+export interface WildlifeNullableTraits {
+  speed: number | null;
+  size: number | null;
+  fertility: number | null;
+  wariness: number | null;
+}
+
+export interface WildlifeCoevolutionGenerationEvidence {
+  generation: number;
+  observedIndividuals: number;
+  eligibleIndividuals: number;
+  attempts: number;
+  successes: number;
+  successRate: number;
+  terminalAttempts: number;
+  terminalSuccesses: number;
+  terminalSuccessRate: number;
+  breeders: number;
+  breederRate: number;
+  offspringMean: number;
+  traitMean: WildlifeTraits;
+  attemptTraitAdvantageMean: WildlifeTraits;
+  successTraitAdvantageMean: WildlifeTraits;
+  terminalTraitAdvantageMean: WildlifeTraits;
+}
+
+export interface WildlifeCoevolutionSideEvidence {
+  species: WildlifeSpecies;
+  role: 'predator' | 'prey';
+  generations: WildlifeCoevolutionGenerationEvidence[];
+  generationsObserved: number;
+  interactingIndividuals: number;
+  performanceTrendPerGeneration: number | null;
+  terminalPerformanceTrendPerGeneration: number | null;
+  breederTrendPerGeneration: number | null;
+  offspringTrendPerGeneration: number | null;
+  traitTrendPerGeneration: WildlifeNullableTraits;
+  performanceBreederAssociation: number | null;
+  terminalPerformanceBreederAssociation: number | null;
+  performanceOffspringAssociation: number | null;
+  terminalPerformanceOffspringAssociation: number | null;
+  performanceTraitAssociation: WildlifeNullableTraits;
+  terminalPerformanceTraitAssociation: WildlifeNullableTraits;
+}
+
+export interface WildlifeCoevolutionPairEvidence {
+  predatorSpecies: WildlifeSpecies;
+  preySpecies: WildlifeSpecies;
+  bothSidesObserved: boolean;
+  predator: WildlifeCoevolutionSideEvidence;
+  prey: WildlifeCoevolutionSideEvidence;
+}
+
 export interface WildlifeBiomeSelectionStats {
   basis: 'origin' | 'lifetime';
   biome: ChunkBiome;
