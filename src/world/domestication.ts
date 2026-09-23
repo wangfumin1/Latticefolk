@@ -136,3 +136,15 @@ export function wildlifeHasActiveOwnerCommand(state:WildlifeState){
   const domestication=normalizeWildlifeDomestication(state.species,state.domestication);
   return Boolean(domestication?.ownerId&&domestication.command!=='none');
 }
+
+/**
+ * Decision Providers may observe bounded domestication state but never the owner's identity.
+ * In particular, a player-owned animal must not put the literal player entity into provider perception.
+ */
+export function wildlifeDomesticationDecisionState(
+  species:WildlifeSpecies,
+  current:WildlifeDomesticationState|undefined
+):WildlifeDomesticationState|undefined {
+  const state=normalizeWildlifeDomestication(species,current);
+  return state?{...state,ownerId:undefined}:undefined;
+}
