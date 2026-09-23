@@ -59,7 +59,7 @@ app.get('/api/world/state', (_req, res) => {
 });
 
 app.get('/api/world/evolution', (_req, res) => {
-  res.json({ species:worldStore.evolutionStats(), persistence:worldStore.stats() });
+  res.json({ species:worldStore.evolutionStats(), coevolution:worldStore.coevolutionStats(), persistence:worldStore.stats() });
 });
 
 app.post('/api/world/state', (req, res) => {
