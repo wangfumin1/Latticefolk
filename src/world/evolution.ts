@@ -599,6 +599,8 @@ const MULTIFACTOR_MIN_COMPLETE_SAMPLES=8;
 const MULTIFACTOR_MAX_PAIRWISE_CORRELATION=.98;
 const MULTIFACTOR_MAX_VIF=10;
 const MULTIFACTOR_MAX_LOCAL_WINDOWS=6;
+const MULTIFACTOR_MAX_LOCAL_GENERATION_SPAN=8;
+const MULTIFACTOR_MAX_STABILITY_GENERATIONS=12;
 const MULTIFACTOR_MIN_STABILITY_REPLICATES=3;
 const EPS=1e-10;
 
@@ -690,6 +692,17 @@ function sameMultifactorFeatureSet(a:WildlifeMultifactorOutcomeEvidence,b:Wildli
 
 function multifactorCoefficientSign(value:number) {
   return value>EPS?1:value<-EPS?-1:0;
+}
+
+function boundedGenerationSample(generations:number[],limit:number) {
+  if(generations.length<=limit)return [...generations];
+  const sampled:number[]=[];
+  for(let index=0;index<limit;index++){
+    const sourceIndex=Math.round(index*(generations.length-1)/(limit-1));
+    const generation=generations[sourceIndex]!;
+    if(sampled[sampled.length-1]!==generation)sampled.push(generation);
+  }
+  return sampled;
 }
 
 function fitMultifactorOutcome(
@@ -829,7 +842,8 @@ function multifactorOutcomeStability(
 ):WildlifeMultifactorOutcomeStabilityEvidence {
   const base=multifactorOutcomeRecords(records,outcome,asOfDay);
   const generations=[...new Set(base.map(record=>record.generation))].sort((a,b)=>a-b);
-  const replicates=generations.map(generation=>
+  const testedGenerations=boundedGenerationSample(generations,MULTIFACTOR_MAX_STABILITY_GENERATIONS);
+  const replicates=testedGenerations.map(generation=>
     fitMultifactorOutcome(records.filter(record=>record.generation!==generation),outcome,asOfDay)
   );
   const estimableReplicates=replicates.filter(model=>model.estimable);
@@ -861,8 +875,9 @@ function multifactorOutcomeStability(
   const endpointGenerations=generations.slice(-MULTIFACTOR_MAX_LOCAL_WINDOWS);
   for(const endGeneration of endpointGenerations){
     const endIndex=generations.indexOf(endGeneration);
+    const minimumStartIndex=Math.max(0,endIndex-MULTIFACTOR_MAX_LOCAL_GENERATION_SPAN+1);
     let chosen:WildlifeMultifactorOutcomeStabilityEvidence['localWindows'][number]|undefined;
-    for(let startIndex=endIndex;startIndex>=0;startIndex--){
+    for(let startIndex=endIndex;startIndex>=minimumStartIndex;startIndex--){
       const windowGenerations=generations.slice(startIndex,endIndex+1);
       const generationSet=new Set(windowGenerations);
       const model=fitMultifactorOutcome(
@@ -874,17 +889,23 @@ function multifactorOutcomeStability(
         startGeneration:windowGenerations[0]!,
         endGeneration,
         generations:windowGenerations,
+        searchTruncated:false,
         model
       };
       if(model.estimable)break;
     }
-    if(chosen)localWindows.push(chosen);
+    if(chosen){
+      chosen.searchTruncated=!chosen.model.estimable&&minimumStartIndex>0;
+      localWindows.push(chosen);
+    }
   }
 
   return {
     outcome,
     basis:'target_species_generation',
     leaveOneGenerationOut:{
+      availableGenerations:generations.length,
+      testedGenerations,
       attemptedReplicates:replicates.length,
       estimableReplicates:estimableReplicates.length,
       comparableReplicates:comparableReplicates.length,
