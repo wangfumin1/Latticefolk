@@ -2831,8 +2831,8 @@ class TownGame {
       return;
     }
 
-    const command:Extract<WildlifeDomesticationInteraction,'command_follow'|'command_stay'|'command_graze'>=action;
-    const commandValue=command==='command_follow'?'follow':command==='command_stay'?'stay':'graze';
+    const command:Extract<WildlifeDomesticationInteraction,'command_follow'|'command_stay'|'command_forage'>=action;
+    const commandValue=command==='command_follow'?'follow':command==='command_stay'?'stay':'forage';
     const next=setWildlifeDomesticationCommand(state.species,state.domestication,commandValue,currentDay,'player','player');
     if(!next||next.command!==commandValue)return;
     state.domestication=next;
