@@ -373,6 +373,12 @@ export interface WildlifePredatorOutcomeCounter {
   huntAttempts: number;
   huntHits: number;
   kills: number;
+  /** Sum of predator minus prey traits across resolved hunt attempts; optional in legacy records. */
+  attemptTraitDeltaSum?: WildlifeTraits;
+  /** Sum of predator minus prey traits across hunt hits. */
+  hitTraitDeltaSum?: WildlifeTraits;
+  /** Sum of predator minus prey traits across kills. */
+  killTraitDeltaSum?: WildlifeTraits;
 }
 
 export interface WildlifePreyOutcomeCounter {
@@ -380,6 +386,10 @@ export interface WildlifePreyOutcomeCounter {
   successfulEscapes: number;
   attacksReceived: number;
   survivedAttacks: number;
+  /** Sum of prey minus predator traits across resolved flee attempts; optional in legacy records. */
+  fleeTraitDeltaSum?: WildlifeTraits;
+  /** Sum of prey minus predator traits across successful escapes. */
+  escapeTraitDeltaSum?: WildlifeTraits;
 }
 
 export interface WildlifePredationOutcomes {
@@ -478,6 +488,18 @@ export interface WildlifePredatorSpecializationStats {
   selectionDifferential: WildlifeTraits;
 }
 
+export interface WildlifePredationGenerationPerformance {
+  generation: number;
+  observedIndividuals: number;
+  attempts: number;
+  successes: number;
+  successRate: number;
+  terminalSuccesses: number;
+  terminalSuccessRate: number;
+  attemptTraitAdvantageMean: WildlifeTraits;
+  successTraitAdvantageMean: WildlifeTraits;
+}
+
 export interface WildlifePredationPairPerformance {
   role: 'predator' | 'prey';
   counterpartSpecies: WildlifeSpecies;
@@ -496,6 +518,11 @@ export interface WildlifePredationPairPerformance {
   traitMean: WildlifeTraits;
   successfulTraitMean: WildlifeTraits;
   successTraitDifferential: WildlifeTraits;
+  /** Actor minus counterpart trait means for role-specific attempts/successes. */
+  attemptTraitAdvantageMean: WildlifeTraits;
+  successTraitAdvantageMean: WildlifeTraits;
+  terminalTraitAdvantageMean: WildlifeTraits;
+  generationTrend: WildlifePredationGenerationPerformance[];
 }
 
 export interface WildlifeRealizedPredationStats {
