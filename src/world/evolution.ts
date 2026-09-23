@@ -498,8 +498,9 @@ function interactionSourceGenerationSide(
     const eligible=cohort.filter(sample=>fitnessOutcomeEligible(sample.record,asOfDay));
     const eligibleRecords=eligible.map(sample=>sample.record);
     const breeders=eligibleRecords.filter(record=>record.offspringCount>0);
-    const dead=records.filter(record=>record.deathDay!==undefined);
-    const average=traitMean(eligibleRecords.length?eligibleRecords:records);
+    const deadSamples=cohort.filter(sample=>sample.record.deathDay!==undefined);
+    const dead=deadSamples.map(sample=>sample.record);
+    const average=traitMean(records);
     const breederAverage=breeders.length?traitMean(breeders):average;
     return {
       generation,
