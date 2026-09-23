@@ -18,10 +18,11 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
+import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
-  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeInteractionNetwork, WildlifeInteractionSourceGenerationEvidence, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
+  CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeInteractionNetwork, WildlifeInteractionSourceGenerationEvidence, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeReciprocalInteractionSelectionEvidence, WildlifeDomesticationCommand, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
 } from './types';
 
 const WORLD_SIZE = 72;
@@ -1182,6 +1183,7 @@ class TownGame {
     if(archived?.deathDay!==undefined)return false;
     state.phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
     state.organismGenome=normalizeWildlifeOrganismGenome(state.species,state.organismGenome,state.id);
+    state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
@@ -1537,9 +1539,10 @@ class TownGame {
     const currentDay=this.day+this.minuteOfDay/1440;
     const pregnant=state.sex==='female'&&Boolean(state.pregnantUntilDay&&state.pregnantUntilDay>currentDay);
     const baseline=this.materializedChunks.get(state.chunkId)?.initialWildlifeIds.has(state.id)??false;
+    const domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     const actions=profile.capabilities.filter(action=>{
-      if(action==='seek_mate')return state.ageDays>=life.adultAge&&!pregnant;
-      if(action==='migrate')return baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant;
+      if(action==='seek_mate')return state.ageDays>=life.adultAge&&!pregnant&&wildlifeBreedingAllowed(state);
+      if(action==='migrate')return !domestication?.ownerId&&baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant;
       if(action==='hunt')return isWildlifePredator(state.species);
       return true;
     });
@@ -1598,11 +1601,15 @@ class TownGame {
       .map(x=>({
         id:x.state.id,species:x.state.species,sex:x.state.sex,ageDays:x.state.ageDays,
         distance:dist(animal.state.position,x.state.position),health:x.state.health,currentAction:x.state.currentAction,
-        mateAvailable:x.state.ageDays>=this.wildlifeLifeHistory(x.state.species).adultAge&&!(x.state.sex==='female'&&x.state.pregnantUntilDay&&x.state.pregnantUntilDay>this.day+this.minuteOfDay/1440)
+        mateAvailable:x.state.ageDays>=this.wildlifeLifeHistory(x.state.species).adultAge
+          &&!(x.state.sex==='female'&&x.state.pregnantUntilDay&&x.state.pregnantUntilDay>this.day+this.minuteOfDay/1440)
+          &&wildlifePairBreedingAllowed(animal.state,x.state)
       }))
       .filter(x=>x.distance<=12).sort((a,b)=>a.distance-b.distance).slice(0,12);
+    const decisionState=structuredClone(animal.state);
+    if(decisionState.domestication)decisionState.domestication={...decisionState.domestication,ownerId:undefined};
     return {
-      wildlife:structuredClone(animal.state),
+      wildlife:decisionState,
       world:{
         gameTime:this.gameTimeText(),minuteOfDay:this.minuteOfDay,weather:this.weather,
         currentHabitat:migration.current||fallbackCurrent,nearbyChunks:migration.nearby,nearbyResources,nearbyWildlife
@@ -1619,7 +1626,7 @@ class TownGame {
   }
 
   async requestWildlifeBatch() {
-    const due=[...this.wildlife.values()].filter(x=>!x.removed&&now()>=x.nextDecisionAt)
+    const due=[...this.wildlife.values()].filter(x=>!x.removed&&!wildlifeHasActiveOwnerCommand(x.state)&&now()>=x.nextDecisionAt)
       .sort((a,b)=>{
         const urgency=(x:WildlifeRuntime)=>Math.max(x.state.hunger,x.state.thirst,100-x.state.energy)+(100-x.state.health)*.5;
         return urgency(b)-urgency(a);
@@ -1711,7 +1718,7 @@ class TownGame {
   findWildlifeTarget(animal:WildlifeRuntime,action:WildlifeAction) {
     const candidates=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed);
     if(action==='hunt')return candidates.filter(x=>canWildlifePredate(animal.state.species,x.state.species)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
-    if(action==='seek_mate')return candidates.filter(x=>x.state.species===animal.state.species&&x.state.sex!==animal.state.sex&&x.state.ageDays>=this.wildlifeLifeHistory(x.state.species).adultAge&&!(x.state.sex==='female'&&x.state.pregnantUntilDay&&x.state.pregnantUntilDay>this.day+this.minuteOfDay/1440)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
+    if(action==='seek_mate')return candidates.filter(x=>x.state.species===animal.state.species&&x.state.sex!==animal.state.sex&&x.state.ageDays>=this.wildlifeLifeHistory(x.state.species).adultAge&&!(x.state.sex==='female'&&x.state.pregnantUntilDay&&x.state.pregnantUntilDay>this.day+this.minuteOfDay/1440)&&wildlifePairBreedingAllowed(animal.state,x.state)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
     if(action==='flee')return candidates.filter(x=>canWildlifePredate(x.state.species,animal.state.species)).sort((a,b)=>dist(animal.state.position,a.state.position)-dist(animal.state.position,b.state.position))[0];
     return undefined;
   }
@@ -1882,7 +1889,7 @@ class TownGame {
     return true;
   }
   tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
-    if(a.state.species!==b.state.species||a.state.sex===b.state.sex)return;
+    if(a.state.species!==b.state.species||a.state.sex===b.state.sex||!wildlifePairBreedingAllowed(a.state,b.state))return;
     const mother=a.state.sex==='female'?a:b;
     const father=mother===a?b:a;
     const life=this.wildlifeLifeHistory(mother.state.species);
@@ -1938,10 +1945,11 @@ class TownGame {
       };
       const phenotype=inheritWildlifePhenotype(motherPhenotype,fatherPhenotype,id);
       const organismGenome=inheritWildlifeOrganismGenome(s.species,motherGenome,fatherGenome,id);
+      const domestication=inheritedWildlifeDomestication(s.species,s.domestication,fatherState?.domestication,currentDay);
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-        generation,traits,phenotype,organismGenome,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
+        generation,traits,phenotype,organismGenome,domestication,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
         diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??fatherLineage?.entityId??s.pregnantById
       };
       if(this.spawnWildlife(baby)){
@@ -2102,6 +2110,10 @@ class TownGame {
         existing.organismGenomeProvenance='legacy_upgrade';
         changed=true;
       }
+      if(!existing.domesticationAtBirth&&state.domestication&&state.birthDay>=this.day-.001){
+        existing.domesticationAtBirth=structuredClone(state.domestication);
+        changed=true;
+      }
       if(changed)this.lineageEpoch++;
       return existing;
     }
@@ -2118,6 +2130,7 @@ class TownGame {
       phenotypeProvenance:state.phenotype?(state.motherId||state.fatherId?'birth':'founder_seed'):undefined,
       organismGenomeAtBirth:state.organismGenome?structuredClone(state.organismGenome):undefined,
       organismGenomeProvenance:state.organismGenome?(state.motherId||state.fatherId?'birth':'founder_seed'):undefined,
+      domesticationAtBirth:state.domestication&&state.motherId?structuredClone(state.domestication):undefined,
       birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
@@ -2175,6 +2188,7 @@ class TownGame {
       record.traitsAtDeath=structuredClone(animal.state.traits);
       record.phenotypeAtDeath=animal.state.phenotype?structuredClone(animal.state.phenotype):record.phenotypeAtBirth?structuredClone(record.phenotypeAtBirth):undefined;
       record.organismGenomeAtDeath=animal.state.organismGenome?structuredClone(animal.state.organismGenome):record.organismGenomeAtBirth?structuredClone(record.organismGenomeAtBirth):undefined;
+      record.domesticationAtDeath=animal.state.domestication?structuredClone(animal.state.domestication):undefined;
       record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId,animal.state.species);
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
