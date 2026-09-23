@@ -120,3 +120,7 @@ Multi-generation coevolution evidence is derived from the existing durable `wild
 ### Interaction-network evidence persistence
 
 Full competition and cross-species disease pair decompositions are stored as additive optional JSON fields inside existing coarse chunk state, alongside the existing predation pair decomposition. No SQLite schema migration is required because coarse chunks are already persisted as JSON. Legacy chunks without a full pair array remain loadable and are excluded from that interaction kind's network coverage denominator until coarse ecology recomputes them. The interaction network itself is derived on demand and is not separately persisted.
+
+### Network-linked source exposure persistence
+
+Competition and disease source histories extend the existing lineage `habitat_exposure_json` with optional `competitionSourceMean` / `competitionSourceObservedDays` and `diseaseSourceMean` / `diseaseSourceObservedDays`. No SQLite schema migration is required. Older lineage JSON without these fields remains valid and source-level statistics treat the missing history as unknown rather than zero. The underlying competition/disease pair decompositions remain additive fields inside coarse chunk JSON.

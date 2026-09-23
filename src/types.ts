@@ -383,6 +383,12 @@ export interface WildlifeHabitatExposure {
   predatorSourceMean?: Partial<Record<WildlifeSpecies,number>>;
   /** Days with explicit predator-source decomposition; kept separate so legacy unknown history is not treated as zero pressure. */
   predatorSourceObservedDays?: number;
+  /** Time-weighted niche-competition pressure by counterpart species; absent in legacy/unobserved records. */
+  competitionSourceMean?: Partial<Record<WildlifeSpecies,number>>;
+  competitionSourceObservedDays?: number;
+  /** Time-weighted incoming cross-species disease pressure by source species; absent in legacy/unobserved records. */
+  diseaseSourceMean?: Partial<Record<WildlifeSpecies,number>>;
+  diseaseSourceObservedDays?: number;
   biomeDays: Partial<Record<ChunkBiome,number>>;
   chunkDays: Record<string,number>;
   observedTransitions: number;
@@ -527,6 +533,24 @@ export interface WildlifeHabitatFitnessStats {
 
 export interface WildlifePredatorSpecializationStats {
   predatorSpecies: WildlifeSpecies;
+  sampleSize: number;
+  reproductionEligibleSamples: number;
+  lifespanSamples: number;
+  observedExposureDaysMean: number;
+  pressureMean: number;
+  breederPressureMean: number | null;
+  nonBreederPressureMean: number | null;
+  reproductionAssociation: number | null;
+  offspringAssociation: number | null;
+  lifespanAssociation: number | null;
+  traitMean: WildlifeTraits;
+  breederTraitMean: WildlifeTraits;
+  selectionDifferential: WildlifeTraits;
+}
+
+export interface WildlifeInteractionSourceFitnessStats {
+  kind: 'competition' | 'disease';
+  sourceSpecies: WildlifeSpecies;
   sampleSize: number;
   reproductionEligibleSamples: number;
   lifespanSamples: number;
@@ -697,6 +721,7 @@ export interface WildlifeEvolutionStats {
   lifetimeBiomeSelection: WildlifeBiomeSelectionStats[];
   exposureFitness: WildlifeHabitatFitnessStats[];
   predatorSpecialization: WildlifePredatorSpecializationStats[];
+  interactionSourceFitness: WildlifeInteractionSourceFitnessStats[];
   realizedPredation: WildlifeRealizedPredationStats;
 }
 
