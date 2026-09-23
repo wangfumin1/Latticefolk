@@ -580,16 +580,22 @@ test('multi-factor selection never zero-imputes disjoint legacy source coverage'
     });
   }
 
-  const model=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!
-    .multifactorSelection.models.find(entry=>entry.outcome==='offspring')!;
+  const multifactor=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!.multifactorSelection;
+  const model=multifactor.models.find(entry=>entry.outcome==='offspring')!;
+  const stability=multifactor.stability.find(entry=>entry.outcome==='offspring')!;
 
   assert.equal(model.candidateFeatures,2);
   assert.equal(model.estimable,false);
+  assert.equal(model.status,'insufficient_features');
   assert.equal(model.selectedFeatures,1);
   assert.equal(model.samples,8);
   assert.equal(model.coefficients.length,1);
   assert.equal(model.coefficients[0]?.coverageSamples,8);
   assert.equal(model.coefficients[0]?.standardizedCoefficient,null);
+  assert.equal(stability.leaveOneGenerationOut.availableGenerations,3);
+  assert.equal(stability.leaveOneGenerationOut.attemptedReplicates,0);
+  assert.deepEqual(stability.leaveOneGenerationOut.testedGenerations,[]);
+  assert.equal(stability.localWindows.length,0);
 });
 
 test('multi-factor selection rejects severe predictor collinearity instead of emitting ridge coefficients',()=>{
