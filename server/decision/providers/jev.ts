@@ -12,6 +12,7 @@ import type { DialogueStore } from '../../dialogueStore.js';
 import { retrieveDialogueCandidates } from '../dialogueCandidates.js';
 import type { DecisionProvider, DecisionProviderStatus } from '../types.js';
 import { JevBudgetController, type JevCallKind, type JevBudgetConfig, type JevBudgetSnapshot } from '../budget.js';
+import { wildlifeSpeciesProfile } from '../../../src/world/wildlifeSpecies.js';
 
 type JevAnswer = {
   type?: string;
@@ -553,6 +554,8 @@ export class JevDecisionProvider implements DecisionProvider {
         sex:entry.wildlife.sex,generation:entry.wildlife.generation,traits:entry.wildlife.traits,
         phenotype:entry.wildlife.phenotype,
         organismGenome:entry.wildlife.organismGenome,
+        organismForm:wildlifeSpeciesProfile(entry.wildlife.species).form.kind,
+        movementMode:wildlifeSpeciesProfile(entry.wildlife.species).movement.mode,
         allowedActions:entry.allowedActions,
         currentHabitat:entry.world.currentHabitat,
         nearbyChunks:entry.world.nearbyChunks,
@@ -560,7 +563,7 @@ export class JevDecisionProvider implements DecisionProvider {
         nearbyWildlife:entry.world.nearbyWildlife
       })),
       world:{gameTime:requests[0]!.world.gameTime,minuteOfDay:requests[0]!.world.minuteOfDay,weather:requests[0]!.world.weather},
-      authority:'Select behavior and supplied targets only. Phenotype and organism-family genome are inherited read-only context. Never directly mutate health, needs, reproduction, population, resources, phenotype, organism genome, physiology, or genetics.'
+      authority:'Select behavior and supplied targets only. Phenotype, organism-family genome, organism form, movement mode and capabilities are simulation-owned read-only context. Never directly mutate health, needs, reproduction, population, resources, phenotype, organism genome, organism form, capabilities, physiology, or genetics.'
     };
 
     try{
