@@ -1618,16 +1618,20 @@ class TownGame {
       case 'rest':
         s.energy=clamp(s.energy+24,0,100);break;
       case 'flee': {
-        const threatSpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        const threatLineage=s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId):undefined;
+        const threatSpecies=other?.state.species||threatLineage?.species;
+        const threatTraits=other?.state.traits||threatLineage?.traitsAtDeath||threatLineage?.traitsAtBirth;
         if(threatSpecies&&canWildlifePredate(threatSpecies,s.species)){
           const escaped=!other||other.removed||dist(s.position,other.state.position)>=6;
-          recordWildlifeFleeOutcome(this.ensureWildlifeLineage(s),threatSpecies,escaped);
+          recordWildlifeFleeOutcome(this.ensureWildlifeLineage(s),threatSpecies,escaped,s.traits,threatTraits);
           this.lineageEpoch++;
         }
         s.energy=clamp(s.energy-10,0,100);break;
       }
       case 'hunt': {
-        const preySpecies=other?.state.species||(s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId)?.species:undefined);
+        const preyLineage=s.targetWildlifeId?this.wildlifeLineage.get(s.targetWildlifeId):undefined;
+        const preySpecies=other?.state.species||preyLineage?.species;
+        const preyTraits=other?.state.traits||preyLineage?.traitsAtDeath||preyLineage?.traitsAtBirth;
         if(preySpecies&&canWildlifePredate(s.species,preySpecies)){
           let hit=false,kill=false;
           if(other&&!other.removed&&dist(s.position,other.state.position)<=2.3){
@@ -1643,7 +1647,7 @@ class TownGame {
               this.lineageEpoch++;
             }
           }
-          recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill);
+          recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill,s.traits,preyTraits);
           this.lineageEpoch++;
           if(kill&&other)this.removeWildlife(other,'predation');
         }
