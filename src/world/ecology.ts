@@ -1,5 +1,5 @@
 import type {
-  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
+  ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeCompetitionPair, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
 } from '../types';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies } from './wildlifeSpecies.js';
 
