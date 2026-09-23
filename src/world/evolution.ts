@@ -1,7 +1,8 @@
 import type {
   WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeFitnessBandStats, WildlifeFitnessExposureDimension,
   WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
-  WildlifeLineageRecord, WildlifePredatorSpecializationStats, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifeLineageRecord, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats, WildlifeRealizedPredationStats,
+  WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
 import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
@@ -371,6 +372,98 @@ function predatorSpecialization(records:WildlifeLineageRecord[],asOfDay?:number)
     .sort((a,b)=>b.pressureMean-a.pressureMean||b.sampleSize-a.sampleSize||a.predatorSpecies.localeCompare(b.predatorSpecies));
 }
 
+function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPredationStats {
+  const total={
+    huntAttempts:0,huntHits:0,kills:0,
+    fleeAttempts:0,successfulEscapes:0,attacksReceived:0,survivedAttacks:0
+  };
+  const pairKeys=new Map<string,{role:'predator'|'prey';counterpartSpecies:WildlifeSpecies}>();
+
+  for(const record of records){
+    const outcomes=record.predationOutcomes;
+    if(!outcomes)continue;
+    total.huntAttempts+=outcomes.asPredator.huntAttempts||0;
+    total.huntHits+=outcomes.asPredator.huntHits||0;
+    total.kills+=outcomes.asPredator.kills||0;
+    total.fleeAttempts+=outcomes.asPrey.fleeAttempts||0;
+    total.successfulEscapes+=outcomes.asPrey.successfulEscapes||0;
+    total.attacksReceived+=outcomes.asPrey.attacksReceived||0;
+    total.survivedAttacks+=outcomes.asPrey.survivedAttacks||0;
+    for(const counterpartSpecies of Object.keys(outcomes.asPredator.byPrey||{}) as WildlifeSpecies[]){
+      pairKeys.set(`predator:${counterpartSpecies}`,{role:'predator',counterpartSpecies});
+    }
+    for(const counterpartSpecies of Object.keys(outcomes.asPrey.byPredator||{}) as WildlifeSpecies[]){
+      pairKeys.set(`prey:${counterpartSpecies}`,{role:'prey',counterpartSpecies});
+    }
+  }
+
+  const pairs:WildlifePredationPairPerformance[]=[...pairKeys.values()].map(({role,counterpartSpecies})=>{
+    const observed=records.filter(record=>{
+      const outcomes=record.predationOutcomes;
+      if(!outcomes)return false;
+      if(role==='predator'){
+        const pair=outcomes.asPredator.byPrey?.[counterpartSpecies];
+        return Boolean(pair&&((pair.huntAttempts||0)>0||(pair.huntHits||0)>0||(pair.kills||0)>0));
+      }
+      const pair=outcomes.asPrey.byPredator?.[counterpartSpecies];
+      return Boolean(pair&&((pair.fleeAttempts||0)>0||(pair.attacksReceived||0)>0));
+    });
+    const successful=observed.filter(record=>{
+      const outcomes=record.predationOutcomes!;
+      return role==='predator'
+        ?(outcomes.asPredator.byPrey?.[counterpartSpecies]?.huntHits||0)>0
+        :(outcomes.asPrey.byPredator?.[counterpartSpecies]?.successfulEscapes||0)>0;
+    });
+    const sums={
+      huntAttempts:0,huntHits:0,kills:0,
+      fleeAttempts:0,successfulEscapes:0,attacksReceived:0,survivedAttacks:0
+    };
+    for(const record of observed){
+      if(role==='predator'){
+        const pair=record.predationOutcomes?.asPredator.byPrey?.[counterpartSpecies];
+        if(pair){
+          sums.huntAttempts+=pair.huntAttempts||0;
+          sums.huntHits+=pair.huntHits||0;
+          sums.kills+=pair.kills||0;
+        }
+      }else{
+        const pair=record.predationOutcomes?.asPrey.byPredator?.[counterpartSpecies];
+        if(pair){
+          sums.fleeAttempts+=pair.fleeAttempts||0;
+          sums.successfulEscapes+=pair.successfulEscapes||0;
+          sums.attacksReceived+=pair.attacksReceived||0;
+          sums.survivedAttacks+=pair.survivedAttacks||0;
+        }
+      }
+    }
+    const average=traitMean(observed);
+    const successAverage=successful.length?traitMean(successful):zeroTraits();
+    return {
+      role,counterpartSpecies,observedIndividuals:observed.length,
+      ...sums,
+      huntHitRate:sums.huntAttempts?sums.huntHits/sums.huntAttempts:0,
+      huntKillRate:sums.huntAttempts?sums.kills/sums.huntAttempts:0,
+      escapeRate:sums.fleeAttempts?sums.successfulEscapes/sums.fleeAttempts:0,
+      attackSurvivalRate:sums.attacksReceived?sums.survivedAttacks/sums.attacksReceived:0,
+      traitMean:average,
+      successfulTraitMean:successAverage,
+      successTraitDifferential:subtractTraits(successAverage,average)
+    };
+  }).sort((a,b)=>{
+    const activity=(x:WildlifePredationPairPerformance)=>x.huntAttempts+x.fleeAttempts+x.attacksReceived;
+    return activity(b)-activity(a)||a.role.localeCompare(b.role)||a.counterpartSpecies.localeCompare(b.counterpartSpecies);
+  });
+
+  return {
+    ...total,
+    huntHitRate:total.huntAttempts?total.huntHits/total.huntAttempts:0,
+    huntKillRate:total.huntAttempts?total.kills/total.huntAttempts:0,
+    escapeRate:total.fleeAttempts?total.successfulEscapes/total.fleeAttempts:0,
+    attackSurvivalRate:total.attacksReceived?total.survivedAttacks/total.attacksReceived:0,
+    pairs
+  };
+}
+
 export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecord>,asOfDay?:number):WildlifeEvolutionStats[] {
   const all=[...records];
   return SPECIES.map(species=>{
@@ -404,7 +497,8 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       biomeSelection:biomeSelection(speciesRecords,'origin'),
       lifetimeBiomeSelection:biomeSelection(speciesRecords,'lifetime'),
       exposureFitness:habitatFitness(speciesRecords,asOfDay),
-      predatorSpecialization:predatorSpecialization(speciesRecords,asOfDay)
+      predatorSpecialization:predatorSpecialization(speciesRecords,asOfDay),
+      realizedPredation:realizedPredation(speciesRecords)
     };
   });
 }
