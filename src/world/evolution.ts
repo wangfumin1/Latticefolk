@@ -512,6 +512,7 @@ function interactionSourceGenerationSide(
       breederRate:eligibleRecords.length?breeders.length/eligibleRecords.length:0,
       offspringMean:mean(eligibleRecords.map(record=>record.offspringCount)),
       lifespanMean:mean(dead.map(record=>Math.max(0,(record.deathDay??record.birthDay)-record.birthDay))),
+      lifespanPressureMean:mean(deadSamples.map(sample=>sample.value)),
       traitMean:average,
       breederTraitMean:breederAverage,
       selectionDifferential:breeders.length?subtractTraits(breederAverage,average):zeroTraits()
@@ -540,7 +541,7 @@ function interactionSourceGenerationSide(
     traitTrendPerGeneration,
     pressureBreederAssociation:correlation(eligibleGenerations.map(entry=>entry.pressureMean),eligibleGenerations.map(entry=>entry.breederRate)),
     pressureOffspringAssociation:correlation(eligibleGenerations.map(entry=>entry.pressureMean),eligibleGenerations.map(entry=>entry.offspringMean)),
-    pressureLifespanAssociation:correlation(lifespanGenerations.map(entry=>entry.pressureMean),lifespanGenerations.map(entry=>entry.lifespanMean)),
+    pressureLifespanAssociation:correlation(lifespanGenerations.map(entry=>entry.lifespanPressureMean),lifespanGenerations.map(entry=>entry.lifespanMean)),
     pressureTraitAssociation
   };
 }
