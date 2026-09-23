@@ -11,7 +11,7 @@ export const WILDLIFE_TAME_FEED_STEP=25;
 
 const clamp=(value:number,min:number,max:number)=>Math.min(max,Math.max(min,value));
 const finiteDay=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:undefined;
-const commands:readonly WildlifeDomesticationCommand[]=['none','follow','stay','feed'];
+const commands:readonly WildlifeDomesticationCommand[]=['none','follow','stay','graze'];
 
 export function isWildlifeDomesticationEligible(species:WildlifeSpecies){
   return wildlifeSpeciesProfile(species).form.kind==='domesticated';
