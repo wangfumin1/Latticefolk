@@ -87,3 +87,56 @@ test('realized pair trait differential stays neutral when no individual succeede
   assert.equal(pair.successTraitDifferential.fertility,0);
   assert.equal(pair.successTraitDifferential.wariness,0);
 });
+
+
+test('trait matching uses explicit paired-snapshot counts instead of legacy attempt totals',()=>{
+  const fox=record('fox_mixed','fox',traits(3.0,.7));
+  fox.generation=1;
+  const rabbitTraits=traits(2.0,.9);
+
+  // Legacy-style realized outcomes without counterpart trait snapshots.
+  recordWildlifeHuntOutcome(fox,'rabbit',false,false);
+  recordWildlifeHuntOutcome(fox,'rabbit',false,false);
+
+  // New paired observation: predator speed advantage is exactly +1.0.
+  recordWildlifeHuntOutcome(fox,'rabbit',true,true,fox.traitsAtBirth,rabbitTraits);
+
+  const pair=computeEvolutionStatistics([fox],200)
+    .find(entry=>entry.species==='fox')!.realizedPredation.pairs
+    .find(entry=>entry.role==='predator'&&entry.counterpartSpecies==='rabbit')!;
+
+  assert.equal(pair.huntAttempts,3);
+  assert.equal(pair.traitMatchAttempts,1);
+  assert.equal(pair.traitMatchSuccesses,1);
+  assert.equal(pair.terminalTraitMatchSuccesses,1);
+  assert.equal(pair.attemptTraitAdvantageMean.speed,1);
+  assert.equal(pair.successTraitAdvantageMean.speed,1);
+  assert.equal(pair.terminalTraitAdvantageMean.speed,1);
+  assert.equal(pair.generationTrend[0]?.traitMatchAttempts,1);
+  assert.equal(pair.generationTrend[0]?.attemptTraitAdvantageMean.speed,1);
+});
+
+test('prey attack-survival trait matching is recorded separately from flee matching',()=>{
+  const rabbit=record('rabbit_survivor','rabbit',traits(2.8,.92));
+  rabbit.generation=2;
+  const foxTraits=traits(2.3,.65);
+
+  recordWildlifeAttackReceived(rabbit,'fox',true,rabbit.traitsAtBirth,foxTraits);
+  recordWildlifeAttackReceived(rabbit,'fox',false,rabbit.traitsAtBirth,foxTraits);
+
+  const pair=computeEvolutionStatistics([rabbit],200)
+    .find(entry=>entry.species==='rabbit')!.realizedPredation.pairs
+    .find(entry=>entry.role==='prey'&&entry.counterpartSpecies==='fox')!;
+
+  assert.equal(pair.fleeAttempts,0);
+  assert.equal(pair.attacksReceived,2);
+  assert.equal(pair.survivedAttacks,1);
+  assert.equal(pair.traitMatchAttempts,0);
+  assert.equal(pair.terminalTraitMatchSuccesses,1);
+  assert.equal(pair.terminalTraitAdvantageMean.speed,.5);
+  assert.ok(Math.abs(pair.terminalTraitAdvantageMean.wariness-.27)<1e-12);
+  assert.equal(pair.generationTrend[0]?.generation,2);
+  assert.equal(pair.generationTrend[0]?.terminalAttempts,2);
+  assert.equal(pair.generationTrend[0]?.terminalSuccesses,1);
+  assert.equal(pair.generationTrend[0]?.terminalTraitMatchSuccesses,1);
+});
