@@ -576,6 +576,7 @@ export interface WildlifeInteractionSourceGenerationCohort {
   breederRate: number;
   offspringMean: number;
   lifespanMean: number;
+  lifespanPressureMean: number;
   traitMean: WildlifeTraits;
   breederTraitMean: WildlifeTraits;
   selectionDifferential: WildlifeTraits;
