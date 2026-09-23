@@ -627,3 +627,91 @@ test('multi-factor selection rejects severe predictor collinearity instead of em
   assert.ok(model.coefficients.every(feature=>feature.standardizedCoefficient===null));
 });
 
+test('multi-factor stability uses deterministic leave-one-generation-out sensitivity and narrow local windows',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:82,food:76,water:74,danger:26,settlementLevel:0,plantBiomass:80,
+    competitionPressure:28,seasonalSuitability:82,diseasePressure:12,predatorPressure:25
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<4;generation++){
+    for(let a=0;a<3;a++)for(let b=0;b<3;b++){
+      const index=generation*9+a*3+b;
+      const exposure=accumulateWildlifeHabitatExposure(
+        undefined,habitat,`stability_${generation}_${a}_${b}`,1,
+        {fox:10+a*20},{goat:12+b*18},undefined
+      );
+      exposure.lastObservedDay=undefined;
+      const offspring=2*a+(2-b);
+      sample.push({
+        entityId:`stability_${index}`,species:'rabbit',birthDay:1+generation*100,
+        deathDay:180+generation*100+index,deathReason:'other',generation,
+        birthChunk:`stability_${generation}`,traitsAtBirth:traits(.4+a*.04,.75+b*.05),
+        birthHabitat:habitat,habitatExposure:exposure,origin:generation===0?'founder':'reproduction',
+        offspringCount:offspring,reproductiveSuccess:offspring>0
+      });
+    }
+  }
+
+  const evidence=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!.multifactorSelection;
+  const stability=evidence.stability.find(entry=>entry.outcome==='offspring')!;
+  assert.equal(stability.basis,'target_species_generation');
+  assert.equal(stability.leaveOneGenerationOut.attemptedReplicates,4);
+  assert.equal(stability.leaveOneGenerationOut.estimableReplicates,4);
+  assert.equal(stability.leaveOneGenerationOut.comparableReplicates,4);
+
+  const predator=stability.leaveOneGenerationOut.coefficients.find(entry=>entry.kind==='predation'&&entry.sourceSpecies==='fox')!;
+  const competition=stability.leaveOneGenerationOut.coefficients.find(entry=>entry.kind==='competition'&&entry.sourceSpecies==='goat')!;
+  assert.equal(predator.comparableReplicates,4);
+  assert.equal(predator.signConsistency,1);
+  assert.equal(competition.signConsistency,1);
+  assert.ok((predator.coefficientMin||0)>0);
+  assert.ok((competition.coefficientMax||0)<0);
+
+  assert.equal(stability.localWindows.length,4);
+  for(const window of stability.localWindows){
+    assert.equal(window.startGeneration,window.endGeneration);
+    assert.equal(window.generations.length,1);
+    assert.equal(window.model.estimable,true);
+    assert.equal(window.model.samples,9);
+  }
+});
+
+test('generation-local multi-factor windows expose regime changes hidden by pooled history',()=>{
+  const habitat={
+    biome:'forest' as const,ecology:84,food:72,water:78,danger:34,settlementLevel:0,plantBiomass:82,
+    competitionPressure:32,seasonalSuitability:76,diseasePressure:10,predatorPressure:30
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<2;generation++){
+    for(let a=0;a<3;a++)for(let b=0;b<3;b++){
+      const index=generation*9+a*3+b;
+      const exposure=accumulateWildlifeHabitatExposure(
+        undefined,habitat,`regime_${generation}_${a}_${b}`,1,
+        {fox:10+a*20},{goat:15+b*15},undefined
+      );
+      exposure.lastObservedDay=undefined;
+      const predatorComponent=generation===0?2*a:2*(2-a);
+      const offspring=predatorComponent+(2-b);
+      sample.push({
+        entityId:`regime_${index}`,species:'rabbit',birthDay:1+generation*120,
+        deathDay:190+generation*120+index,deathReason:'other',generation,
+        birthChunk:`regime_${generation}`,traitsAtBirth:traits(.42+a*.03,.78+b*.04),
+        birthHabitat:habitat,habitatExposure:exposure,origin:generation===0?'founder':'reproduction',
+        offspringCount:offspring,reproductiveSuccess:offspring>0
+      });
+    }
+  }
+
+  const stability=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!
+    .multifactorSelection.stability.find(entry=>entry.outcome==='offspring')!;
+  assert.equal(stability.localWindows.length,2);
+  const early=stability.localWindows.find(window=>window.endGeneration===0)!;
+  const late=stability.localWindows.find(window=>window.endGeneration===1)!;
+  assert.equal(early.model.estimable,true);
+  assert.equal(late.model.estimable,true);
+  const coefficient=(window:typeof early)=>window.model.coefficients
+    .find(entry=>entry.kind==='predation'&&entry.sourceSpecies==='fox')!.standardizedCoefficient!;
+  assert.ok(coefficient(early)>0);
+  assert.ok(coefficient(late)<0);
+});
+
