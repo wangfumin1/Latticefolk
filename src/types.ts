@@ -731,7 +731,7 @@ export interface WildlifeMultifactorFeatureCoefficient {
   coverageRate: number;
   mean: number;
   stdDev: number;
-  standardizedCoefficient: number;
+  standardizedCoefficient: number | null;
 }
 
 export interface WildlifeMultifactorOutcomeEvidence {
