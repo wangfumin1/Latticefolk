@@ -2209,6 +2209,7 @@ class TownGame {
 
   renderPredationPairEvidence(pair:WildlifePredationPairPerformance) {
     const trait=(value:number)=>Number.isFinite(value)?value.toFixed(2):'0.00';
+    const association=(value:number|null)=>value===null?'—':value.toFixed(2);
     const percent=(value:number)=>`${(value*100).toFixed(0)}%`;
     const generations=pair.generationTrend.filter(g=>g.attempts>0||g.terminalAttempts>0).slice(-3);
     const generationText=generations.length
@@ -2829,6 +2830,14 @@ class TownGame {
           <div class="evo-traits">${i18n.t('evolution.behaviorGenes')} forage ${trait(entry.phenotype.mean.behavior.forageDrive)} migrate ${trait(entry.phenotype.mean.behavior.migrationDrive)} risk ${trait(entry.phenotype.mean.behavior.riskTolerance)} recover ${trait(entry.phenotype.mean.behavior.recoveryDrive)}</div>
           ${entry.phenotype.trendPerGeneration?`<div class="evo-traits">phenotype Δ/G bodyL ${trait(entry.phenotype.trendPerGeneration.morphology.bodyLength)} leg ${trait(entry.phenotype.trendPerGeneration.morphology.legLength)} migrate ${trait(entry.phenotype.trendPerGeneration.behavior.migrationDrive)} risk ${trait(entry.phenotype.trendPerGeneration.behavior.riskTolerance)}</div>`:''}
           ${entry.phenotype.breederDifferential?`<div class="evo-traits">${i18n.t('evolution.breederDelta')} bodyL ${trait(entry.phenotype.breederDifferential.morphology.bodyLength)} leg ${trait(entry.phenotype.breederDifferential.morphology.legLength)} forage ${trait(entry.phenotype.breederDifferential.behavior.forageDrive)} risk ${trait(entry.phenotype.breederDifferential.behavior.riskTolerance)}</div>`:''}`:''}
+        ${entry.phenotypeBiomeFitness.filter(fitness=>fitness.sampleSize>=3).slice(0,3).map(fitness=>`
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.phenotypeFitness')} · ${this.escape(fitness.biome)}</b> · n=${fitness.sampleSize} · eligible ${fitness.reproductionEligibleSamples} · dead ${fitness.lifespanSamples} · obs ${fitness.observedExposureDaysMean.toFixed(2)}d
+            <div>r(reproduce) leg ${association(fitness.reproductionAssociation.morphology.legLength)} · bodyL ${association(fitness.reproductionAssociation.morphology.bodyLength)} · forage ${association(fitness.reproductionAssociation.behavior.forageDrive)} · risk ${association(fitness.reproductionAssociation.behavior.riskTolerance)}</div>
+            <div>r(offspring) leg ${association(fitness.offspringAssociation.morphology.legLength)} · head ${association(fitness.offspringAssociation.morphology.headScale)} · forage ${association(fitness.offspringAssociation.behavior.forageDrive)} · recover ${association(fitness.offspringAssociation.behavior.recoveryDrive)}</div>
+            <div>r(lifespan) leg ${association(fitness.lifespanAssociation.morphology.legLength)} · bodyH ${association(fitness.lifespanAssociation.morphology.bodyHeight)} · risk ${association(fitness.lifespanAssociation.behavior.riskTolerance)} · recover ${association(fitness.lifespanAssociation.behavior.recoveryDrive)}</div>
+            ${fitness.breederDifferential?`<div class="evo-traits">${i18n.t('evolution.breederDelta')} bodyL ${trait(fitness.breederDifferential.morphology.bodyLength)} · leg ${trait(fitness.breederDifferential.morphology.legLength)} · head ${trait(fitness.breederDifferential.morphology.headScale)} · forage ${trait(fitness.breederDifferential.behavior.forageDrive)} · risk ${trait(fitness.breederDifferential.behavior.riskTolerance)}</div>`:''}
+          </div>`).join('')}
         <div>${i18n.t('evolution.mortality')} · ${i18n.t('evolution.predation')} ${entry.mortality.predation} · ${i18n.t('evolution.disease')} ${entry.mortality.disease} · ${i18n.t('evolution.starvation')} ${entry.mortality.starvation} · ${i18n.t('evolution.dehydration')} ${entry.mortality.dehydration} · ${i18n.t('evolution.senescence')} ${entry.mortality.senescence}</div>
         ${entry.realizedPredation.huntAttempts+entry.realizedPredation.fleeAttempts+entry.realizedPredation.attacksReceived>0?`
           <div><b>${i18n.t('evolution.realizedPredation')}</b> · ${i18n.t('evolution.huntOutcome')} ${entry.realizedPredation.huntHits}/${entry.realizedPredation.kills}/${entry.realizedPredation.huntAttempts} · ${i18n.t('evolution.escapeOutcome')} ${entry.realizedPredation.successfulEscapes}/${entry.realizedPredation.fleeAttempts} · ${i18n.t('evolution.attackSurvival')} ${entry.realizedPredation.survivedAttacks}/${entry.realizedPredation.attacksReceived}</div>
