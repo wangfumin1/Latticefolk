@@ -1885,13 +1885,16 @@ class TownGame {
       });
     for(const animal of followers){
       const entry=fineMigrationEntryPoint(source,target,this.coarseWorld.chunkSize,animal.state.position);
-      animal.mesh.position.set(entry.x,0,entry.z);
-      animal.state.position={...entry};
-      this.completeFineWildlifeMigration(animal,target.id,'owner_follow');
+      this.completeFineWildlifeMigration(animal,target.id,'owner_follow',entry);
     }
   }
 
-  completeFineWildlifeMigration(animal:WildlifeRuntime,targetChunkId:string,reason:'behavioral_migration'|'owner_follow'='behavioral_migration') {
+  completeFineWildlifeMigration(
+    animal:WildlifeRuntime,
+    targetChunkId:string,
+    reason:'behavioral_migration'|'owner_follow'='behavioral_migration',
+    committedEntry?:Vec2
+  ) {
     if(animal.removed||this.wildlifeTransfers.has(animal.state.id))return false;
     const state=animal.state;
     const source=this.coarseWorld.chunks.get(state.chunkId);
@@ -1922,6 +1925,10 @@ class TownGame {
       sourcePopulation,targetPopulation,state,initialFineCount,requestedWeight,freeCapacity
     );
     if(representedPopulation<=0){this.beginWildlifeHabitatObservation(state);return false;}
+    if(committedEntry){
+      state.position={...committedEntry};
+      animal.mesh.position.set(committedEntry.x,0,committedEntry.z);
+    }
 
     sourceRuntime.wildlifeIds=sourceRuntime.wildlifeIds.filter(id=>id!==state.id);
     sourceRuntime.initialWildlifeIds.delete(state.id);
