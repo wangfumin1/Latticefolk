@@ -767,6 +767,8 @@ export interface WildlifeMultifactorCoefficientStability {
 }
 
 export interface WildlifeMultifactorLeaveOneGenerationOutEvidence {
+  availableGenerations: number;
+  testedGenerations: number[];
   attemptedReplicates: number;
   estimableReplicates: number;
   comparableReplicates: number;
@@ -777,6 +779,7 @@ export interface WildlifeMultifactorLocalWindowEvidence {
   startGeneration: number;
   endGeneration: number;
   generations: number[];
+  searchTruncated: boolean;
   model: WildlifeMultifactorOutcomeEvidence;
 }
 
