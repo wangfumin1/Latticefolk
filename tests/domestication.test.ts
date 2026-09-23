@@ -9,6 +9,7 @@ import {
   setWildlifeBreedingPermission,
   setWildlifeDomesticationCommand,
   wildlifeBreedingAllowed,
+  wildlifeDomesticationDecisionState,
   wildlifeHasActiveOwnerCommand,
   wildlifePairBreedingAllowed,
   WILDLIFE_TAME_THRESHOLD
@@ -95,3 +96,22 @@ test('unowned domesticated-capable animals retain natural breeding eligibility',
   assert.equal(wildlifeBreedingAllowed(a),true);
   assert.equal(wildlifePairBreedingAllowed(a,b),true);
 });
+
+test('provider-facing domestication state preserves bounded semantics but strips player owner identity',()=>{
+  const owned=setWildlifeBreedingPermission(
+    'sheep',
+    setWildlifeDomesticationCommand(
+      'sheep',
+      feedWildlifeForTaming('sheep',undefined,'player',2,4).state,
+      'player','follow',3
+    ),
+    'player',true,3
+  )!;
+  const decision=wildlifeDomesticationDecisionState('sheep',owned)!;
+  assert.equal(decision.ownerId,undefined);
+  assert.equal(decision.tameProgress,100);
+  assert.equal(decision.command,'follow');
+  assert.equal(decision.breedingAllowed,true);
+  assert.equal(JSON.stringify(decision).includes('player'),false);
+});
+
