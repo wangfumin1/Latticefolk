@@ -1874,6 +1874,30 @@ class TownGame {
     return Object.keys(out).length?out:undefined;
   }
 
+  wildlifeCompetitionSourcePressure(chunkId:string,species:WildlifeSpecies) {
+    const competition=this.coarseWorld.chunks.get(chunkId)?.nicheCompetition;
+    if(!competition?.pairs)return undefined;
+    const out:Partial<Record<WildlifeSpecies,number>>={};
+    for(const sourceSpecies of WILDLIFE_SPECIES){
+      if(sourceSpecies===species)continue;
+      out[sourceSpecies]=competition.pairs.find(pair=>
+        (pair.speciesA===species&&pair.speciesB===sourceSpecies)||(pair.speciesB===species&&pair.speciesA===sourceSpecies)
+      )?.pressure||0;
+    }
+    return out;
+  }
+
+  wildlifeDiseaseSourcePressure(chunkId:string,species:WildlifeSpecies) {
+    const disease=this.coarseWorld.chunks.get(chunkId)?.wildlifeDisease;
+    if(!disease?.pairs)return undefined;
+    const out:Partial<Record<WildlifeSpecies,number>>={};
+    for(const sourceSpecies of WILDLIFE_SPECIES){
+      if(sourceSpecies===species)continue;
+      out[sourceSpecies]=disease.pairs.find(pair=>pair.fromSpecies===sourceSpecies&&pair.toSpecies===species)?.pressure||0;
+    }
+    return out;
+  }
+
   flushWildlifeHabitatExposure() {
     for(const animal of this.wildlife.values()){
       if(!animal.removed)this.recordWildlifeHabitatExposure(animal.state,true);
@@ -1885,7 +1909,10 @@ class TownGame {
     const habitat=this.wildlifeHabitatSnapshot(state.chunkId,state.species);
     if(!habitat)return;
     const exposure=accumulateWildlifeHabitatExposure(
-      record.habitatExposure,habitat,state.chunkId,0,this.wildlifePredatorSourcePressure(state.chunkId,state.species)
+      record.habitatExposure,habitat,state.chunkId,0,
+      this.wildlifePredatorSourcePressure(state.chunkId,state.species),
+      this.wildlifeCompetitionSourcePressure(state.chunkId,state.species),
+      this.wildlifeDiseaseSourcePressure(state.chunkId,state.species)
     );
     exposure.lastObservedDay=this.day+this.minuteOfDay/1440;
     exposure.lastChunk=state.chunkId;
@@ -1906,7 +1933,10 @@ class TownGame {
     const sameChunk=record.habitatExposure.lastChunk===state.chunkId;
     if(elapsed<=0||(!force&&sameChunk&&elapsed<.02))return;
     const exposure=accumulateWildlifeHabitatExposure(
-      record.habitatExposure,habitat,state.chunkId,elapsed,this.wildlifePredatorSourcePressure(state.chunkId,state.species)
+      record.habitatExposure,habitat,state.chunkId,elapsed,
+      this.wildlifePredatorSourcePressure(state.chunkId,state.species),
+      this.wildlifeCompetitionSourcePressure(state.chunkId,state.species),
+      this.wildlifeDiseaseSourcePressure(state.chunkId,state.species)
     );
     exposure.lastObservedDay=currentDay;
     record.habitatExposure=exposure;
@@ -2735,6 +2765,12 @@ class TownGame {
             <div>r(reproduce) ${source.reproductionAssociation===null?'—':source.reproductionAssociation.toFixed(2)} · r(offspring) ${source.offspringAssociation===null?'—':source.offspringAssociation.toFixed(2)} · r(lifespan) ${source.lifespanAssociation===null?'—':source.lifespanAssociation.toFixed(2)}</div>
             <div class="evo-traits">Δ breeder wariness ${source.selectionDifferential.wariness>=0?'+':''}${trait(source.selectionDifferential.wariness)} · size ${source.selectionDifferential.size>=0?'+':''}${trait(source.selectionDifferential.size)}</div>
           </div>`).join('')}
+        ${entry.interactionSourceFitness.filter(source=>source.sampleSize>=3).slice(0,6).map(source=>`
+          <div class="evo-selection">
+            <b>${i18n.t('evolution.sourceEvidence')} · ${i18n.t(`evolution.interaction.${source.kind}`)} ← ${this.escape(this.wildlifeName(source.sourceSpecies))}</b> · n=${source.sampleSize} · eligible ${source.reproductionEligibleSamples} · dead ${source.lifespanSamples} · μp ${source.pressureMean.toFixed(1)}
+            <div>r(reproduce) ${source.reproductionAssociation===null?'—':source.reproductionAssociation.toFixed(2)} · r(offspring) ${source.offspringAssociation===null?'—':source.offspringAssociation.toFixed(2)} · r(lifespan) ${source.lifespanAssociation===null?'—':source.lifespanAssociation.toFixed(2)}</div>
+            <div class="evo-traits">breeder μ ${source.breederPressureMean===null?'—':source.breederPressureMean.toFixed(1)} · non-breeder μ ${source.nonBreederPressureMean===null?'—':source.nonBreederPressureMean.toFixed(1)} · Δ wariness ${source.selectionDifferential.wariness>=0?'+':''}${trait(source.selectionDifferential.wariness)} · size ${source.selectionDifferential.size>=0?'+':''}${trait(source.selectionDifferential.size)}</div>
+          </div>`).join('')}
       </div>`).join('');
 
     const selected=this.selectedEntity?.type==='wildlife'?this.wildlifeLineage.get(this.selectedEntity.id):undefined;
@@ -2746,6 +2782,8 @@ class TownGame {
         <div>${ancestors.length?ancestors.map(record=>`${this.escape(record.entityId)} (G${record.generation}${record.deathDay!==undefined?' †':''})`).join(' ← '):i18n.t('evolution.noAncestors')}</div>
         ${selected.habitatExposure?`<div>${i18n.t('evolution.exposure')} ${selected.habitatExposure.observedDays.toFixed(2)}d · ${i18n.t('evolution.dominantBiome')} ${this.escape(dominantWildlifeExposureBiome(selected.habitatExposure)||'—')} · ${i18n.t('evolution.transitions')} ${selected.habitatExposure.observedTransitions}</div>`:''}
         ${selected.habitatExposure?.predatorSourceMean&&selected.habitatExposure.predatorSourceObservedDays?`<div>${i18n.t('evolution.predatorSources')} ${Object.entries(selected.habitatExposure.predatorSourceMean).filter(([,value])=>Number(value)>0).sort((a,b)=>Number(b[1])-Number(a[1])).map(([species,value])=>`${this.escape(this.wildlifeName(species as WildlifeSpecies))} ${Number(value).toFixed(1)}`).join(' · ')||'—'} · obs ${selected.habitatExposure.predatorSourceObservedDays.toFixed(2)}d</div>`:''}
+        ${selected.habitatExposure?.competitionSourceMean&&selected.habitatExposure.competitionSourceObservedDays?`<div>${i18n.t('evolution.competition')} ${i18n.t('evolution.sourceEvidence')} ${Object.entries(selected.habitatExposure.competitionSourceMean).filter(([,value])=>Number(value)>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,4).map(([species,value])=>`${this.escape(this.wildlifeName(species as WildlifeSpecies))} ${Number(value).toFixed(1)}`).join(' · ')||'—'} · obs ${selected.habitatExposure.competitionSourceObservedDays.toFixed(2)}d</div>`:''}
+        ${selected.habitatExposure?.diseaseSourceMean&&selected.habitatExposure.diseaseSourceObservedDays?`<div>${i18n.t('evolution.diseasePressure')} ${i18n.t('evolution.sourceEvidence')} ${Object.entries(selected.habitatExposure.diseaseSourceMean).filter(([,value])=>Number(value)>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,4).map(([species,value])=>`${this.escape(this.wildlifeName(species as WildlifeSpecies))} ${Number(value).toFixed(1)}`).join(' · ')||'—'} · obs ${selected.habitatExposure.diseaseSourceObservedDays.toFixed(2)}d</div>`:''}
         ${selected.predationOutcomes?`<div>${i18n.t('evolution.realizedPredation')} · hunt ${selected.predationOutcomes.asPredator.huntHits}/${selected.predationOutcomes.asPredator.kills}/${selected.predationOutcomes.asPredator.huntAttempts} · escape ${selected.predationOutcomes.asPrey.successfulEscapes}/${selected.predationOutcomes.asPrey.fleeAttempts} · survive ${selected.predationOutcomes.asPrey.survivedAttacks}/${selected.predationOutcomes.asPrey.attacksReceived}</div>`:''}
         ${selected.migrationHistory?.length?`<div><b>${i18n.t('evolution.migrations')}</b><br>${selected.migrationHistory.slice(-4).map(event=>`Day ${event.day.toFixed(2)} · ${this.escape(event.fromChunkId)} → ${this.escape(event.toChunkId)} · ${event.representedPopulation.toFixed(2)}`).join('<br>')}</div>`:''}
         ${selectedStats?.cohorts.length?`<div class="evo-cohorts">${selectedStats.cohorts.slice(-6).map(cohort=>`G${cohort.generation}: n=${cohort.population}, μw=${trait(cohort.traitMean.wariness)}, var=${trait(cohort.traitVariance.wariness)}`).join('<br>')}</div>`:''}
