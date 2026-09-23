@@ -132,3 +132,43 @@ test('wildlife fallback can migrate away from severe disease transmission pressu
   assert.equal(d.action,'migrate');
   assert.equal(d.targetChunkId,'chunk_3_2');
 });
+
+
+test('hungry wolf hunts legal goat prey through shared predator graph',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'wolf_1',species:'wolf',ageDays:500,hunger:82,thirst:20,energy:75}),
+    world:world({nearbyWildlife:[
+      {id:'goat_1',species:'goat',sex:'female',ageDays:400,distance:4,health:85,currentAction:'graze',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'goat_1');
+});
+
+test('goat and fox can flee a nearby wolf that can predate them',()=>{
+  for(const species of ['goat','fox'] as const){
+    const req:WildlifeDecisionBatchRequest={requests:[{
+      wildlife:animal({id:`${species}_1`,species,ageDays:500,hunger:20,thirst:20,energy:75}),
+      world:world({nearbyWildlife:[
+        {id:'wolf_1',species:'wolf',sex:'male',ageDays:600,distance:3,health:90,currentAction:'hunt',mateAvailable:true}
+      ]}),
+      allowedActions:['flee','wander','rest']
+    }]};
+    const d=fallbackWildlifeDecisions(req).decisions[0]!;
+    assert.equal(d.action,'flee');
+    assert.equal(d.targetWildlifeId,'wolf_1');
+  }
+});
+
+test('fallback mating maturity uses species life-history threshold',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'goat_young',species:'goat',ageDays:120,hunger:20,thirst:20,energy:80,health:90}),
+    world:world({nearbyWildlife:[
+      {id:'goat_m',species:'goat',sex:'male',ageDays:400,distance:2,health:90,currentAction:'wander',mateAvailable:true}
+    ]}),
+    allowedActions:['seek_mate','wander','rest']
+  }]};
+  assert.notEqual(fallbackWildlifeDecisions(req).decisions[0]?.action,'seek_mate');
+});
