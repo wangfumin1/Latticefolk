@@ -5,7 +5,7 @@ import type {
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
   WildlifeMultifactorFeatureCoefficient, WildlifeMultifactorOutcome, WildlifeMultifactorOutcomeEvidence, WildlifeMultifactorOutcomeStabilityEvidence, WildlifeMultifactorSelectionEvidence,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
-  WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
+  WildlifePhenotype, WildlifePhenotypeStats, WildlifeRealizedPredationStats, WildlifeReciprocalInteractionSelectionEvidence, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
 } from '../types.js';
 import { wildlifeLifeHistory } from './wildlifeLifeHistory.js';
 import { WILDLIFE_SPECIES } from './wildlifeSpecies.js';
@@ -236,10 +236,115 @@ function traitTrend(records:WildlifeLineageRecord[]) {
   return out;
 }
 
+const phenotypeMean=(records:WildlifeLineageRecord[]):WildlifePhenotype|null=>{
+  const values=records.map(record=>record.phenotypeAtBirth).filter((value):value is WildlifePhenotype=>Boolean(value));
+  if(!values.length)return null;
+  return {
+    morphology:{
+      bodyLength:mean(values.map(value=>value.morphology.bodyLength)),
+      bodyHeight:mean(values.map(value=>value.morphology.bodyHeight)),
+      legLength:mean(values.map(value=>value.morphology.legLength)),
+      headScale:mean(values.map(value=>value.morphology.headScale)),
+      tailScale:mean(values.map(value=>value.morphology.tailScale))
+    },
+    behavior:{
+      forageDrive:mean(values.map(value=>value.behavior.forageDrive)),
+      migrationDrive:mean(values.map(value=>value.behavior.migrationDrive)),
+      riskTolerance:mean(values.map(value=>value.behavior.riskTolerance)),
+      recoveryDrive:mean(values.map(value=>value.behavior.recoveryDrive))
+    }
+  };
+};
+
+const phenotypeVariance=(records:WildlifeLineageRecord[],average:WildlifePhenotype|null):WildlifePhenotype|null=>{
+  if(!average)return null;
+  const values=records.map(record=>record.phenotypeAtBirth).filter((value):value is WildlifePhenotype=>Boolean(value));
+  if(!values.length)return null;
+  return {
+    morphology:{
+      bodyLength:variance(values.map(value=>value.morphology.bodyLength),average.morphology.bodyLength),
+      bodyHeight:variance(values.map(value=>value.morphology.bodyHeight),average.morphology.bodyHeight),
+      legLength:variance(values.map(value=>value.morphology.legLength),average.morphology.legLength),
+      headScale:variance(values.map(value=>value.morphology.headScale),average.morphology.headScale),
+      tailScale:variance(values.map(value=>value.morphology.tailScale),average.morphology.tailScale)
+    },
+    behavior:{
+      forageDrive:variance(values.map(value=>value.behavior.forageDrive),average.behavior.forageDrive),
+      migrationDrive:variance(values.map(value=>value.behavior.migrationDrive),average.behavior.migrationDrive),
+      riskTolerance:variance(values.map(value=>value.behavior.riskTolerance),average.behavior.riskTolerance),
+      recoveryDrive:variance(values.map(value=>value.behavior.recoveryDrive),average.behavior.recoveryDrive)
+    }
+  };
+};
+
+const phenotypeSlope=(records:WildlifeLineageRecord[],value:(phenotype:WildlifePhenotype)=>number)=>{
+  const observed=records.filter((record):record is WildlifeLineageRecord&{phenotypeAtBirth:WildlifePhenotype}=>Boolean(record.phenotypeAtBirth));
+  if(observed.length<2)return 0;
+  const x=observed.map(record=>record.generation);
+  const xMean=mean(x);
+  const denom=x.reduce((sum,generation)=>sum+(generation-xMean)**2,0);
+  if(denom<=0)return 0;
+  const y=observed.map(record=>value(record.phenotypeAtBirth));
+  const yMean=mean(y);
+  return observed.reduce((sum,record,index)=>sum+(record.generation-xMean)*(y[index]!-yMean),0)/denom;
+};
+
+const phenotypeTrend=(records:WildlifeLineageRecord[]):WildlifePhenotype|null=>{
+  const observed=records.filter(record=>record.phenotypeAtBirth);
+  if(observed.length<2||new Set(observed.map(record=>record.generation)).size<2)return null;
+  return {
+    morphology:{
+      bodyLength:phenotypeSlope(records,value=>value.morphology.bodyLength),
+      bodyHeight:phenotypeSlope(records,value=>value.morphology.bodyHeight),
+      legLength:phenotypeSlope(records,value=>value.morphology.legLength),
+      headScale:phenotypeSlope(records,value=>value.morphology.headScale),
+      tailScale:phenotypeSlope(records,value=>value.morphology.tailScale)
+    },
+    behavior:{
+      forageDrive:phenotypeSlope(records,value=>value.behavior.forageDrive),
+      migrationDrive:phenotypeSlope(records,value=>value.behavior.migrationDrive),
+      riskTolerance:phenotypeSlope(records,value=>value.behavior.riskTolerance),
+      recoveryDrive:phenotypeSlope(records,value=>value.behavior.recoveryDrive)
+    }
+  };
+};
+
+const subtractPhenotype=(a:WildlifePhenotype,b:WildlifePhenotype):WildlifePhenotype=>({
+  morphology:{
+    bodyLength:a.morphology.bodyLength-b.morphology.bodyLength,
+    bodyHeight:a.morphology.bodyHeight-b.morphology.bodyHeight,
+    legLength:a.morphology.legLength-b.morphology.legLength,
+    headScale:a.morphology.headScale-b.morphology.headScale,
+    tailScale:a.morphology.tailScale-b.morphology.tailScale
+  },
+  behavior:{
+    forageDrive:a.behavior.forageDrive-b.behavior.forageDrive,
+    migrationDrive:a.behavior.migrationDrive-b.behavior.migrationDrive,
+    riskTolerance:a.behavior.riskTolerance-b.behavior.riskTolerance,
+    recoveryDrive:a.behavior.recoveryDrive-b.behavior.recoveryDrive
+  }
+});
+
+function phenotypeStats(records:WildlifeLineageRecord[]):WildlifePhenotypeStats {
+  const observed=records.filter(record=>record.phenotypeAtBirth);
+  const average=phenotypeMean(observed);
+  const breeders=observed.filter(record=>record.offspringCount>0);
+  const breederMean=phenotypeMean(breeders);
+  return {
+    sampleSize:observed.length,
+    mean:average,
+    variance:phenotypeVariance(observed,average),
+    trendPerGeneration:phenotypeTrend(observed),
+    breederMean,
+    breederDifferential:average&&breederMean?subtractPhenotype(breederMean,average):null
+  };
+}
+
 function cohort(generation:number,records:WildlifeLineageRecord[]):WildlifeGenerationCohortStats {
   const dead=records.filter(record=>record.deathDay!==undefined);
   const average=traitMean(records);
   const breeders=records.filter(record=>record.offspringCount>0);
+  const phenotype=phenotypeStats(records);
   return {
     generation,
     population:records.length,
@@ -249,7 +354,10 @@ function cohort(generation:number,records:WildlifeLineageRecord[]):WildlifeGener
     offspringMean:mean(records.map(record=>record.offspringCount)),
     breederRate:records.length?breeders.length/records.length:0,
     traitMean:average,
-    traitVariance:traitVariance(records,average)
+    traitVariance:traitVariance(records,average),
+    phenotypeSamples:phenotype.sampleSize,
+    phenotypeMean:phenotype.mean,
+    phenotypeVariance:phenotype.variance
   };
 }
 
@@ -1320,6 +1428,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       traitMean:average,
       traitVariance:traitVariance(speciesRecords,average),
       traitTrendPerGeneration:traitTrend(speciesRecords),
+      phenotype:phenotypeStats(speciesRecords),
       mortality,
       reproductiveSuccess:mean(breeders.map(record=>record.offspringCount)),
       survivalToReproductionRate:speciesRecords.length?breeders.length/speciesRecords.length:0,
