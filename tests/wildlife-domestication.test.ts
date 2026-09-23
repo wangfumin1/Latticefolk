@@ -61,10 +61,11 @@ test('command action filtering preserves bounded survival behavior',()=>{
 test('only one represented individual can enter player taming interactions',()=>{
   assert.ok(wildlifeDomesticationInteractions(sheep({representedPopulation:1})).includes('feed_tame'));
   assert.ok(!wildlifeDomesticationInteractions(sheep({representedPopulation:2.5})).includes('feed_tame'));
-  assert.deepEqual(individualizeWildlifeRepresentative(3,0),{nextInitialOrdinaryCount:2,nextFixedWeight:1});
-  assert.deepEqual(individualizeWildlifeRepresentative(0,1),{nextInitialOrdinaryCount:0,nextFixedWeight:1});
-  assert.equal(individualizeWildlifeRepresentative(3,2.5),undefined);
-  assert.equal(individualizeWildlifeRepresentative(0,0),undefined);
+  assert.deepEqual(individualizeWildlifeRepresentative(3,0,true),{nextInitialOrdinaryCount:2,nextFixedWeight:1});
+  assert.deepEqual(individualizeWildlifeRepresentative(0,0,false),{nextInitialOrdinaryCount:0,nextFixedWeight:1});
+  assert.deepEqual(individualizeWildlifeRepresentative(0,1,true),{nextInitialOrdinaryCount:0,nextFixedWeight:1});
+  assert.equal(individualizeWildlifeRepresentative(3,2.5,true),undefined);
+  assert.equal(individualizeWildlifeRepresentative(0,0,true),undefined);
 });
 
 test('release clears ownership and commands but keeps the domestication-capable species form',()=>{
