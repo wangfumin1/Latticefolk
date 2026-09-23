@@ -1007,6 +1007,7 @@ class TownGame {
     const chunk=this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z);
     const targetId=chunk?.id;
     if(targetId===this.activeFineChunkId)return;
+    if(this.activeFineChunkId&&chunk)this.transferOwnedFollowersToChunk(this.activeFineChunkId,chunk);
     if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
     if(chunk)this.materializeFineChunk(chunk);
   }
@@ -1870,7 +1871,27 @@ class TownGame {
     s.targetObjectId=undefined;s.targetWildlifeId=undefined;s.targetChunkId=undefined;
   }
 
-  completeFineWildlifeMigration(animal:WildlifeRuntime,targetChunkId:string) {
+  transferOwnedFollowersToChunk(sourceChunkId:string,target:CoarseChunkState) {
+    if(this.cameraMode!=='firstPerson')return;
+    const source=this.coarseWorld.chunks.get(sourceChunkId);
+    const runtime=this.materializedChunks.get(sourceChunkId);
+    if(!source||!runtime||!areAdjacentChunks(source,target))return;
+    const followers=runtime.wildlifeIds
+      .map(id=>this.wildlife.get(id))
+      .filter((animal):animal is WildlifeRuntime=>Boolean(animal&&!animal.removed))
+      .filter(animal=>{
+        const d=normalizeWildlifeDomestication(animal.state.species,animal.state.domestication);
+        return d?.ownerId==='player'&&d.command==='follow';
+      });
+    for(const animal of followers){
+      const entry=fineMigrationEntryPoint(source,target,this.coarseWorld.chunkSize,animal.state.position);
+      animal.mesh.position.set(entry.x,0,entry.z);
+      animal.state.position={...entry};
+      this.completeFineWildlifeMigration(animal,target.id,'owner_follow');
+    }
+  }
+
+  completeFineWildlifeMigration(animal:WildlifeRuntime,targetChunkId:string,reason:'behavioral_migration'|'owner_follow'='behavioral_migration') {
     if(animal.removed||this.wildlifeTransfers.has(animal.state.id))return false;
     const state=animal.state;
     const source=this.coarseWorld.chunks.get(state.chunkId);
@@ -1911,7 +1932,7 @@ class TownGame {
     lineage.migrationHistory??=[];
     lineage.migrationHistory.push({
       fromChunkId:source.id,toChunkId:target.id,day:currentDay,
-      fromBiome:source.biome,toBiome:target.biome,representedPopulation,reason:'behavioral_migration'
+      fromBiome:source.biome,toBiome:target.biome,representedPopulation,reason
     });
     if(lineage.habitatExposure){
       lineage.habitatExposure.observedTransitions++;
@@ -1951,8 +1972,8 @@ class TownGame {
     }else this.wildlifeTransfers.set(state.id,transfer);
     if(this.selectedEntity?.type==='wildlife'&&this.selectedEntity.id===state.id)this.selectedEntity=undefined;
     if(this.hoverEntity?.type==='wildlife'&&this.hoverEntity.id===state.id)this.hoverEntity=undefined;
-    this.event(`${this.wildlifeName(state.species)} ${state.id} 从 ${source.id} 迁移至 ${target.id}（代表 ${representedPopulation.toFixed(2)}）`);
-    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)}`);
+    this.event(`${this.wildlifeName(state.species)} ${state.id} 从 ${source.id} 迁移至 ${target.id}（代表 ${representedPopulation.toFixed(2)} · ${reason}）`);
+    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)} reason=${reason}`);
     return true;
   }
   tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
