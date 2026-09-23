@@ -655,6 +655,8 @@ test('multi-factor stability uses deterministic leave-one-generation-out sensiti
   const evidence=computeEvolutionStatistics(sample,1000).find(entry=>entry.species==='rabbit')!.multifactorSelection;
   const stability=evidence.stability.find(entry=>entry.outcome==='offspring')!;
   assert.equal(stability.basis,'target_species_generation');
+  assert.equal(stability.leaveOneGenerationOut.availableGenerations,4);
+  assert.deepEqual(stability.leaveOneGenerationOut.testedGenerations,[0,1,2,3]);
   assert.equal(stability.leaveOneGenerationOut.attemptedReplicates,4);
   assert.equal(stability.leaveOneGenerationOut.estimableReplicates,4);
   assert.equal(stability.leaveOneGenerationOut.comparableReplicates,4);
@@ -671,6 +673,7 @@ test('multi-factor stability uses deterministic leave-one-generation-out sensiti
   for(const window of stability.localWindows){
     assert.equal(window.startGeneration,window.endGeneration);
     assert.equal(window.generations.length,1);
+    assert.equal(window.searchTruncated,false);
     assert.equal(window.model.estimable,true);
     assert.equal(window.model.samples,9);
   }
@@ -713,5 +716,41 @@ test('generation-local multi-factor windows expose regime changes hidden by pool
     .find(entry=>entry.kind==='predation'&&entry.sourceSpecies==='fox')!.standardizedCoefficient!;
   assert.ok(coefficient(early)>0);
   assert.ok(coefficient(late)<0);
+});
+
+test('multi-factor stability keeps long generation histories computationally bounded',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:80,food:74,water:72,danger:24,settlementLevel:0,plantBiomass:78,
+    competitionPressure:30,seasonalSuitability:80,diseasePressure:8,predatorPressure:28
+  };
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<20;generation++){
+    for(let a=0;a<3;a++)for(let b=0;b<3;b++){
+      const index=generation*9+a*3+b;
+      const exposure=accumulateWildlifeHabitatExposure(
+        undefined,habitat,`bounded_${generation}_${a}_${b}`,1,
+        {fox:10+a*20},{goat:12+b*18},undefined
+      );
+      exposure.lastObservedDay=undefined;
+      const offspring=2*a+(2-b);
+      sample.push({
+        entityId:`bounded_${index}`,species:'rabbit',birthDay:1+generation*80,
+        deathDay:160+generation*80+index,deathReason:'other',generation,
+        birthChunk:`bounded_${generation}`,traitsAtBirth:traits(.4+a*.03,.76+b*.04),
+        birthHabitat:habitat,habitatExposure:exposure,origin:generation===0?'founder':'reproduction',
+        offspringCount:offspring,reproductiveSuccess:offspring>0
+      });
+    }
+  }
+
+  const stability=computeEvolutionStatistics(sample,5000).find(entry=>entry.species==='rabbit')!
+    .multifactorSelection.stability.find(entry=>entry.outcome==='offspring')!;
+  assert.equal(stability.leaveOneGenerationOut.availableGenerations,20);
+  assert.equal(stability.leaveOneGenerationOut.attemptedReplicates,12);
+  assert.equal(stability.leaveOneGenerationOut.testedGenerations.length,12);
+  assert.equal(stability.leaveOneGenerationOut.testedGenerations[0],0);
+  assert.equal(stability.leaveOneGenerationOut.testedGenerations.at(-1),19);
+  assert.ok(stability.localWindows.length<=6);
+  assert.ok(stability.localWindows.every(window=>window.generations.length<=8));
 });
 
