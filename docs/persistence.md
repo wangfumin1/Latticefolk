@@ -131,4 +131,4 @@ Competition/disease generation evidence adds no persistence schema. It is derive
 
 ### Multi-factor selection evidence derivation
 
-Multi-factor models add no persisted table or field. They are derived on demand from existing source-specific means/observation days in `habitat_exposure_json`, together with offspring and death history already stored in `wildlife_lineage`. Legacy rows missing one source family remain missing for that feature and are excluded from outcome-specific complete-case matrices rather than imputed as zero.
+Multi-factor models add no persisted table or field. They are derived on demand from existing source-specific means/observation days in `habitat_exposure_json`, together with offspring and death history already stored in `wildlife_lineage`. Legacy rows missing one source family remain missing for that feature and are excluded from outcome-specific complete-case matrices rather than imputed as zero. Model status, pairwise-correlation/VIF diagnostics, ridge coefficients and R² are all ephemeral derived observability; unstable collinearity leaves coefficients unavailable and never changes persisted or authoritative simulation state.
