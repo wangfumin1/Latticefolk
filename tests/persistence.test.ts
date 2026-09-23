@@ -49,13 +49,18 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
     }],
     fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[],wildlifeStates:[{
       id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
-      sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},currentAction:'forage',lastDecisionAt:10,birthDay:3
+      sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},
+      phenotype:{morphology:{bodyLength:1.05,bodyHeight:.98,legLength:1.02,headScale:.99,tailScale:1},behavior:{forageDrive:1.08,migrationDrive:.96,riskTolerance:.94,recoveryDrive:1.04}},
+      currentAction:'forage',lastDecisionAt:10,birthDay:3
     }]}],
     homeNpcs:[],homeObjects:[],
     wildlifeLineage:[{
       entityId:'rabbit_ancestor',species:'rabbit',birthDay:1,deathDay:3.5,deathReason:'predation',generation:0,
       birthChunk:'chunk_2_-1',deathChunk:'chunk_2_-1',traitsAtBirth:{speed:2.1,size:.52,fertility:.82,wariness:.63},
       traitsAtDeath:{speed:2.1,size:.52,fertility:.82,wariness:.63},
+      phenotypeAtBirth:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
+      phenotypeAtDeath:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
+      phenotypeProvenance:'founder_seed',
       birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
       habitatExposure:{
@@ -83,7 +88,9 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       state:{
         id:'rabbit_migrant',chunkId:'chunk_3_-1',species:'rabbit',position:{x:61,z:-24},ageDays:90,
         health:88,hunger:30,thirst:25,energy:65,sex:'male',generation:1,
-        traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3,
+        traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},
+        phenotype:{morphology:{bodyLength:1.02,bodyHeight:1,legLength:.97,headScale:1.01,tailScale:1},behavior:{forageDrive:.98,migrationDrive:1.12,riskTolerance:1.08,recoveryDrive:.96}},
+        currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3,
         representedPopulation:2.5
       },
       fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:2.5,transferredDay:4.2
@@ -96,7 +103,11 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.coarseChunks[0]?.strategy,'trade_route');
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.phenotype?.morphology.bodyLength,1.05);
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
+  assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtBirth?.behavior.forageDrive,1.06);
+  assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtDeath?.morphology.legLength,1.04);
+  assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeProvenance,'founder_seed');
   assert.equal(loaded.wildlifeLineage?.[0]?.birthHabitat?.biome,'plains');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
@@ -115,13 +126,19 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeTransfers?.[0]?.entityId,'rabbit_migrant');
   assert.equal(loaded.wildlifeTransfers?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.representedPopulation,2.5);
+  assert.equal(loaded.wildlifeTransfers?.[0]?.state.phenotype?.behavior.migrationDrive,1.12);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.stats().pendingWildlifeTransfers,1);
   const interactionNetwork=store.interactionNetwork();
   assert.deepEqual(interactionNetwork.coverage,{predation:1,competition:1,disease:1});
   assert.equal(interactionNetwork.edges.find(edge=>edge.kind==='predation'&&edge.fromSpecies==='fox'&&edge.toSpecies==='rabbit')?.meanPressure,32);
   assert.equal(interactionNetwork.nodes.find(node=>node.species==='rabbit')?.population,8);
-  assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
+  const persistedRabbitEvolution=store.evolutionStats().find(entry=>entry.species==='rabbit');
+  assert.equal(persistedRabbitEvolution?.deaths,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.sampleSize,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.comparableSamples,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.founderSeedSamples,1);
+  assert.equal(persistedRabbitEvolution?.phenotype.mean?.morphology.bodyLength,.96);
   const coevolution=store.coevolutionStats().find(entry=>entry.predatorSpecies==='fox'&&entry.preySpecies==='rabbit');
   assert.equal(coevolution?.bothSidesObserved,false);
   assert.equal(coevolution?.prey.generationsObserved,1);
@@ -184,6 +201,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
     wildlifeLineage:[{
       entityId:'rabbit_child',species:'rabbit',motherId:'rabbit_mother',fatherId:'rabbit_father',
       birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
+      phenotypeAtBirth:{morphology:{bodyLength:1.03,bodyHeight:.97,legLength:1.01,headScale:1,tailScale:1},behavior:{forageDrive:1.04,migrationDrive:1.06,riskTolerance:.95,recoveryDrive:1.02}},
+      phenotypeProvenance:'birth',
       birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
       habitatExposure:{
         observedDays:.5,habitatMean:{ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
@@ -203,6 +222,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   store.save(snapshot);
   const migrated=store.load()?.wildlifeLineage?.[0];
   assert.equal(migrated?.origin,'reproduction');
+  assert.equal(migrated?.phenotypeAtBirth?.morphology.bodyLength,1.03);
+  assert.equal(migrated?.phenotypeProvenance,'birth');
   assert.equal(migrated?.birthHabitat?.biome,'forest');
   assert.equal(migrated?.habitatExposure?.observedDays,.5);
   assert.equal(migrated?.habitatExposure?.lastBiome,'plains');

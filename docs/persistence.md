@@ -19,7 +19,7 @@ The database and its WAL/SHM sidecars are ignored by Git. It is runtime state, n
 | Coarse world | every coarse chunk's population, resources, ecology, danger, prosperity, settlement level, provider-selected policy, and decision version |
 | Visited fine chunks | resident identities/state, memories, relationships, inventory, object storage, resource depletion, and persistent wildlife individuals/traits |
 | Center town | NPC and interactive-object state |
-| Wildlife ancestry | durable birth/death/parent/trait/reproductive records for living and dead individuals |
+| Wildlife ancestry | durable birth/death/parent/trait/phenotype/reproductive records for living and dead individuals |
 | Wildlife transit | identity-preserving fine migrants waiting to materialize in their destination chunk |
 
 The save format is currently `version: 1`.
@@ -65,7 +65,7 @@ The wildlife milestone adds a `wildlife_json` column to `fine_chunks`. Existing 
 
 ### Wildlife lineage archive
 
-`wildlife_lineage` stores `entity_id`, species, parents, birth/death day and chunk, normalized death reason, generation, traits at birth/death, habitat snapshots at origin/death, founder-vs-reproduction origin, offspring count, and reproductive-success state. Parent records survive entity death and fine-chunk unloading, so later generations can still traverse ancestry. The server exposes deterministic aggregate statistics at `GET /api/world/evolution`; no Decision Provider call is involved in lineage or statistics.
+`wildlife_lineage` stores `entity_id`, species, parents, birth/death day and chunk, normalized death reason, generation, traits at birth/death, optional phenotype at birth/death plus phenotype provenance, habitat snapshots at origin/death, founder-vs-reproduction origin, offspring count, and reproductive-success state. Parent records survive entity death and fine-chunk unloading, so later generations can still traverse ancestry. The server exposes deterministic aggregate statistics at `GET /api/world/evolution`; no Decision Provider call is involved in lineage or statistics.
 
 ### Habitat snapshots for selection analysis
 
@@ -138,3 +138,9 @@ Multi-factor stability and generation-local windows also require no schema chang
 ### Additive wildlife species profiles
 
 Adding a configured wildlife species does not require a SQLite schema migration because coarse wildlife populations live inside chunk JSON and fine wildlife already stores a typed species value in JSON. `ensureWildlifePopulations` preserves existing species counts/state and deterministically adds newly configured populations such as `badger` when an older chunk is simulated. Legacy niche/disease/predator per-species pressure maps are intentionally sparse: missing keys for a species that did not exist when the snapshot was written remain unknown historical coverage rather than being backfilled as observed zero. Current ecology recomputation produces present-time pressure evidence from the active species profiles.
+
+### Heritable wildlife phenotype persistence
+
+`WildlifeState.phenotype` is persisted naturally inside fine-chunk `wildlife_json` and `wildlife_transfers.transfer_json`. Durable lineage adds three additive SQLite columns: `phenotype_at_birth_json`, `phenotype_at_death_json`, and `phenotype_provenance`. Startup migrates older `wildlife_lineage` tables with nullable columns, so existing databases remain loadable without reset.
+
+Phenotype provenance is part of the evidence model. Offspring born after the feature exists are `birth`; deterministic newly materialized founders are `founder_seed`; a living individual loaded from a pre-phenotype save receives a deterministic entity-seeded phenotype marked `legacy_upgrade`. The last case is necessary for continued simulation but is not treated as historically observed birth phenotype. Evolution summaries may include all known samples in descriptive mean/variance, while generation slopes and breeder differentials exclude `legacy_upgrade`. Missing historical phenotype therefore stays missing evidence rather than being invented retroactively.

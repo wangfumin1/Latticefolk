@@ -358,6 +358,46 @@ export interface WildlifeTraits {
   wariness: number;
 }
 
+export interface WildlifeMorphologyPhenotype {
+  /** Multipliers relative to the species morphology profile. */
+  bodyLength: number;
+  bodyHeight: number;
+  legLength: number;
+  headScale: number;
+  tailScale: number;
+}
+
+export interface WildlifeBehaviorPhenotype {
+  /** Higher values cause earlier resource-seeking under hunger. */
+  forageDrive: number;
+  /** Higher values lower the habitat-improvement threshold for migration. */
+  migrationDrive: number;
+  /** Higher values tolerate predators at shorter distances before fleeing. */
+  riskTolerance: number;
+  /** Higher values trigger recovery/rest at milder disease or fatigue. */
+  recoveryDrive: number;
+}
+
+export interface WildlifePhenotype {
+  morphology: WildlifeMorphologyPhenotype;
+  behavior: WildlifeBehaviorPhenotype;
+}
+
+export type WildlifePhenotypeProvenance = 'birth' | 'founder_seed' | 'legacy_upgrade';
+
+export interface WildlifePhenotypeStats {
+  sampleSize: number;
+  comparableSamples: number;
+  birthTrackedSamples: number;
+  founderSeedSamples: number;
+  legacyUpgradeSamples: number;
+  mean: WildlifePhenotype | null;
+  variance: WildlifePhenotype | null;
+  trendPerGeneration: WildlifePhenotype | null;
+  breederMean: WildlifePhenotype | null;
+  breederDifferential: WildlifePhenotype | null;
+}
+
 export interface WildlifeHabitatSnapshot {
   biome: ChunkBiome;
   ecology: number;
@@ -474,6 +514,11 @@ export interface WildlifeLineageRecord {
   deathChunk?: string;
   traitsAtBirth: WildlifeTraits;
   traitsAtDeath?: WildlifeTraits;
+  /** Immutable inherited phenotype; absent in lineage rows created before phenotype tracking. */
+  phenotypeAtBirth?: WildlifePhenotype;
+  phenotypeAtDeath?: WildlifePhenotype;
+  /** Distinguishes tracked birth inheritance from deterministic founder seeding and legacy upgrade observation. */
+  phenotypeProvenance?: WildlifePhenotypeProvenance;
   birthHabitat?: WildlifeHabitatSnapshot;
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
@@ -495,6 +540,9 @@ export interface WildlifeGenerationCohortStats {
   breederRate: number;
   traitMean: WildlifeTraits;
   traitVariance: WildlifeTraits;
+  phenotypeSamples: number;
+  phenotypeMean: WildlifePhenotype | null;
+  phenotypeVariance: WildlifePhenotype | null;
 }
 
 export type WildlifeFitnessExposureDimension = 'competitionPressure' | 'seasonalSuitability' | 'diseasePressure' | 'predatorPressure';
@@ -830,6 +878,7 @@ export interface WildlifeEvolutionStats {
   traitMean: WildlifeTraits;
   traitVariance: WildlifeTraits;
   traitTrendPerGeneration: WildlifeTraits;
+  phenotype: WildlifePhenotypeStats;
   mortality: Record<WildlifeDeathReason, number>;
   reproductiveSuccess: number;
   survivalToReproductionRate: number;
@@ -856,6 +905,8 @@ export interface WildlifeState {
   sex: 'female' | 'male';
   generation: number;
   traits: WildlifeTraits;
+  /** Additive for save compatibility; runtime normalizes missing legacy values deterministically. */
+  phenotype?: WildlifePhenotype;
   currentAction: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;

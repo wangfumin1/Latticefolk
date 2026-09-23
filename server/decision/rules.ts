@@ -1,6 +1,7 @@
 import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy, RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy, WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeAction } from '../../src/types.js';
 import { wildlifeLifeHistory } from '../../src/world/wildlifeLifeHistory.js';
 import { canWildlifePredate, isWildlifePredator, wildlifeSpeciesProfile } from '../../src/world/wildlifeSpecies.js';
+import { normalizeWildlifePhenotype, wildlifeBehaviorThresholds } from '../../src/world/wildlifePhenotype.js';
 
 function pick<T>(arr: T[], fallback: T): T {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : fallback;
@@ -184,7 +185,9 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
   const decisions:WildlifeDecisionResult[]=req.requests.map(entry=>{
     const animal=entry.wildlife;
     const profile=wildlifeSpeciesProfile(animal.species);
-    const nearbyPredator=entry.world.nearbyWildlife.find(x=>canWildlifePredate(x.species,animal.species)&&x.distance<5);
+    const phenotype=normalizeWildlifePhenotype(animal.phenotype,animal.id);
+    const thresholds=wildlifeBehaviorThresholds(phenotype);
+    const nearbyPredator=entry.world.nearbyWildlife.find(x=>canWildlifePredate(x.species,animal.species)&&x.distance<thresholds.fleeDistance);
     const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.mateAvailable&&x.distance<8);
     let action:WildlifeAction='wander';
     let targetObjectId:string|undefined;
@@ -205,7 +208,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
       action='drink';
       targetObjectId=entry.world.nearbyResources.find(x=>x.tags.includes('water'))?.id;
       reasonCode='thirst';
-    }else if(animal.hunger>=68){
+    }else if(animal.hunger>=thresholds.hungerThreshold){
       if(isWildlifePredator(animal.species)&&entry.allowedActions.includes('hunt')){
         const prey=entry.world.nearbyWildlife.find(x=>canWildlifePredate(animal.species,x.species)&&x.distance<10);
         if(prey){action='hunt';targetWildlifeId=prey.id;reasonCode='predator_hunger';}
@@ -219,11 +222,11 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
         targetObjectId=entry.world.nearbyResources.find(x=>x.tags.some(tag=>profile.forageTags.includes(tag)))?.id;
         reasonCode='hunger';
       }
-    }else if((animal.diseaseLoad||0)>=65&&entry.allowedActions.includes('rest')){
+    }else if((animal.diseaseLoad||0)>=thresholds.diseaseRestThreshold&&entry.allowedActions.includes('rest')){
       action='rest';reasonCode='disease_recovery';
-    }else if(animal.energy<=24&&entry.allowedActions.includes('rest')){
+    }else if(animal.energy<=thresholds.energyRestThreshold&&entry.allowedActions.includes('rest')){
       action='rest';reasonCode='low_energy';
-    }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&(habitatScore(migrationTarget)>=habitatScore(currentHabitat)+8||diseaseRelief>=35)){
+    }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&(habitatScore(migrationTarget)>=habitatScore(currentHabitat)+thresholds.migrationGain||diseaseRelief>=35)){
       action='migrate';targetChunkId=migrationTarget.id;reasonCode='habitat_migration';
     }else if(animal.ageDays>=wildlifeLifeHistory(animal.species).adultAge&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
       action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';

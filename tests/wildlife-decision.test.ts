@@ -200,3 +200,49 @@ test('hungry badger falls back to profile forage when no legal prey is nearby',(
   assert.equal(d.reasonCode,'omnivore_forage');
 });
 
+test('risk-tolerance phenotype changes predator flee distance without changing legal action bounds',()=>{
+  const cautious=animal({
+    id:'rabbit_cautious',
+    phenotype:{
+      morphology:{bodyLength:1,bodyHeight:1,legLength:1,headScale:1,tailScale:1},
+      behavior:{forageDrive:1,migrationDrive:1,riskTolerance:.7,recoveryDrive:1}
+    }
+  });
+  const bold=animal({
+    id:'rabbit_bold',
+    phenotype:{
+      morphology:{bodyLength:1,bodyHeight:1,legLength:1,headScale:1,tailScale:1},
+      behavior:{forageDrive:1,migrationDrive:1,riskTolerance:1.3,recoveryDrive:1}
+    }
+  });
+  const predator={id:'fox_edge',species:'fox' as const,sex:'male' as const,ageDays:500,distance:5.2,health:85,currentAction:'hunt' as const,mateAvailable:true};
+  const cautiousDecision=fallbackWildlifeDecisions({requests:[{
+    wildlife:cautious,world:world({nearbyWildlife:[predator]}),allowedActions:['flee','wander','rest']
+  }]}).decisions[0]!;
+  const boldDecision=fallbackWildlifeDecisions({requests:[{
+    wildlife:bold,world:world({nearbyWildlife:[predator]}),allowedActions:['flee','wander','rest']
+  }]}).decisions[0]!;
+  assert.equal(cautiousDecision.action,'flee');
+  assert.equal(cautiousDecision.targetWildlifeId,'fox_edge');
+  assert.equal(boldDecision.action,'wander');
+});
+
+test('migration-drive phenotype lowers only the required habitat gain for an already pressured animal',()=>{
+  const current=habitat({ecology:70,seasonalSuitability:40,density:.5,competitionPressure:10,diseasePressure:8,danger:20,food:65,water:70});
+  const target=habitat({id:'chunk_3_2',ecology:81,seasonalSuitability:90,density:.5,competitionPressure:10,diseasePressure:8,danger:20,food:65,water:70});
+  const state=(id:string,migrationDrive:number)=>animal({
+    id,hunger:20,thirst:20,energy:80,health:90,ageDays:180,
+    phenotype:{
+      morphology:{bodyLength:1,bodyHeight:1,legLength:1,headScale:1,tailScale:1},
+      behavior:{forageDrive:1,migrationDrive,riskTolerance:1,recoveryDrive:1}
+    }
+  });
+  const decide=(wildlife:WildlifeState)=>fallbackWildlifeDecisions({requests:[{
+    wildlife,
+    world:world({currentHabitat:current,nearbyChunks:[target]}),
+    allowedActions:['migrate','wander','rest']
+  }]}).decisions[0]!;
+  assert.equal(decide(state('rabbit_migrate_high',1.25)).action,'migrate');
+  assert.equal(decide(state('rabbit_migrate_low',.75)).action,'wander');
+});
+
