@@ -53,6 +53,12 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       phenotype:{morphology:{bodyLength:1.05,bodyHeight:.98,legLength:1.02,headScale:.99,tailScale:1},behavior:{forageDrive:1.08,migrationDrive:.96,riskTolerance:.94,recoveryDrive:1.04}},
       organismGenome:{family:'lagomorph',material:{hueShift:.01,lightnessShift:-.02,accentShift:.005},niche:{grass:1.08,shrub:.94,fruit:1,crop:.98},locomotion:{stride:1.07,endurance:.96}},
       currentAction:'forage',lastDecisionAt:10,birthDay:3
+    },{
+      id:'sheep_bonded',chunkId:'chunk_2_-1',species:'sheep',position:{x:50,z:-22},ageDays:520,
+      health:91,hunger:24,thirst:20,energy:79,sex:'female',generation:1,
+      traits:{speed:2.1,size:.92,fertility:.58,wariness:.62},
+      domestication:{stage:'bonded',progress:100,ownerKind:'player',ownerId:'player',command:'stay',bondedDay:3.4,lastInteractionDay:4},
+      currentAction:'rest',lastDecisionAt:12,birthDay:2,representedPopulation:1
     }]}],
     homeNpcs:[],homeObjects:[],
     wildlifeLineage:[{
@@ -99,6 +105,16 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
         representedPopulation:2.5
       },
       fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:2.5,transferredDay:4.2
+    },{
+      entityId:'sheep_migrant',
+      state:{
+        id:'sheep_migrant',chunkId:'chunk_3_-1',species:'sheep',position:{x:62,z:-23},ageDays:500,
+        health:90,hunger:28,thirst:24,energy:70,sex:'male',generation:1,
+        traits:{speed:2.05,size:.9,fertility:.56,wariness:.60},
+        domestication:{stage:'bonded',progress:100,ownerKind:'player',ownerId:'player',command:'follow',bondedDay:3.1,lastInteractionDay:4.1},
+        currentAction:'wander',lastDecisionAt:0,birthDay:2,representedPopulation:1
+      },
+      fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:1,transferredDay:4.3
     }]
   };
   store.save(snapshot);
@@ -111,6 +127,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.phenotype?.morphology.bodyLength,1.05);
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.organismGenome?.family,'lagomorph');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.organismGenome?.locomotion.stride,1.07);
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[1]?.species,'sheep');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[1]?.domestication?.stage,'bonded');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[1]?.domestication?.ownerId,'player');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[1]?.domestication?.command,'stay');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtBirth?.behavior.forageDrive,1.06);
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtDeath?.morphology.legLength,1.04);
@@ -138,8 +158,13 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.phenotype?.behavior.migrationDrive,1.12);
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.organismGenome?.locomotion.stride,1.09);
+  const persistedSheepTransfer=loaded.wildlifeTransfers?.find(transfer=>transfer.entityId==='sheep_migrant');
+  assert.equal(persistedSheepTransfer?.state.domestication?.stage,'bonded');
+  assert.equal(persistedSheepTransfer?.state.domestication?.ownerKind,'player');
+  assert.equal(persistedSheepTransfer?.state.domestication?.command,'follow');
+  assert.equal(persistedSheepTransfer?.representedPopulation,1);
   assert.equal(store.stats().lineageRecords,1);
-  assert.equal(store.stats().pendingWildlifeTransfers,1);
+  assert.equal(store.stats().pendingWildlifeTransfers,2);
   const interactionNetwork=store.interactionNetwork();
   assert.deepEqual(interactionNetwork.coverage,{predation:1,competition:1,disease:1});
   assert.equal(interactionNetwork.edges.find(edge=>edge.kind==='predation'&&edge.fromSpecies==='fox'&&edge.toSpecies==='rabbit')?.meanPressure,32);
