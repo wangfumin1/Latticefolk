@@ -1643,7 +1643,7 @@ class TownGame {
             hit=damage>0;
             kill=other.state.health<=0;
             if(hit){
-              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill);
+              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill,other.state.traits,s.traits);
               this.lineageEpoch++;
             }
           }
