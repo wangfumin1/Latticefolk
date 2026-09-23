@@ -5,7 +5,7 @@ import type {
   CoarseChunkState, PersistedFineChunk, PersistedWildlifeTransfer, WorldPersistenceMeta, WorldPersistenceSnapshot,
   NpcState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeMigrationEvent, WildlifeState, WildlifeTraits, WorldObjectState
 } from '../src/types.js';
-import { computeEvolutionStatistics } from '../src/world/evolution.js';
+import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence } from '../src/world/evolution.js';
 
 type Row = Record<string, unknown>;
 
@@ -281,6 +281,12 @@ export class WorldPersistence {
     const snapshot=this.load();
     const asOfDay=snapshot?snapshot.meta.day+snapshot.meta.minuteOfDay/1440:undefined;
     return computeEvolutionStatistics(snapshot?.wildlifeLineage||[],asOfDay);
+  }
+
+  coevolutionStats() {
+    const snapshot=this.load();
+    const asOfDay=snapshot?snapshot.meta.day+snapshot.meta.minuteOfDay/1440:undefined;
+    return computeWildlifeCoevolutionEvidence(snapshot?.wildlifeLineage||[],asOfDay);
   }
 
   stats() {
