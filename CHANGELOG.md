@@ -40,6 +40,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Multi-species interaction network observability combining full predation, niche-competition, and cross-species disease pair evidence with legacy-safe coverage, active-window God View summaries, and persisted discovered-world `/api/world/interactions` output.
 - Network-linked competition/disease source evidence: fine lineage exposure tracks time-weighted counterpart competition and incoming cross-species disease pressure with separate legacy-safe observation coverage; right-censored fitness statistics connect each source to reproduction, offspring, lifespan, and breeder trait differentials.
 - Generation-level competition/disease source evidence with independent target←source series on both sides of a species pair, source-pressure/reproductive/lifespan/trait trends, within-side correlations, partial/bilateral coverage, God View cards, and evolution API output without cross-species generation alignment.
+- Multi-factor interaction selection evidence using outcome-specific complete-case source features and standardized ridge models across predator, competition, and disease pressures, with explicit non-estimable states, coverage, R², predictor collinearity, and standardized coefficients.
 
 ### Changed
 
