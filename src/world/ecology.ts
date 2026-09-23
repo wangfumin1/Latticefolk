@@ -180,7 +180,8 @@ export function seasonalHabitatSuitability(chunk:CoarseChunkState,species:Wildli
   const profile=wildlifeSpeciesProfile(species);
   const seasonalAffinity=profile.seasonalBiomeAffinity[season][chunk.biome];
   const forage=plantFoodIndex(chunk,species);
-  const base=chunk.ecology*.30+forage*.32+chunk.water*.20+(100-chunk.danger)*.18;
+  const safety=clamp(100-chunk.danger*profile.form.dangerSensitivity);
+  const base=chunk.ecology*.30+forage*.32+chunk.water*.20+safety*.18;
   return round(clamp(base*seasonalAffinity,0,100));
 }
 
@@ -188,8 +189,9 @@ function fundamentalCapacity(chunk:CoarseChunkState,species:WildlifeSpecies){
   const profile=wildlifeSpeciesProfile(species);
   const affinity=profile.biomeAffinity[chunk.biome];
   const forage=plantFoodIndex(chunk,species);
-  const habitat=(chunk.ecology*.38+forage*.32+chunk.water*.20+(100-chunk.danger)*.10)/100;
-  const settlementPenalty=Math.max(.3,1-chunk.settlementLevel*.16);
+  const safety=clamp(100-chunk.danger*profile.form.dangerSensitivity);
+  const habitat=(chunk.ecology*.38+forage*.32+chunk.water*.20+safety*.10)/100;
+  const settlementPenalty=Math.max(.3,1-chunk.settlementLevel*.16*profile.form.settlementSensitivity);
   return Math.max(0,round(profile.baseCarryingCapacity*affinity*habitat*settlementPenalty));
 }
 

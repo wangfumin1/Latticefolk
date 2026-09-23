@@ -336,3 +336,35 @@ test('bison capability bounds keep predator intent unavailable to the shared fal
   assert.equal(d.targetWildlifeId,undefined);
 });
 
+test('monster warg hunts domesticated sheep through shared bounded fallback',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'warg_1',species:'warg',ageDays:600,hunger:86,thirst:20,energy:78}),
+    world:world({nearbyWildlife:[
+      {id:'sheep_prey',species:'sheep',sex:'female',ageDays:500,distance:3,health:88,currentAction:'graze',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'sheep_prey');
+});
+
+test('domesticated sheep remains a bounded grazer without predator capability',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'sheep_1',species:'sheep',ageDays:600,hunger:84,thirst:20,energy:76}),
+    world:world({
+      nearbyWildlife:[
+        {id:'rabbit_near_sheep',species:'rabbit',sex:'female',ageDays:180,distance:2,health:82,currentAction:'graze',mateAvailable:true}
+      ],
+      nearbyResources:[
+        {id:'sheep_grass',tags:['food','nature','grass'],distance:2,resourceAmount:5}
+      ]
+    }),
+    allowedActions:['graze','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'graze');
+  assert.equal(d.targetObjectId,'sheep_grass');
+  assert.equal(d.targetWildlifeId,undefined);
+});
+

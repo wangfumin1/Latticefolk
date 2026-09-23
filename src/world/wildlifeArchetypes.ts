@@ -1,6 +1,6 @@
 import type { ChunkBiome, WildlifeAction, WildlifeOrganismFamily, WildlifeSpecies, WorldSeason } from '../types.js';
 import type {
-  WildlifeFineProfile, WildlifeLifeHistoryProfile, WildlifeMorphologyProfile, WildlifeMovementProfile,
+  WildlifeFineProfile, WildlifeFormProfile, WildlifeLifeHistoryProfile, WildlifeMorphologyProfile, WildlifeMovementProfile,
   WildlifeNicheAxis, WildlifeSpeciesProfile, WildlifeTrophicRole
 } from './wildlifeSpecies.js';
 
@@ -42,6 +42,8 @@ export interface WildlifeCapabilityArchetype {
   actions:readonly WildlifeAction[];
 }
 
+export interface WildlifeFormArchetype extends WildlifeFormProfile {}
+
 export interface WildlifeLifeArchetype {
   id:string;
   lifeHistory:WildlifeLifeHistoryProfile;
@@ -54,6 +56,7 @@ export interface WildlifeSpeciesArchetypeRecipe {
   body:WildlifeBodyArchetype;
   movement:WildlifeMovementArchetype;
   capabilities:WildlifeCapabilityArchetype;
+  form:WildlifeFormArchetype;
   life:WildlifeLifeArchetype;
   prey?:Partial<Record<WildlifeSpecies,{preference:number;damage:number;hungerRelief:number}>>;
 }
@@ -159,6 +162,24 @@ export const WILDLIFE_BODY_ARCHETYPES={
       body:0x77736b,accent:0xb8b1a5,bodyX:1.08,bodyY:.56,bodyZ:.52,
       headSize:.44,legHeight:.40,features:['ringed_tail','face_mask'],featureColor:0x2c2d2d,tailLength:.72
     }
+  },
+  mediumWoollyBovid:{
+    id:'medium_woolly_bovid',
+    organismFamily:'bovid',
+    fine:{speed:2.15,size:.92,fertility:.58,wariness:.62,maxFine:2,maxInitialAge:2400},
+    morphology:{
+      body:0xd8d0bd,accent:0xeee8db,bodyX:1.18,bodyY:.72,bodyZ:.62,
+      headSize:.46,legHeight:.46,features:['horns','tail'],featureColor:0x6f6558,tailLength:.36
+    }
+  },
+  largeCanid:{
+    id:'large_canid',
+    organismFamily:'canid',
+    fine:{speed:3.12,size:1.12,fertility:.30,wariness:.58,maxFine:1,maxInitialAge:2400},
+    morphology:{
+      body:0x3f4247,accent:0x696d73,bodyX:1.24,bodyY:.72,bodyZ:.62,
+      headSize:.52,legHeight:.56,features:['tail'],featureColor:0x24262a,tailLength:.88
+    }
   }
 } satisfies Record<string,WildlifeBodyArchetype>;
 
@@ -193,12 +214,19 @@ export const WILDLIFE_CAPABILITY_ARCHETYPES={
   omnivoreForager:{id:'omnivore_forager',actions:['wander','rest','drink','flee','forage','hunt','seek_mate','migrate']}
 } satisfies Record<string,WildlifeCapabilityArchetype>;
 
+export const WILDLIFE_FORM_ARCHETYPES={
+  wild:{id:'wild',kind:'wild',settlementSensitivity:1,dangerSensitivity:1},
+  domesticated:{id:'domesticated',kind:'domesticated',settlementSensitivity:.20,dangerSensitivity:.85},
+  monster:{id:'monster',kind:'monster',settlementSensitivity:1.20,dangerSensitivity:.35}
+} satisfies Record<string,WildlifeFormArchetype>;
+
 export function composeWildlifeSpeciesProfile(recipe:WildlifeSpeciesArchetypeRecipe):WildlifeSpeciesProfile {
   return {
     archetypeId:recipe.id,
     organismFamily:recipe.body.organismFamily,
     movement:{...recipe.movement},
     capabilities:[...recipe.capabilities.actions],
+    form:{...recipe.form},
     trophicRole:recipe.ecology.trophicRole,
     biomeAffinity:{...recipe.habitat.biomeAffinity},
     seasonalBiomeAffinity:{
