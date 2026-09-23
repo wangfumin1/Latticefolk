@@ -142,3 +142,11 @@ The expanded food web now feeds the same measurable evolutionary evidence layer 
 Named fine individuals accumulate the predator pressure they actually experienced during observed lifetime habitat exposure. God View can compare low/medium/high pressure cohorts and reproduction, offspring and lifespan associations without claiming causality. This creates the first direct bridge from multi-trophic community composition to lineage-level adaptation evidence.
 
 The next ecology direction is more detailed predator/prey specialization and multi-species adaptation: prey-specific hunting success, escape/risk traits, richer niches and species, disease interactions, and eventually morphology/body genes that constrain movement and ecological roles.
+
+## Implemented milestone: predator/prey specialization evidence
+
+Predation evidence is no longer limited to one aggregate pressure value. Coarse ecology retains which predator species contributed pressure to which prey species, and named fine individuals accumulate time-weighted source pressure only while actually observed. A rabbit can therefore carry separate lifetime fox and wolf exposure means instead of one opaque combined history.
+
+God View and evolution statistics compare source-specific exposure against reproduction, offspring count, lifespan and breeder trait differentials while preserving sample counts, right-censoring and the distinction between legacy unknown history and observed zero pressure. These statistics remain evidence of association, not proof that a specific predator caused a trait trend.
+
+The next ecology step is realized interaction evidence: hunting success, escape success, predator/prey trait matching and multi-species feedback across generations. That moves the system from measuring that pressure was present toward measuring how inherited morphology and behavior alter actual ecological outcomes.
