@@ -72,3 +72,18 @@ test('evolution statistics expose realized hunting escape and attack-survival ra
   assert.ok(rabbitFox.successTraitDifferential.speed>0);
   assert.ok(rabbitFox.successTraitDifferential.wariness>0);
 });
+
+
+test('realized pair trait differential stays neutral when no individual succeeded',()=>{
+  const fox=record('fox_fail','fox',traits(2.9,.68));
+  recordWildlifeHuntOutcome(fox,'rabbit',false,false);
+  const pair=computeEvolutionStatistics([fox],200)
+    .find(entry=>entry.species==='fox')!.realizedPredation.pairs
+    .find(entry=>entry.role==='predator'&&entry.counterpartSpecies==='rabbit')!;
+  assert.equal(pair.huntAttempts,1);
+  assert.equal(pair.huntHits,0);
+  assert.equal(pair.successTraitDifferential.speed,0);
+  assert.equal(pair.successTraitDifferential.size,0);
+  assert.equal(pair.successTraitDifferential.fertility,0);
+  assert.equal(pair.successTraitDifferential.wariness,0);
+});
