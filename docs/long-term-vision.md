@@ -221,4 +221,12 @@ Wildlife diversity is now driven by a single simulation-owned species profile ra
 
 Badger is the first deliberately mixed niche added through this path. It consumes plant resources and can hunt rabbit, while wolf can predate badger; the same individual still participates in disease, niche competition, migration, reproduction, lineage and evolution observability. Its low elongated striped body is procedural, so the milestone adds no external asset dependency. Old persisted species populations upgrade additively, and legacy per-species pressure maps stay sparse where the historical world never observed the newly introduced species instead of fabricating zero exposure.
 
-The next organism step is **heritable phenotype structure**: move selected body ratios/morphology and behavior parameters from fixed species defaults into bounded genes/phenotypes, inherit and mutate them deterministically, and archive phenotype-at-birth/death so God View can measure whether morphology changes track survival/reproduction across generations.
+## Implemented milestone: heritable phenotype structure
+
+Selected organism parameters now exist as bounded inherited phenotype rather than fixed visual constants. Founder fine animals receive deterministic entity-seeded variation; offspring inherit parental midpoints plus deterministic bounded mutation. Morphology covers body length/height, leg length, head scale and tail scale; behavior covers forage drive, migration drive, risk tolerance and recovery drive. These genes remain inside the species envelope: species profiles still own trophic rules, life history, legal prey and baseline morphology.
+
+Morphology phenotype changes the constrained procedural body. Behavior phenotype changes only bounded decision tendencies in the local fallback (feeding threshold, migration gain, predator flee distance and recovery threshold), and the optional Jev provider sees the same phenotype only as read-only context under the existing wildlife budget. Genetics and all consequences remain deterministic simulation truth.
+
+The lineage archive persists phenotype-at-birth/death with `birth`, `founder_seed` or `legacy_upgrade` provenance. Evolution statistics expose known/comparable sample counts, phenotype means/variance, per-generation slopes and breeder-vs-comparable-cohort differentials. Legacy-upgrade samples are excluded from trend/differential calculations so the migration process cannot fabricate historical evolution.
+
+The next organism step is **phenotype→function selection**: give morphology/behavior genes deterministic locomotion, energy and resource-efficiency trade-offs, then measure phenotype-by-environment reproductive/survival associations before scaling toward larger generated organism families.
