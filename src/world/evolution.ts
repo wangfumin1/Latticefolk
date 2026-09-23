@@ -596,6 +596,8 @@ const MULTIFACTOR_RIDGE_LAMBDA=.25;
 const MULTIFACTOR_MAX_FEATURES=6;
 const MULTIFACTOR_MIN_FEATURE_SAMPLES=6;
 const MULTIFACTOR_MIN_COMPLETE_SAMPLES=8;
+const MULTIFACTOR_MAX_PAIRWISE_CORRELATION=.98;
+const MULTIFACTOR_MAX_VIF=10;
 const EPS=1e-10;
 
 function sourceFeatureValue(record:WildlifeLineageRecord,feature:MultifactorFeature):number|undefined {
@@ -626,6 +628,41 @@ function solveLinearSystem(matrix:number[][],vector:number[]):number[]|undefined
     }
   }
   return a.map(row=>row[n]!);
+}
+
+function multifactorPredictorDiagnostics(xColumns:number[][]) {
+  const p=xColumns.length;
+  if(p<2)return {stable:false,maxFeatureCorrelation:null,maxVarianceInflationFactor:null};
+  const correlationMatrix=Array.from({length:p},()=>Array(p).fill(0) as number[]);
+  let maxFeatureCorrelation=0;
+  for(let j=0;j<p;j++){
+    for(let k=0;k<p;k++){
+      const value=mean(xColumns[j]!.map((entry,index)=>entry*xColumns[k]![index]!));
+      correlationMatrix[j]![k]=value;
+      if(j<k)maxFeatureCorrelation=Math.max(maxFeatureCorrelation,Math.abs(value));
+    }
+  }
+
+  let maxVarianceInflationFactor=0;
+  for(let j=0;j<p;j++){
+    const unit=Array(p).fill(0) as number[];
+    unit[j]=1;
+    const inverseColumn=solveLinearSystem(correlationMatrix,unit);
+    if(!inverseColumn){
+      return {stable:false,maxFeatureCorrelation,maxVarianceInflationFactor:null};
+    }
+    const vif=inverseColumn[j]!;
+    if(!Number.isFinite(vif)||vif<1-EPS){
+      return {stable:false,maxFeatureCorrelation,maxVarianceInflationFactor:null};
+    }
+    maxVarianceInflationFactor=Math.max(maxVarianceInflationFactor,vif);
+  }
+
+  return {
+    stable:maxFeatureCorrelation<MULTIFACTOR_MAX_PAIRWISE_CORRELATION&&maxVarianceInflationFactor<=MULTIFACTOR_MAX_VIF,
+    maxFeatureCorrelation,
+    maxVarianceInflationFactor
+  };
 }
 
 function fitMultifactorOutcome(
@@ -680,25 +717,24 @@ function fitMultifactorOutcome(
     if(rows.length>=minimum)selected.push(candidate);
   }
 
-  let stable=selected;
-  let rows=base.filter(record=>stable.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
+  let stableFeatures=selected;
+  let rows=base.filter(record=>stableFeatures.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
   let changed=true;
-  while(changed&&stable.length){
+  while(changed&&stableFeatures.length){
     changed=false;
-    const filtered=stable.filter(entry=>variance(rows.map(record=>sourceFeatureValue(record,entry.feature)!))>EPS);
-    if(filtered.length!==stable.length){
-      stable=filtered;
-      rows=base.filter(record=>stable.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
+    const filtered=stableFeatures.filter(entry=>variance(rows.map(record=>sourceFeatureValue(record,entry.feature)!))>EPS);
+    if(filtered.length!==stableFeatures.length){
+      stableFeatures=filtered;
+      rows=base.filter(record=>stableFeatures.every(entry=>sourceFeatureValue(record,entry.feature)!==undefined));
       changed=true;
     }
   }
 
-  const minimum=Math.max(MULTIFACTOR_MIN_COMPLETE_SAMPLES,stable.length*3);
+  const minimum=Math.max(MULTIFACTOR_MIN_COMPLETE_SAMPLES,stableFeatures.length*3);
   const y=rows.map(outcomeValue);
   const yMean=mean(y);
   const yVariance=variance(y,yMean);
-  const estimable=stable.length>=2&&rows.length>=minimum&&yVariance>EPS;
-  const coefficients:WildlifeMultifactorFeatureCoefficient[]=stable.map(entry=>{
+  const coefficients:WildlifeMultifactorFeatureCoefficient[]=stableFeatures.map(entry=>{
     const values=rows.map(record=>sourceFeatureValue(record,entry.feature)!);
     return {
       kind:entry.feature.kind,
@@ -710,21 +746,31 @@ function fitMultifactorOutcome(
       standardizedCoefficient:null
     };
   });
+  const unavailable=(status:WildlifeMultifactorOutcomeEvidence['status'],diagnostics?:{
+    maxFeatureCorrelation:number|null;
+    maxVarianceInflationFactor:number|null;
+  }):WildlifeMultifactorOutcomeEvidence=>({
+    outcome,estimable:false,status,baseSamples:base.length,samples:rows.length,
+    candidateFeatures:candidates.length,selectedFeatures:stableFeatures.length,
+    ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,rSquared:null,
+    maxFeatureCorrelation:diagnostics?.maxFeatureCorrelation??null,
+    maxVarianceInflationFactor:diagnostics?.maxVarianceInflationFactor??null,
+    coefficients
+  });
 
-  if(!estimable){
-    return {
-      outcome,estimable:false,baseSamples:base.length,samples:rows.length,
-      candidateFeatures:candidates.length,selectedFeatures:stable.length,
-      ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,rSquared:null,maxFeatureCorrelation:null,coefficients
-    };
-  }
+  if(stableFeatures.length<2)return unavailable('insufficient_features');
+  if(rows.length<minimum)return unavailable('insufficient_samples');
+  if(yVariance<=EPS)return unavailable('no_outcome_variance');
 
   const ySd=Math.sqrt(yVariance);
   const standardizedY=y.map(value=>(value-yMean)/ySd);
   const xColumns=coefficients.map((coefficient,index)=>{
-    const values=rows.map(record=>sourceFeatureValue(record,stable[index]!.feature)!);
+    const values=rows.map(record=>sourceFeatureValue(record,stableFeatures[index]!.feature)!);
     return values.map(value=>(value-coefficient.mean)/coefficient.stdDev);
   });
+  const diagnostics=multifactorPredictorDiagnostics(xColumns);
+  if(!diagnostics.stable)return unavailable('unstable_collinearity',diagnostics);
+
   const p=xColumns.length;
   const matrix=Array.from({length:p},()=>Array(p).fill(0) as number[]);
   const vector=Array(p).fill(0) as number[];
@@ -733,33 +779,23 @@ function fitMultifactorOutcome(
     vector[j]=mean(rows.map((_,index)=>xColumns[j]![index]!*standardizedY[index]!));
   }
   const beta=solveLinearSystem(matrix,vector);
-  if(!beta){
-    return {
-      outcome,estimable:false,baseSamples:base.length,samples:rows.length,
-      candidateFeatures:candidates.length,selectedFeatures:stable.length,
-      ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,rSquared:null,maxFeatureCorrelation:null,coefficients
-    };
-  }
+  if(!beta)return unavailable('numerical_failure',diagnostics);
   for(let j=0;j<coefficients.length;j++)coefficients[j]!.standardizedCoefficient=beta[j]!;
   coefficients.sort((a,b)=>Math.abs(b.standardizedCoefficient||0)-Math.abs(a.standardizedCoefficient||0)||a.kind.localeCompare(b.kind)||a.sourceSpecies.localeCompare(b.sourceSpecies));
 
   const predictions=rows.map((_,index)=>beta.reduce((sum,value,j)=>sum+value*xColumns[j]![index]!,0));
   const residual=mean(standardizedY.map((value,index)=>(value-predictions[index]!)**2));
-  let maxFeatureCorrelation=0;
-  for(let j=0;j<p;j++)for(let k=j+1;k<p;k++){
-    maxFeatureCorrelation=Math.max(maxFeatureCorrelation,Math.abs(mean(rows.map((_,index)=>xColumns[j]![index]!*xColumns[k]![index]!))));
-  }
 
   return {
-    outcome,estimable:true,baseSamples:base.length,samples:rows.length,
-    candidateFeatures:candidates.length,selectedFeatures:stable.length,
+    outcome,estimable:true,status:'estimable',baseSamples:base.length,samples:rows.length,
+    candidateFeatures:candidates.length,selectedFeatures:stableFeatures.length,
     ridgeLambda:MULTIFACTOR_RIDGE_LAMBDA,
     rSquared:1-residual,
-    maxFeatureCorrelation:p>1?maxFeatureCorrelation:null,
+    maxFeatureCorrelation:diagnostics.maxFeatureCorrelation,
+    maxVarianceInflationFactor:diagnostics.maxVarianceInflationFactor,
     coefficients
   };
 }
-
 function multifactorSelection(
   records:WildlifeLineageRecord[],
   species:WildlifeSpecies,
