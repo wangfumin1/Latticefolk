@@ -291,6 +291,18 @@ export interface WildlifeDiseasePressureState {
   strongestPair?: WildlifeDiseasePair;
 }
 
+export interface WildlifePredatorPressurePair {
+  predatorSpecies: WildlifeSpecies;
+  preySpecies: WildlifeSpecies;
+  pressure: number;
+}
+
+export interface WildlifePredatorPressureState {
+  speciesPressure: Record<WildlifeSpecies,number>;
+  meanPressure: number;
+  strongestPair?: WildlifePredatorPressurePair;
+}
+
 export interface CoarseWildlifePopulation {
   species: WildlifeSpecies;
   count: number;
@@ -299,6 +311,7 @@ export interface CoarseWildlifePopulation {
   diseaseLoad?: number;
   competitionPressure?: number;
   importedDiseasePressure?: number;
+  predatorPressure?: number;
 }
 
 export interface WildlifeTraits {
@@ -322,6 +335,8 @@ export interface WildlifeHabitatSnapshot {
   seasonalSuitability?: number;
   /** Species-specific disease transmission pressure observed at this snapshot; absent in legacy records. */
   diseasePressure?: number;
+  /** Species-specific predator pressure observed at this snapshot; absent in legacy records. */
+  predatorPressure?: number;
 }
 
 export interface WildlifeHabitatExposure {
@@ -383,7 +398,7 @@ export interface WildlifeGenerationCohortStats {
   traitVariance: WildlifeTraits;
 }
 
-export type WildlifeFitnessExposureDimension = 'competitionPressure' | 'seasonalSuitability' | 'diseasePressure';
+export type WildlifeFitnessExposureDimension = 'competitionPressure' | 'seasonalSuitability' | 'diseasePressure' | 'predatorPressure';
 export type WildlifeFitnessBand = 'low' | 'medium' | 'high';
 
 export interface WildlifeFitnessBandStats {
@@ -563,6 +578,7 @@ export interface CoarseChunkState {
   trophicFlux?: TrophicFluxState;
   nicheCompetition?: WildlifeNicheCompetitionState;
   wildlifeDisease?: WildlifeDiseasePressureState;
+  wildlifePredatorPressure?: WildlifePredatorPressureState;
   wildlife?: CoarseWildlifePopulation[];
   lastDecisionAt: number;
   decisionVersion: number;
