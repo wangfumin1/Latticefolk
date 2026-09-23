@@ -2008,6 +2008,7 @@ class TownGame {
       }
       if(!existing.phenotypeAtBirth&&state.phenotype){
         existing.phenotypeAtBirth=structuredClone(state.phenotype);
+        existing.phenotypeProvenance='legacy_upgrade';
         changed=true;
       }
       if(changed)this.lineageEpoch++;
@@ -2023,6 +2024,7 @@ class TownGame {
       birthChunk:state.chunkId,
       traitsAtBirth:structuredClone(state.traits),
       phenotypeAtBirth:state.phenotype?structuredClone(state.phenotype):undefined,
+      phenotypeProvenance:state.phenotype?(state.motherId||state.fatherId?'birth':'founder_seed'):undefined,
       birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
