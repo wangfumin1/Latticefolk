@@ -777,19 +777,30 @@ test('phenotype observability keeps legacy coverage explicit and measures genera
     sample.push({
       entityId:`phenotype_g${generation}_a`,species:'rabbit',birthDay:1+generation*20,generation,birthChunk:'a',
       traitsAtBirth:traits(.4),phenotypeAtBirth:phenotype(.90+generation*.05,.85+generation*.04),
+      phenotypeProvenance:generation===0?'founder_seed':'birth',
       origin:generation===0?'founder':'reproduction',offspringCount:0,reproductiveSuccess:false
     });
     sample.push({
       entityId:`phenotype_g${generation}_b`,species:'rabbit',birthDay:2+generation*20,generation,birthChunk:'a',
       traitsAtBirth:traits(.6),phenotypeAtBirth:phenotype(1.02+generation*.05,1.02+generation*.04),
+      phenotypeProvenance:generation===0?'founder_seed':'birth',
       origin:generation===0?'founder':'reproduction',offspringCount:2,reproductiveSuccess:true
     });
   }
+  sample.push({
+    entityId:'legacy_upgrade_outlier',species:'rabbit',birthDay:1,generation:99,birthChunk:'legacy',
+    traitsAtBirth:traits(.5),phenotypeAtBirth:phenotype(1.22,.70),phenotypeProvenance:'legacy_upgrade',
+    origin:'founder',offspringCount:0,reproductiveSuccess:false
+  });
   const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
-  assert.equal(rabbit.phenotype.sampleSize,6);
+  assert.equal(rabbit.phenotype.sampleSize,7);
+  assert.equal(rabbit.phenotype.comparableSamples,6);
+  assert.equal(rabbit.phenotype.birthTrackedSamples,4);
+  assert.equal(rabbit.phenotype.founderSeedSamples,2);
+  assert.equal(rabbit.phenotype.legacyUpgradeSamples,1);
   assert.ok((rabbit.phenotype.variance?.morphology.bodyLength||0)>0);
-  assert.ok((rabbit.phenotype.trendPerGeneration?.morphology.bodyLength||0)>0);
-  assert.ok((rabbit.phenotype.trendPerGeneration?.behavior.riskTolerance||0)>0);
+  assert.ok(Math.abs((rabbit.phenotype.trendPerGeneration?.morphology.bodyLength||0)-.05)<1e-12);
+  assert.ok(Math.abs((rabbit.phenotype.trendPerGeneration?.behavior.riskTolerance||0)-.04)<1e-12);
   assert.ok((rabbit.phenotype.breederDifferential?.morphology.bodyLength||0)>0);
   assert.ok((rabbit.phenotype.breederDifferential?.behavior.riskTolerance||0)>0);
   assert.equal(rabbit.cohorts[0]?.phenotypeSamples,2);
