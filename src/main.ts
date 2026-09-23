@@ -2787,12 +2787,12 @@ class TownGame {
         this.toast(i18n.t('wildlife.domestication.needFood'));
         return;
       }
-      const next=advanceWildlifeDomestication(state,currentDay,'player','player');
-      if(!next)return;
-      if(current.stage!=='bonded'&&next.stage==='bonded'&&!this.individualizeDomesticatedWildlife(animal)){
+      if(existingFixed<=0&&!this.individualizeDomesticatedWildlife(animal)){
         this.toast(i18n.t('wildlife.domestication.individualizeFailed'));
         return;
       }
+      const next=advanceWildlifeDomestication(state,currentDay,'player','player');
+      if(!next)return;
       this.playerInventory[food]--;
       state.hunger=clamp(state.hunger-18,0,100);
       state.domestication=next;
