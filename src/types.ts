@@ -244,7 +244,7 @@ export type ChunkStrategy = 'sustain' | 'grow_settlement' | 'conserve' | 'extrac
 export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate';
 export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
-export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'goat' | 'fox' | 'wolf';
+export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'goat' | 'fox' | 'wolf' | 'badger';
 export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate' | 'migrate';
 export type WorldSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 
@@ -270,7 +270,7 @@ export interface WildlifeCompetitionPair {
 }
 
 export interface WildlifeNicheCompetitionState {
-  speciesPressure: Record<WildlifeSpecies,number>;
+  speciesPressure: Partial<Record<WildlifeSpecies,number>>;
   meanPressure: number;
   /** Full symmetric pair decomposition; absent in legacy snapshots. */
   pairs?: WildlifeCompetitionPair[];
@@ -285,10 +285,10 @@ export interface WildlifeDiseasePair {
 
 export interface WildlifeDiseasePressureState {
   environmentalPressure: number;
-  speciesPressure: Record<WildlifeSpecies,number>;
-  localContactPressure: Record<WildlifeSpecies,number>;
-  crossSpeciesPressure: Record<WildlifeSpecies,number>;
-  importedPressure: Record<WildlifeSpecies,number>;
+  speciesPressure: Partial<Record<WildlifeSpecies,number>>;
+  localContactPressure: Partial<Record<WildlifeSpecies,number>>;
+  crossSpeciesPressure: Partial<Record<WildlifeSpecies,number>>;
+  importedPressure: Partial<Record<WildlifeSpecies,number>>;
   meanPressure: number;
   /** Full directed cross-species transmission decomposition; absent in legacy snapshots. */
   pairs?: WildlifeDiseasePair[];
@@ -302,7 +302,7 @@ export interface WildlifePredatorPressurePair {
 }
 
 export interface WildlifePredatorPressureState {
-  speciesPressure: Record<WildlifeSpecies,number>;
+  speciesPressure: Partial<Record<WildlifeSpecies,number>>;
   meanPressure: number;
   pairs?: WildlifePredatorPressurePair[];
   strongestPair?: WildlifePredatorPressurePair;

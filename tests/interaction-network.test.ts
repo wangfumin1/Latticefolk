@@ -19,8 +19,8 @@ test('coarse ecology retains full competition and disease pair decompositions',(
   const competition=computeWildlifeNicheCompetition(chunk,populations);
   const disease=computeWildlifeDiseasePressure(chunk,populations,'clear');
 
-  assert.ok((competition.pairs?.length||0)>=15);
-  assert.equal(disease.pairs?.length,30);
+  assert.equal(competition.pairs?.length,21);
+  assert.equal(disease.pairs?.length,42);
   assert.ok(disease.pairs?.some(pair=>pair.fromSpecies==='fox'&&pair.toSpecies==='rabbit'));
   assert.ok(competition.pairs?.some(pair=>
     (pair.speciesA==='rabbit'&&pair.speciesB==='deer')||(pair.speciesA==='deer'&&pair.speciesB==='rabbit')

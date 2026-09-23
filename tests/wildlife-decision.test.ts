@@ -172,3 +172,31 @@ test('fallback mating maturity uses species life-history threshold',()=>{
   }]};
   assert.notEqual(fallbackWildlifeDecisions(req).decisions[0]?.action,'seek_mate');
 });
+
+test('hungry badger hunts rabbit through profile-driven omnivore predation',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'badger_1',species:'badger',ageDays:500,hunger:82,thirst:20,energy:75}),
+    world:world({nearbyWildlife:[
+      {id:'rabbit_prey',species:'rabbit',sex:'female',ageDays:180,distance:4,health:85,currentAction:'graze',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'rabbit_prey');
+});
+
+test('hungry badger falls back to profile forage when no legal prey is nearby',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'badger_2',species:'badger',ageDays:500,hunger:82,thirst:20,energy:75}),
+    world:world({nearbyResources:[
+      {id:'berry_bush',tags:['nature','forage','food'],distance:3,resourceAmount:5}
+    ]}),
+    allowedActions:['hunt','forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'forage');
+  assert.equal(d.targetObjectId,'berry_bush');
+  assert.equal(d.reasonCode,'omnivore_forage');
+});
+

@@ -1,54 +1,234 @@
-import type { WildlifeSpecies } from '../types.js';
+import type { ChunkBiome, WildlifeAction, WildlifeSpecies, WorldSeason } from '../types.js';
 
-export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf'];
-export const WILDLIFE_HERBIVORES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat'];
-export const WILDLIFE_PREDATORS:readonly WildlifeSpecies[]=['fox','wolf'];
+export type WildlifeTrophicRole='herbivore'|'omnivore'|'predator';
+export type WildlifeNicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
+export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe';
 
-const PREY:Record<WildlifeSpecies,readonly WildlifeSpecies[]>={
-  rabbit:[],
-  deer:[],
-  boar:[],
-  goat:[],
-  fox:['rabbit','deer'],
-  wolf:['rabbit','deer','boar','goat','fox']
+export interface WildlifeLifeHistoryProfile {
+  adultAge:number;
+  maxAge:number;
+  gestationDays:number;
+  birthCooldown:number;
+  litterMin:number;
+  litterMax:number;
+}
+
+export interface WildlifeFineProfile {
+  speed:number;
+  size:number;
+  fertility:number;
+  wariness:number;
+  maxFine:number;
+  maxInitialAge:number;
+}
+
+export interface WildlifeMorphologyProfile {
+  body:number;
+  accent:number;
+  bodyX:number;
+  bodyY:number;
+  bodyZ:number;
+  headSize:number;
+  legHeight:number;
+  features:readonly WildlifeMorphologyFeature[];
+  featureColor?:number;
+  tailLength?:number;
+}
+
+export interface WildlifeSpeciesProfile {
+  trophicRole:WildlifeTrophicRole;
+  biomeAffinity:Record<ChunkBiome,number>;
+  seasonalBiomeAffinity:Record<WorldSeason,Record<ChunkBiome,number>>;
+  niche:Record<WildlifeNicheAxis,number>;
+  plantForageWeights:Record<'grass'|'shrub'|'fruit'|'crop',number>;
+  plantConsumptionWeights:Record<'grass'|'shrub'|'fruit'|'crop',number>;
+  baseCarryingCapacity:number;
+  growthRate:number;
+  herbivoryRate:number;
+  predationRate:number;
+  huntEnergyCost:number;
+  rainMortality:number;
+  feedingAction:Extract<WildlifeAction,'graze'|'forage'>;
+  forageTags:readonly string[];
+  fine:WildlifeFineProfile;
+  morphology:WildlifeMorphologyProfile;
+  lifeHistory:WildlifeLifeHistoryProfile;
+  prey:Partial<Record<WildlifeSpecies,{preference:number;damage:number;hungerRelief:number}>>;
+}
+
+const zeroPlants:Record<'grass'|'shrub'|'fruit'|'crop',number>={grass:0,shrub:0,fruit:0,crop:0};
+const seasonal=(spring:Record<ChunkBiome,number>,summer:Record<ChunkBiome,number>,autumn:Record<ChunkBiome,number>,winter:Record<ChunkBiome,number>)=>({spring,summer,autumn,winter});
+
+export const WILDLIFE_SPECIES:readonly WildlifeSpecies[]=['rabbit','deer','boar','goat','fox','wolf','badger'];
+
+export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesProfile>={
+  rabbit:{
+    trophicRole:'herbivore',
+    biomeAffinity:{plains:1,forest:.82,hills:.65,wetlands:.72,dryland:.35},
+    seasonalBiomeAffinity:seasonal(
+      {plains:1.10,forest:1.00,hills:.92,wetlands:1.04,dryland:.76},
+      {plains:.98,forest:1.02,hills:.92,wetlands:1.08,dryland:.72},
+      {plains:1.04,forest:1.06,hills:.96,wetlands:.94,dryland:.78},
+      {plains:.88,forest:1.02,hills:.90,wetlands:.82,dryland:.68}
+    ),
+    niche:{grass:.58,shrub:.30,fruit:0,crop:.12,prey:0,space:.15},
+    plantForageWeights:{grass:.58,shrub:.30,fruit:0,crop:.12},
+    plantConsumptionWeights:{grass:.72,shrub:.154,fruit:0,crop:0},
+    baseCarryingCapacity:36,growthRate:.010,herbivoryRate:.008,predationRate:0,huntEnergyCost:0,rainMortality:.0025,
+    feedingAction:'graze',forageTags:['nature','food','grass'],
+    fine:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3,maxInitialAge:500},
+    morphology:{body:0xb8a48d,accent:0xe4d4c1,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['long_ears']},
+    lifeHistory:{adultAge:90,maxAge:2200,gestationDays:5,birthCooldown:8,litterMin:1,litterMax:3},
+    prey:{}
+  },
+  deer:{
+    trophicRole:'herbivore',
+    biomeAffinity:{plains:.72,forest:1,hills:.82,wetlands:.55,dryland:.28},
+    seasonalBiomeAffinity:seasonal(
+      {plains:1.02,forest:1.04,hills:1.00,wetlands:.88,dryland:.70},
+      {plains:.92,forest:.98,hills:1.12,wetlands:.84,dryland:.66},
+      {plains:.90,forest:1.14,hills:.98,wetlands:.80,dryland:.68},
+      {plains:.84,forest:1.10,hills:.92,wetlands:.72,dryland:.64}
+    ),
+    niche:{grass:.38,shrub:.38,fruit:.24,crop:0,prey:0,space:.15},
+    plantForageWeights:{grass:.38,shrub:.38,fruit:.24,crop:0},
+    plantConsumptionWeights:{grass:.40,shrub:.38,fruit:.22,crop:0},
+    baseCarryingCapacity:16,growthRate:.0046,herbivoryRate:.018,predationRate:0,huntEnergyCost:0,rainMortality:0,
+    feedingAction:'graze',forageTags:['nature','food','grass'],
+    fine:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2,maxInitialAge:3200},
+    morphology:{body:0x9a6945,accent:0xd2b28f,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['antlers'],featureColor:0x5b4331},
+    lifeHistory:{adultAge:300,maxAge:5200,gestationDays:18,birthCooldown:32,litterMin:1,litterMax:1},
+    prey:{}
+  },
+  boar:{
+    trophicRole:'herbivore',
+    biomeAffinity:{plains:.68,forest:1,hills:.62,wetlands:.84,dryland:.25},
+    seasonalBiomeAffinity:seasonal(
+      {plains:.94,forest:1.08,hills:.90,wetlands:1.04,dryland:.66},
+      {plains:.88,forest:1.02,hills:.86,wetlands:1.14,dryland:.60},
+      {plains:.90,forest:1.16,hills:.92,wetlands:1.00,dryland:.64},
+      {plains:.80,forest:1.10,hills:.86,wetlands:.88,dryland:.58}
+    ),
+    niche:{grass:0,shrub:.28,fruit:.34,crop:.38,prey:0,space:.15},
+    plantForageWeights:{grass:0,shrub:.28,fruit:.34,crop:.38},
+    plantConsumptionWeights:{grass:0,shrub:.25,fruit:.30,crop:.45},
+    baseCarryingCapacity:12,growthRate:.0050,herbivoryRate:.020,predationRate:0,huntEnergyCost:0,rainMortality:0,
+    feedingAction:'forage',forageTags:['forage','food','farm'],
+    fine:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2,maxInitialAge:3000},
+    morphology:{body:0x5d4a3c,accent:0x796354,bodyX:1.2,bodyY:.7,bodyZ:.6,headSize:.50,legHeight:.45,features:[]},
+    lifeHistory:{adultAge:260,maxAge:4300,gestationDays:12,birthCooldown:24,litterMin:1,litterMax:2},
+    prey:{}
+  },
+  goat:{
+    trophicRole:'herbivore',
+    biomeAffinity:{plains:.62,forest:.52,hills:1,wetlands:.30,dryland:.76},
+    seasonalBiomeAffinity:seasonal(
+      {plains:.96,forest:.78,hills:1.10,wetlands:.62,dryland:.96},
+      {plains:.82,forest:.72,hills:1.08,wetlands:.52,dryland:1.04},
+      {plains:.90,forest:.76,hills:1.12,wetlands:.56,dryland:.98},
+      {plains:.78,forest:.70,hills:1.02,wetlands:.46,dryland:.88}
+    ),
+    niche:{grass:.48,shrub:.42,fruit:.06,crop:.04,prey:0,space:.18},
+    plantForageWeights:{grass:.48,shrub:.42,fruit:.06,crop:.04},
+    plantConsumptionWeights:{grass:.52,shrub:.42,fruit:.06,crop:0},
+    baseCarryingCapacity:14,growthRate:.0058,herbivoryRate:.016,predationRate:0,huntEnergyCost:0,rainMortality:0,
+    feedingAction:'graze',forageTags:['nature','food','grass'],
+    fine:{speed:2.5,size:.82,fertility:.62,wariness:.72,maxFine:2,maxInitialAge:2600},
+    morphology:{body:0xc2b8a0,accent:0xe4dcc8,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['horns'],featureColor:0x75684f},
+    lifeHistory:{adultAge:220,maxAge:3900,gestationDays:14,birthCooldown:26,litterMin:1,litterMax:2},
+    prey:{}
+  },
+  fox:{
+    trophicRole:'predator',
+    biomeAffinity:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48},
+    seasonalBiomeAffinity:seasonal(
+      {plains:1.05,forest:1.03,hills:.96,wetlands:.88,dryland:.76},
+      {plains:1.02,forest:1.00,hills:.98,wetlands:.90,dryland:.74},
+      {plains:1.00,forest:1.08,hills:1.00,wetlands:.84,dryland:.76},
+      {plains:.94,forest:1.06,hills:.98,wetlands:.78,dryland:.72}
+    ),
+    niche:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25},
+    plantForageWeights:zeroPlants,plantConsumptionWeights:zeroPlants,
+    baseCarryingCapacity:7,growthRate:.0032,herbivoryRate:0,predationRate:.015,huntEnergyCost:8,rainMortality:0,
+    feedingAction:'forage',forageTags:['forage','food'],
+    fine:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1,maxInitialAge:1800},
+    morphology:{body:0xc86f35,accent:0xf0d0a5,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['tail'],tailLength:.75},
+    lifeHistory:{adultAge:240,maxAge:1900,gestationDays:8,birthCooldown:20,litterMin:1,litterMax:2},
+    prey:{rabbit:{preference:1,damage:100,hungerRelief:48},deer:{preference:.22,damage:45,hungerRelief:30}}
+  },
+  wolf:{
+    trophicRole:'predator',
+    biomeAffinity:{plains:.68,forest:1,hills:.94,wetlands:.46,dryland:.44},
+    seasonalBiomeAffinity:seasonal(
+      {plains:.90,forest:1.08,hills:1.02,wetlands:.68,dryland:.66},
+      {plains:.82,forest:1.02,hills:1.08,wetlands:.62,dryland:.60},
+      {plains:.88,forest:1.14,hills:1.06,wetlands:.64,dryland:.62},
+      {plains:.92,forest:1.16,hills:1.08,wetlands:.58,dryland:.64}
+    ),
+    niche:{grass:0,shrub:0,fruit:0,crop:0,prey:.82,space:.36},
+    plantForageWeights:zeroPlants,plantConsumptionWeights:zeroPlants,
+    baseCarryingCapacity:5,growthRate:.0026,herbivoryRate:0,predationRate:.021,huntEnergyCost:10,rainMortality:0,
+    feedingAction:'forage',forageTags:['forage','food'],
+    fine:{speed:3.0,size:1.0,fertility:.36,wariness:.70,maxFine:1,maxInitialAge:2200},
+    morphology:{body:0x696d72,accent:0xb0b3b7,bodyX:1.18,bodyY:.68,bodyZ:.58,headSize:.49,legHeight:.52,features:['tail'],tailLength:.82},
+    lifeHistory:{adultAge:300,maxAge:2600,gestationDays:10,birthCooldown:24,litterMin:1,litterMax:2},
+    prey:{
+      rabbit:{preference:.34,damage:100,hungerRelief:34},
+      deer:{preference:.72,damage:78,hungerRelief:52},
+      boar:{preference:.48,damage:58,hungerRelief:44},
+      goat:{preference:.68,damage:86,hungerRelief:50},
+      fox:{preference:.08,damage:72,hungerRelief:24},
+      badger:{preference:.14,damage:65,hungerRelief:20}
+    }
+  },
+  badger:{
+    trophicRole:'omnivore',
+    biomeAffinity:{plains:.62,forest:.92,hills:.84,wetlands:.70,dryland:.38},
+    seasonalBiomeAffinity:seasonal(
+      {plains:.78,forest:1.06,hills:.96,wetlands:.92,dryland:.62},
+      {plains:.72,forest:1.00,hills:.92,wetlands:.88,dryland:.58},
+      {plains:.78,forest:1.08,hills:.98,wetlands:.82,dryland:.62},
+      {plains:.70,forest:.98,hills:.90,wetlands:.74,dryland:.56}
+    ),
+    niche:{grass:.05,shrub:.18,fruit:.22,crop:.15,prey:.28,space:.22},
+    plantForageWeights:{grass:.05,shrub:.25,fruit:.42,crop:.28},
+    plantConsumptionWeights:{grass:.02,shrub:.08,fruit:.12,crop:.08},
+    baseCarryingCapacity:8,growthRate:.0038,herbivoryRate:.007,predationRate:.010,huntEnergyCost:7,rainMortality:0,
+    feedingAction:'forage',forageTags:['forage','food','nature','farm'],
+    fine:{speed:2.2,size:.78,fertility:.38,wariness:.68,maxFine:1,maxInitialAge:2100},
+    morphology:{body:0x454944,accent:0xd8d5c8,bodyX:1.28,bodyY:.56,bodyZ:.62,headSize:.44,legHeight:.38,features:['tail','dorsal_stripe'],featureColor:0xf0ead8,tailLength:.42},
+    lifeHistory:{adultAge:280,maxAge:3600,gestationDays:11,birthCooldown:24,litterMin:1,litterMax:2},
+    prey:{rabbit:{preference:.55,damage:90,hungerRelief:36}}
+  }
 };
 
-const PREDATION_PREFERENCE:Partial<Record<WildlifeSpecies,Partial<Record<WildlifeSpecies,number>>>>={
-  fox:{rabbit:1,deer:.22},
-  wolf:{rabbit:.34,deer:.72,boar:.48,goat:.68,fox:.08}
-};
+export const WILDLIFE_HERBIVORES:readonly WildlifeSpecies[]=WILDLIFE_SPECIES.filter(species=>WILDLIFE_SPECIES_PROFILES[species].trophicRole==='herbivore');
+export const WILDLIFE_PREDATORS:readonly WildlifeSpecies[]=WILDLIFE_SPECIES.filter(species=>Object.keys(WILDLIFE_SPECIES_PROFILES[species].prey).length>0);
 
-const PREDATION_DAMAGE:Partial<Record<WildlifeSpecies,Partial<Record<WildlifeSpecies,number>>>>={
-  fox:{rabbit:100,deer:45},
-  wolf:{rabbit:100,deer:78,boar:58,goat:86,fox:72}
-};
-
-const HUNGER_RELIEF:Partial<Record<WildlifeSpecies,Partial<Record<WildlifeSpecies,number>>>>={
-  fox:{rabbit:48,deer:30},
-  wolf:{rabbit:34,deer:52,boar:44,goat:50,fox:24}
-};
+export function wildlifeSpeciesProfile(species:WildlifeSpecies){
+  return WILDLIFE_SPECIES_PROFILES[species];
+}
 
 export function wildlifePreySpecies(species:WildlifeSpecies){
-  return PREY[species];
+  return Object.keys(WILDLIFE_SPECIES_PROFILES[species].prey) as WildlifeSpecies[];
 }
 
 export function isWildlifePredator(species:WildlifeSpecies){
-  return WILDLIFE_PREDATORS.includes(species);
+  return wildlifePreySpecies(species).length>0;
 }
 
 export function canWildlifePredate(predator:WildlifeSpecies,prey:WildlifeSpecies){
-  return PREY[predator].includes(prey);
+  return Boolean(WILDLIFE_SPECIES_PROFILES[predator].prey[prey]);
 }
 
-
 export function wildlifePredationPreference(predator:WildlifeSpecies,prey:WildlifeSpecies){
-  return PREDATION_PREFERENCE[predator]?.[prey]||0;
+  return WILDLIFE_SPECIES_PROFILES[predator].prey[prey]?.preference||0;
 }
 
 export function wildlifePredationDamage(predator:WildlifeSpecies,prey:WildlifeSpecies){
-  return PREDATION_DAMAGE[predator]?.[prey]||0;
+  return WILDLIFE_SPECIES_PROFILES[predator].prey[prey]?.damage||0;
 }
 
 export function wildlifeHungerRelief(predator:WildlifeSpecies,prey:WildlifeSpecies){
-  return HUNGER_RELIEF[predator]?.[prey]||0;
+  return WILDLIFE_SPECIES_PROFILES[predator].prey[prey]?.hungerRelief||0;
 }

@@ -213,4 +213,12 @@ Pooled multi-factor coefficients are now accompanied by deterministic sensitivit
 
 The same layer exposes local regimes using the target species' own generation history. It examines at most six recent endpoints and searches backward through at most eight target-species generations for the narrowest trailing window that passes the existing coverage, sample-size, outcome-variance and collinearity gates; an exhausted bounded search is reported explicitly. Because persisted lineage exposure is lifetime-aggregated, Latticefolk does not claim within-lifetime calendar-time resolution that it does not possess. These overlapping local windows are observational diagnostics and are never synchronized to another species' generation numbers.
 
-With pooled, source-specific, generation-level and stability-aware evidence now connected, the next ecology step can expand species, niches and organism morphology/behavior diversity while retaining measurable consequences instead of adding cosmetic biodiversity.
+With pooled, source-specific, generation-level and stability-aware evidence now connected, ecology can expand species and phenotypes while retaining measurable consequences instead of adding cosmetic biodiversity.
+
+## Implemented milestone: profile-driven wildlife diversity
+
+Wildlife diversity is now driven by a single simulation-owned species profile rather than a growing collection of species switches. Trophic role, biome/season affinity, niche and resource use, carrying-capacity/growth rates, fine trait baselines, feeding/hunting semantics, life history, predation parameters and constrained procedural morphology are defined together and consumed by coarse ecology, fine materialization, fallback behavior and rendering.
+
+Badger is the first deliberately mixed niche added through this path. It consumes plant resources and can hunt rabbit, while wolf can predate badger; the same individual still participates in disease, niche competition, migration, reproduction, lineage and evolution observability. Its low elongated striped body is procedural, so the milestone adds no external asset dependency. Old persisted species populations upgrade additively, and legacy per-species pressure maps stay sparse where the historical world never observed the newly introduced species instead of fabricating zero exposure.
+
+The next organism step is **heritable phenotype structure**: move selected body ratios/morphology and behavior parameters from fixed species defaults into bounded genes/phenotypes, inherit and mutate them deterministically, and archive phenotype-at-birth/death so God View can measure whether morphology changes track survival/reproduction across generations.

@@ -42,6 +42,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Generation-level competition/disease source evidence with independent target←source series on both sides of a species pair, source-pressure/reproductive/lifespan/trait trends, within-side correlations, partial/bilateral coverage, God View cards, and evolution API output without cross-species generation alignment.
 - Multi-factor interaction selection evidence using outcome-specific complete-case source features and standardized ridge models across predator, competition, and disease pressures, with explicit non-estimable states, coverage, R², pairwise-correlation/VIF diagnostics, severe-collinearity rejection, and standardized coefficients.
 - Deterministic uncertainty/stability observability for multi-factor evidence: bounded leave-one-target-generation-out sensitivity (up to 12 history-spanning probes), comparable-feature coefficient ranges/sign consistency, and up to six generation-local windows with an eight-generation search horizon that expose regime changes without inventing within-lifetime exposure time series.
+- Profile-driven wildlife diversity: centralized trophic role, biome/season affinity, niche/resource use, growth/carrying capacity, fine trait baselines, feeding/hunting semantics, life history, predation and procedural morphology under `WildlifeSpeciesProfile`; added badger as an omnivore that forages and hunts rabbit, with wolf→badger predation and full coarse/fine/evolution integration.
 
 ### Changed
 
