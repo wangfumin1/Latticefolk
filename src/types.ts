@@ -300,7 +300,7 @@ export interface WildlifePredatorPressurePair {
 export interface WildlifePredatorPressureState {
   speciesPressure: Record<WildlifeSpecies,number>;
   meanPressure: number;
-  pairs: WildlifePredatorPressurePair[];
+  pairs?: WildlifePredatorPressurePair[];
   strongestPair?: WildlifePredatorPressurePair;
 }
 
