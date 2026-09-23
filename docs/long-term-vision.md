@@ -150,3 +150,11 @@ Predation evidence is no longer limited to one aggregate pressure value. Coarse 
 God View and evolution statistics compare source-specific exposure against reproduction, offspring count, lifespan and breeder trait differentials while preserving sample counts, right-censoring and the distinction between legacy unknown history and observed zero pressure. These statistics remain evidence of association, not proof that a specific predator caused a trait trend.
 
 The next ecology step is realized interaction evidence: hunting success, escape success, predator/prey trait matching and multi-species feedback across generations. That moves the system from measuring that pressure was present toward measuring how inherited morphology and behavior alter actual ecological outcomes.
+
+## Implemented milestone: realized hunting and escape evidence
+
+The evolutionary evidence layer now distinguishes ecological pressure from actual fine-simulation outcomes. Individual predators retain how many legal hunts they attempted, hit and converted into kills; prey retain flee attempts/successes and attack-survival outcomes. The archive also keeps those counters by counterpart species, so fox→rabbit and wolf→rabbit outcomes are not collapsed together.
+
+God View can inspect aggregate and pair-specific hit, kill, escape and survival rates together with simple success-vs-observed trait differentials. These counters come from deterministic movement, distance, damage and health resolution; Jev or another provider can choose an intention but cannot award itself a successful hunt or escape.
+
+The next ecology step is predator/prey trait matching across generations: relate predator speed/size and prey speed/wariness to realized pair outcomes, while controlling reporting for sparse cohorts and avoiding causal overclaiming. This creates a path from environmental pressure to actual interaction performance and eventually to morphology-constrained coevolution.
