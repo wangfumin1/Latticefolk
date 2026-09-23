@@ -218,7 +218,7 @@ test('coarse disease dynamics permit isolated cross-species amplification and bo
   const a=chunk('chunk_disease_dynamics',16,{biome:'plains',ecology:82,water:70});
   const populations=ensureWildlifePopulations(a);
   for(const pop of populations){
-    pop.count=['fox','wolf'].includes(pop.species)?0:Math.max(3,pop.carryingCapacity*.75);
+    pop.count=['fox','wolf','badger'].includes(pop.species)?0:Math.max(3,pop.carryingCapacity*.75);
     pop.diseaseLoad=pop.species==='deer'?85:1;
     pop.importedDiseasePressure=0;
   }
