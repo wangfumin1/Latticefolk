@@ -58,6 +58,7 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 - **Deterministic niche competition**: fixed species resource profiles and current density produce explicit competition pressure, bounded effective-capacity penalties, God View visibility, and competition-aware lineage habitat evidence.
 - **Seasonal wildlife migration**: species/biome seasonal suitability changes conserved coarse migration pressure and bounded fine migration choices while preserving capacity, population conservation and lineage evidence.
 - **Richer disease transmission**: environmental, same-species, cross-species and migration-import pressures deterministically update wildlife disease load; fine contacts and lineage exposure use the same bounded transmission model.
+- **Expanded wildlife food web**: goat and wolf join rabbit/deer/boar/fox; shared species definitions keep coarse trophic flow, disease, competition, seasonal habitat, fine hunt/flee behavior, lifecycle, migration, and evolution statistics consistent across LODs.
 - **Fitness-by-habitat evidence**: lifetime competition, seasonal suitability, and disease exposure are associated with reproduction, offspring count and lifespan using right-censored reproductive eligibility; God View shows total/eligible/dead samples, low/mid/high cohorts and trait differentials without causal overclaiming.
 - **Token and cost controls** visible in the God-mode console: minute/hour/day input-token budgets, daily USD guard, confidence threshold, cache TTL, call-class statistics, and presets.
 - **Authored dialogue retrieval** with line/fragment composition instead of unconstrained text generation.
@@ -195,7 +196,7 @@ The current development order is intentionally architecture-first:
 7. richer production chains and interactions;
 8. ✅ first ecological food-web/lifecycle systems;
 9. ✅ durable lineage, evolution statistics, and biome-linked selection observability;
-10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission and fitness-by-habitat; next: more species/predators, then a fuller physics layer.
+10. ✅ identity-preserving fine wildlife migration, niche competition, seasonal movement, richer disease transmission, fitness-by-habitat, and goat/wolf food-web expansion; next: broader ecology/adaptation and then a fuller physics layer.
 
 See the living [Roadmap](docs/roadmap.md) and [Long-term vision](docs/long-term-vision.md). Documentation is updated as each implementation stage lands.
 

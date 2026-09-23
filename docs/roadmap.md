@@ -43,7 +43,8 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Seasonal migration drivers: species/biome seasonal suitability can independently create conserved coarse migration pressure and is exposed to bounded fine wildlife decisions and lineage habitat evidence.
 - ✅ Richer wildlife disease transmission: environmental, same-species, cross-species, and migration-import pressure are explicit deterministic state and enter fine/lifetime observability.
 - ✅ Fitness-by-habitat evidence: lifetime competition, seasonal suitability, and disease exposure are associated with reproduction, offspring count, lifespan, exposure bands, and within-band trait differentials without causal overclaiming.
-- ⏭ Deeper ecology: add additional species/predators and extend fitness evidence to richer food-web and predator-pressure dimensions.
+- ✅ Additional wildlife/predators: goat and wolf participate in coarse carrying capacity, competition, seasonality, disease, trophic predation, fine lifecycle/behavior, migration, and evolution observability through centralized species semantics.
+- ⏭ Deeper ecology: broaden the food web, predator pressure/adaptation evidence, competition structure, disease ecology, and organism morphology/behavior diversity.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

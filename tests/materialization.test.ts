@@ -59,3 +59,22 @@ test('wetland wilderness exposes natural water for wildlife and player interacti
   assert.ok(water!.state.tags.includes('water'));
   assert.ok(water!.state.capabilities?.includes('drink'));
 });
+
+
+test('fine materialization supports goat and wolf identities from coarse wildlife',()=>{
+  const expanded:CoarseChunkState={
+    ...chunk,id:'chunk_species_fine',cx:4,cz:4,biome:'hills',
+    wildlife:[
+      {species:'rabbit',count:4,carryingCapacity:8,health:80},
+      {species:'deer',count:2,carryingCapacity:5,health:80},
+      {species:'boar',count:2,carryingCapacity:4,health:80},
+      {species:'goat',count:5,carryingCapacity:8,health:80},
+      {species:'fox',count:1,carryingCapacity:3,health:80},
+      {species:'wolf',count:2,carryingCapacity:3,health:80}
+    ]
+  };
+  const plan=planFineChunk(expanded,24);
+  assert.ok(plan.wildlife.some(animal=>animal.species==='goat'));
+  assert.ok(plan.wildlife.some(animal=>animal.species==='wolf'));
+  assert.ok(plan.wildlife.filter(animal=>animal.species==='wolf').length<=1);
+});

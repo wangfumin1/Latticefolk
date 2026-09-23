@@ -244,7 +244,7 @@ export type ChunkStrategy = 'sustain' | 'grow_settlement' | 'conserve' | 'extrac
 export type ChunkMigrationPolicy = 'attract' | 'retain' | 'release' | 'evacuate';
 export type ChunkEcologyPolicy = 'recover' | 'balance' | 'harvest' | 'protect';
 
-export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'fox';
+export type WildlifeSpecies = 'rabbit' | 'deer' | 'boar' | 'goat' | 'fox' | 'wolf';
 export type WildlifeAction = 'graze' | 'forage' | 'drink' | 'rest' | 'flee' | 'hunt' | 'wander' | 'seek_mate' | 'migrate';
 export type WorldSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 

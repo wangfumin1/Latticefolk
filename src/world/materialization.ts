@@ -315,11 +315,13 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   }
 
 
-  const speciesBase:Record<WildlifeSpecies,{speed:number;size:number;fertility:number;wariness:number;maxFine:number}>={
-    rabbit:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3},
-    deer:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2},
-    boar:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2},
-    fox:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1}
+  const speciesBase:Record<WildlifeSpecies,{speed:number;size:number;fertility:number;wariness:number;maxFine:number;maxInitialAge:number}>={
+    rabbit:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3,maxInitialAge:500},
+    deer:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2,maxInitialAge:3200},
+    boar:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2,maxInitialAge:3000},
+    goat:{speed:2.5,size:.82,fertility:.62,wariness:.72,maxFine:2,maxInitialAge:2600},
+    fox:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1,maxInitialAge:1800},
+    wolf:{speed:3.0,size:1.0,fertility:.36,wariness:.70,maxFine:1,maxInitialAge:2200}
   };
   for(const population of chunk.wildlife||[]){
     const base=speciesBase[population.species];
@@ -335,7 +337,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
       wildlife.push({
         id:`${chunk.id}_wild_${population.species}_${i}`,
         species:population.species,x,z,
-        ageDays:Math.floor(20+random()*(population.species==='rabbit'?500:population.species==='fox'?1800:3200)),
+        ageDays:Math.floor(20+random()*base.maxInitialAge),
         sex:random()>.5?'female':'male',
         generation:0,
         traits:{

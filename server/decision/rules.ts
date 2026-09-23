@@ -1,4 +1,6 @@
 import type { DecisionRequest, DecisionResponse, DialogueEntry, DialogueRequest, DialogueResponse, DecisionAction, SocialIntent, StateShift, ChunkDecisionRequest, ChunkDecisionResponse, ChunkDecision, ChunkStrategy, ChunkMigrationPolicy, ChunkEcologyPolicy, RegionDecisionRequest, RegionDecisionResponse, RegionDecision, RegionPriority, RegionMovementPolicy, RegionEcologyPolicy, WorldDecisionRequest, WorldDecisionResponse, WorldDecision, WorldPriority, WorldConnectivityPolicy, WorldGrowthPolicy, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeAction } from '../../src/types.js';
+import { wildlifeLifeHistory } from '../../src/world/wildlifeLifeHistory.js';
+import { canWildlifePredate, isWildlifePredator } from '../../src/world/wildlifeSpecies.js';
 
 function pick<T>(arr: T[], fallback: T): T {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : fallback;
@@ -181,7 +183,7 @@ export function fallbackWorldDecision(req: WorldDecisionRequest): WorldDecisionR
 export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): WildlifeDecisionBatchResponse {
   const decisions:WildlifeDecisionResult[]=req.requests.map(entry=>{
     const animal=entry.wildlife;
-    const nearbyFox=entry.world.nearbyWildlife.find(x=>x.species==='fox'&&x.distance<5);
+    const nearbyPredator=entry.world.nearbyWildlife.find(x=>canWildlifePredate(x.species,animal.species)&&x.distance<5);
     const sameMate=entry.world.nearbyWildlife.find(x=>x.species===animal.species&&x.id!==animal.id&&x.sex!==animal.sex&&x.mateAvailable&&x.distance<8);
     let action:WildlifeAction='wander';
     let targetObjectId:string|undefined;
@@ -196,15 +198,15 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
     const migrationPressure=currentHabitat.density>=.9||currentHabitat.competitionPressure>=65||currentHabitat.diseasePressure>=65||currentHabitat.seasonalSuitability<42||currentHabitat.ecology<38||currentHabitat.water<30||currentHabitat.food<34||currentHabitat.danger>70;
     const diseaseRelief=migrationTarget?currentHabitat.diseasePressure-migrationTarget.diseasePressure:0;
 
-    if(animal.species!=='fox'&&nearbyFox&&entry.allowedActions.includes('flee')){
-      action='flee';targetWildlifeId=nearbyFox.id;reasonCode='predator_nearby';
+    if(nearbyPredator&&entry.allowedActions.includes('flee')){
+      action='flee';targetWildlifeId=nearbyPredator.id;reasonCode='predator_nearby';
     }else if(animal.thirst>=72&&entry.allowedActions.includes('drink')){
       action='drink';
       targetObjectId=entry.world.nearbyResources.find(x=>x.tags.includes('water'))?.id;
       reasonCode='thirst';
     }else if(animal.hunger>=68){
-      if(animal.species==='fox'&&entry.allowedActions.includes('hunt')){
-        const prey=entry.world.nearbyWildlife.find(x=>['rabbit','deer'].includes(x.species)&&x.distance<10);
+      if(isWildlifePredator(animal.species)&&entry.allowedActions.includes('hunt')){
+        const prey=entry.world.nearbyWildlife.find(x=>canWildlifePredate(animal.species,x.species)&&x.distance<10);
         if(prey){action='hunt';targetWildlifeId=prey.id;reasonCode='predator_hunger';}
         else if(entry.allowedActions.includes('forage')){action='forage';reasonCode='predator_scavenge';}
       }else if(entry.allowedActions.includes(animal.species==='boar'?'forage':'graze')){
@@ -219,7 +221,7 @@ export function fallbackWildlifeDecisions(req: WildlifeDecisionBatchRequest): Wi
       action='rest';reasonCode='low_energy';
     }else if(migrationPressure&&migrationTarget&&entry.allowedActions.includes('migrate')&&(habitatScore(migrationTarget)>=habitatScore(currentHabitat)+8||diseaseRelief>=35)){
       action='migrate';targetChunkId=migrationTarget.id;reasonCode='habitat_migration';
-    }else if(animal.ageDays>90&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
+    }else if(animal.ageDays>=wildlifeLifeHistory(animal.species).adultAge&&animal.health>58&&animal.energy>45&&sameMate&&entry.allowedActions.includes('seek_mate')){
       action='seek_mate';targetWildlifeId=sameMate.id;reasonCode='reproduction';
     }else if(entry.allowedActions.includes('forage')){
       action='forage';

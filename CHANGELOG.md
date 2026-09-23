@@ -21,7 +21,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Unbounded first-person coarse-world streaming with a fixed active window, persistent discovered chunks, observer-safe God View, and O(n) neighbor flow planning.
 - Semantic procedural fine-chunk settlements with deterministic archetypes, roads, functional buildings/sites, role-aware residents, and resource placement that avoids roads/buildings.
 - Shared deterministic production recipes for NPCs and players, including flour/bread and plank/tool multi-step chains with localized new item types.
-- Persistent coarse/fine wildlife ecology for rabbit/deer/boar/fox populations, habitat carrying capacity, conserved migration, fine needs/predation/reproduction, inheritable traits, batched Jev decisions, interactive inspection, and SQLite wildlife persistence.
+- Persistent coarse/fine wildlife ecology for rabbit/deer/boar/goat/fox/wolf populations, habitat carrying capacity, conserved migration, fine needs/predation/reproduction, inheritable traits, batched Jev decisions, interactive inspection, and SQLite wildlife persistence.
 - Seasonal plant biomass and trophic-flow ecology with disease pressure, renewable fine resources, gestation/litters, senescence, parent IDs, and multi-generation inheritance.
 - Durable wildlife ancestry archive with founder/reproduction provenance, typed death causes, lifetime offspring accounting, per-species/per-generation trait mean/variance/trend statistics, lineage traversal, a read-only evolution API, and God View evolution observability.
 - Biome-linked selection-pressure observability with persisted habitat snapshots, breeder-vs-cohort trait differentials, normalized effect sizes, cross-generation directional consistency, cautious signal classification, and God View habitat evidence.
@@ -30,6 +30,7 @@ The project is currently pre-1.0 and evolving rapidly.
 - Deterministic wildlife niche competition with fixed resource-use profiles, pairwise niche overlap, density-derived competition pressure, bounded carrying-capacity penalties, God View observability, and competition exposure preserved in lineage habitat evidence.
 - Deterministic seasonal wildlife migration drivers with species/biome seasonal suitability, capacity-bounded conserved coarse migration, season-aware fine decision candidates, and seasonal suitability preserved in lineage habitat exposure.
 - Richer deterministic wildlife disease transmission with explicit environmental, local-contact, cross-species and migration-import pressures, fine cross-species contact spread, God View observability, and disease exposure preserved in lineage habitat history.
+- Expanded wildlife ecology with goat and wolf, centralized species/predator-prey definitions, wolf trophic predation, goat herbivory/niche competition, fine hunt/flee behavior, species-specific life history, multilingual naming, and evolution observability.
 - Fitness-by-habitat evolution evidence across competition pressure, seasonal suitability, and disease pressure, including exposure/outcome correlations, low/mid/high cohorts, breeder rates, offspring/lifespan associations, and God View evidence without causal claims.
 
 ### Changed
