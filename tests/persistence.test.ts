@@ -51,6 +51,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
       sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},
       phenotype:{morphology:{bodyLength:1.05,bodyHeight:.98,legLength:1.02,headScale:.99,tailScale:1},behavior:{forageDrive:1.08,migrationDrive:.96,riskTolerance:.94,recoveryDrive:1.04}},
+      organismGenome:{family:'lagomorph',material:{hueShift:.01,lightnessShift:-.02,accentShift:.005},niche:{grass:1.08,shrub:.94,fruit:1,crop:.98},locomotion:{stride:1.07,endurance:.96}},
       currentAction:'forage',lastDecisionAt:10,birthDay:3
     }]}],
     homeNpcs:[],homeObjects:[],
@@ -61,6 +62,9 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       phenotypeAtBirth:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
       phenotypeAtDeath:{morphology:{bodyLength:.96,bodyHeight:1.02,legLength:1.04,headScale:.98,tailScale:1},behavior:{forageDrive:1.06,migrationDrive:.94,riskTolerance:.91,recoveryDrive:1.03}},
       phenotypeProvenance:'founder_seed',
+      organismGenomeAtBirth:{family:'lagomorph',material:{hueShift:-.01,lightnessShift:.02,accentShift:-.005},niche:{grass:1.04,shrub:.96,fruit:1,crop:1.02},locomotion:{stride:1.05,endurance:.98}},
+      organismGenomeAtDeath:{family:'lagomorph',material:{hueShift:-.01,lightnessShift:.02,accentShift:-.005},niche:{grass:1.04,shrub:.96,fruit:1,crop:1.02},locomotion:{stride:1.05,endurance:.98}},
+      organismGenomeProvenance:'founder_seed',
       birthHabitat:{biome:'plains',ecology:66,food:61,water:70,danger:19,settlementLevel:2,plantBiomass:55},
       deathHabitat:{biome:'plains',ecology:62,food:58,water:67,danger:23,settlementLevel:2,plantBiomass:51},
       habitatExposure:{
@@ -90,6 +94,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
         health:88,hunger:30,thirst:25,energy:65,sex:'male',generation:1,
         traits:{speed:2.3,size:.58,fertility:.75,wariness:.72},
         phenotype:{morphology:{bodyLength:1.02,bodyHeight:1,legLength:.97,headScale:1.01,tailScale:1},behavior:{forageDrive:.98,migrationDrive:1.12,riskTolerance:1.08,recoveryDrive:.96}},
+        organismGenome:{family:'lagomorph',material:{hueShift:.02,lightnessShift:.01,accentShift:.004},niche:{grass:1.1,shrub:.92,fruit:1,crop:.97},locomotion:{stride:1.09,endurance:.95}},
         currentAction:'wander',lastDecisionAt:0,birthDay:2,diseaseLoad:3,
         representedPopulation:2.5
       },
@@ -104,10 +109,15 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.phenotype?.morphology.bodyLength,1.05);
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.organismGenome?.family,'lagomorph');
+  assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.organismGenome?.locomotion.stride,1.07);
   assert.equal(loaded.wildlifeLineage?.[0]?.deathReason,'predation');
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtBirth?.behavior.forageDrive,1.06);
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeAtDeath?.morphology.legLength,1.04);
   assert.equal(loaded.wildlifeLineage?.[0]?.phenotypeProvenance,'founder_seed');
+  assert.equal(loaded.wildlifeLineage?.[0]?.organismGenomeAtBirth?.family,'lagomorph');
+  assert.equal(loaded.wildlifeLineage?.[0]?.organismGenomeAtDeath?.niche.grass,1.04);
+  assert.equal(loaded.wildlifeLineage?.[0]?.organismGenomeProvenance,'founder_seed');
   assert.equal(loaded.wildlifeLineage?.[0]?.birthHabitat?.biome,'plains');
   assert.equal(loaded.wildlifeLineage?.[0]?.deathHabitat?.danger,23);
   assert.equal(loaded.wildlifeLineage?.[0]?.habitatExposure?.observedDays,1.5);
@@ -127,6 +137,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeTransfers?.[0]?.toChunkId,'chunk_3_-1');
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.representedPopulation,2.5);
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.phenotype?.behavior.migrationDrive,1.12);
+  assert.equal(loaded.wildlifeTransfers?.[0]?.state.organismGenome?.locomotion.stride,1.09);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.stats().pendingWildlifeTransfers,1);
   const interactionNetwork=store.interactionNetwork();
@@ -203,6 +214,8 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
       birthDay:2,generation:1,birthChunk:'chunk_0_0',traitsAtBirth:{speed:2,size:.6,fertility:.8,wariness:.7},
       phenotypeAtBirth:{morphology:{bodyLength:1.03,bodyHeight:.97,legLength:1.01,headScale:1,tailScale:1},behavior:{forageDrive:1.04,migrationDrive:1.06,riskTolerance:.95,recoveryDrive:1.02}},
       phenotypeProvenance:'birth',
+      organismGenomeAtBirth:{family:'lagomorph',material:{hueShift:0,lightnessShift:0,accentShift:0},niche:{grass:1.02,shrub:.98,fruit:1,crop:1},locomotion:{stride:1.03,endurance:1.01}},
+      organismGenomeProvenance:'birth',
       birthHabitat:{biome:'forest',ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
       habitatExposure:{
         observedDays:.5,habitatMean:{ecology:80,food:65,water:72,danger:20,settlementLevel:0,plantBiomass:76},
@@ -224,6 +237,9 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
   assert.equal(migrated?.origin,'reproduction');
   assert.equal(migrated?.phenotypeAtBirth?.morphology.bodyLength,1.03);
   assert.equal(migrated?.phenotypeProvenance,'birth');
+  assert.equal(migrated?.organismGenomeAtBirth?.family,'lagomorph');
+  assert.equal(migrated?.organismGenomeAtBirth?.locomotion.stride,1.03);
+  assert.equal(migrated?.organismGenomeProvenance,'birth');
   assert.equal(migrated?.birthHabitat?.biome,'forest');
   assert.equal(migrated?.habitatExposure?.observedDays,.5);
   assert.equal(migrated?.habitatExposure?.lastBiome,'plains');
