@@ -46,7 +46,7 @@ test('only the bonded owner may issue follow stay or graze commands',()=>{
   assert.equal(canIssueWildlifeDomesticationCommand('sheep',bonded,'player','player'),true);
   assert.equal(canIssueWildlifeDomesticationCommand('sheep',bonded,'npc','farmer'),false);
   assert.equal(setWildlifeDomesticationCommand('sheep',bonded,'stay',5,'player','player')?.command,'stay');
-  assert.equal(setWildlifeDomesticationCommand('sheep',bonded,'graze',5,'npc','farmer')?.command,'follow');
+  assert.equal(setWildlifeDomesticationCommand('sheep',bonded,'forage',5,'npc','farmer')?.command,'follow');
 });
 
 test('command action filtering preserves bounded survival behavior',()=>{
