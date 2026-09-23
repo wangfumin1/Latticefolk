@@ -360,7 +360,7 @@ export interface WildlifeTraits {
 
 export type WildlifeDomesticationStage='feral'|'taming'|'bonded';
 export type WildlifeDomesticationOwnerKind='player'|'npc'|'settlement';
-export type WildlifeDomesticationCommand='autonomous'|'follow'|'stay'|'graze';
+export type WildlifeDomesticationCommand='autonomous'|'follow'|'stay'|'forage';
 
 export interface WildlifeDomesticationState {
   stage: WildlifeDomesticationStage;
