@@ -722,6 +722,36 @@ export interface WildlifeCoevolutionPairEvidence {
   prey: WildlifeCoevolutionSideEvidence;
 }
 
+export type WildlifeMultifactorOutcome = 'reproduction' | 'offspring' | 'lifespan';
+
+export interface WildlifeMultifactorFeatureCoefficient {
+  kind: 'predation' | 'competition' | 'disease';
+  sourceSpecies: WildlifeSpecies;
+  coverageSamples: number;
+  coverageRate: number;
+  mean: number;
+  stdDev: number;
+  standardizedCoefficient: number;
+}
+
+export interface WildlifeMultifactorOutcomeEvidence {
+  outcome: WildlifeMultifactorOutcome;
+  estimable: boolean;
+  baseSamples: number;
+  samples: number;
+  candidateFeatures: number;
+  selectedFeatures: number;
+  ridgeLambda: number;
+  rSquared: number | null;
+  maxFeatureCorrelation: number | null;
+  coefficients: WildlifeMultifactorFeatureCoefficient[];
+}
+
+export interface WildlifeMultifactorSelectionEvidence {
+  species: WildlifeSpecies;
+  models: WildlifeMultifactorOutcomeEvidence[];
+}
+
 export interface WildlifeBiomeSelectionStats {
   basis: 'origin' | 'lifetime';
   biome: ChunkBiome;
@@ -765,6 +795,7 @@ export interface WildlifeEvolutionStats {
   exposureFitness: WildlifeHabitatFitnessStats[];
   predatorSpecialization: WildlifePredatorSpecializationStats[];
   interactionSourceFitness: WildlifeInteractionSourceFitnessStats[];
+  multifactorSelection: WildlifeMultifactorSelectionEvidence;
   realizedPredation: WildlifeRealizedPredationStats;
 }
 
