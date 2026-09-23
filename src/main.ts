@@ -1255,6 +1255,11 @@ class TownGame {
         stripe.position.set(0,bodyCenter+morphology.bodyY*.51*scale,0);g.add(stripe);
         const faceStripe=new THREE.Mesh(new THREE.BoxGeometry(.12*scale,.05*scale,morphology.headSize*1.02*scale),featureMaterial);
         faceStripe.position.set(0,headY+morphology.headSize*.48*scale,headZ);g.add(faceStripe);
+      }else if(feature==='ear_tufts'){
+        for(const x of [-.15,.15]){
+          const tuft=new THREE.Mesh(new THREE.ConeGeometry(.055*scale,.28*scale,5),featureMaterial);
+          tuft.position.set(x*scale,headY+.38*scale,headZ);g.add(tuft);
+        }
       }
     }
     g.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
