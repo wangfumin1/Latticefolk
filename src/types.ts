@@ -383,8 +383,14 @@ export interface WildlifePhenotype {
   behavior: WildlifeBehaviorPhenotype;
 }
 
+export type WildlifePhenotypeProvenance = 'birth' | 'founder_seed' | 'legacy_upgrade';
+
 export interface WildlifePhenotypeStats {
   sampleSize: number;
+  comparableSamples: number;
+  birthTrackedSamples: number;
+  founderSeedSamples: number;
+  legacyUpgradeSamples: number;
   mean: WildlifePhenotype | null;
   variance: WildlifePhenotype | null;
   trendPerGeneration: WildlifePhenotype | null;
@@ -511,6 +517,8 @@ export interface WildlifeLineageRecord {
   /** Immutable inherited phenotype; absent in lineage rows created before phenotype tracking. */
   phenotypeAtBirth?: WildlifePhenotype;
   phenotypeAtDeath?: WildlifePhenotype;
+  /** Distinguishes tracked birth inheritance from deterministic founder seeding and legacy upgrade observation. */
+  phenotypeProvenance?: WildlifePhenotypeProvenance;
   birthHabitat?: WildlifeHabitatSnapshot;
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
