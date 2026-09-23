@@ -199,12 +199,13 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
       boar:{preference:.48,damage:58,hungerRelief:44},
       goat:{preference:.68,damage:86,hungerRelief:50},
       fox:{preference:.08,damage:72,hungerRelief:24},
-      badger:{
-    organismFamily:'mustelid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.sturdy,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.omnivoreForager.actions,preference:.14,damage:65,hungerRelief:20},
-      lynx:{preference:.12,damage:68,hungerRelief:22}
+      badger:{preference:.14,damage:65,hungerRelief:20},
+      lynx:{preference:.12,damage:68,hungerRelief:22},
+      raccoon:{preference:.10,damage:72,hungerRelief:22}
     }
   },
   badger:{
+    organismFamily:'mustelid',movement:WILDLIFE_MOVEMENT_ARCHETYPES.sturdy,capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.omnivoreForager.actions,
     trophicRole:'omnivore',
     biomeAffinity:{plains:.62,forest:.92,hills:.84,wetlands:.70,dryland:.38},
     seasonalBiomeAffinity:seasonal(
@@ -228,12 +229,34 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     habitat:WILDLIFE_HABITAT_ARCHETYPES.temperateForestHills,
     ecology:WILDLIFE_ECOLOGY_ARCHETYPES.mediumAmbushPredator,
     body:WILDLIFE_BODY_ARCHETYPES.mediumFelid,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.ambush,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.predatorForager,
     life:WILDLIFE_LIFE_ARCHETYPES.mediumSolitaryPredator,
     prey:{
       rabbit:{preference:.88,damage:100,hungerRelief:44},
       goat:{preference:.32,damage:58,hungerRelief:36},
-      deer:{preference:.18,damage:46,hungerRelief:30}
+      deer:{preference:.18,damage:46,hungerRelief:30},
+      raccoon:{preference:.16,damage:70,hungerRelief:24}
     }
+  }),
+  bison:composeWildlifeSpeciesProfile({
+    id:'open_plains_large_grazer',
+    habitat:WILDLIFE_HABITAT_ARCHETYPES.openPlains,
+    ecology:WILDLIFE_ECOLOGY_ARCHETYPES.largeGrazer,
+    body:WILDLIFE_BODY_ARCHETYPES.largeBovid,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.heavyGrazer,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.grazer,
+    life:WILDLIFE_LIFE_ARCHETYPES.largeHerdHerbivore
+  }),
+  raccoon:composeWildlifeSpeciesProfile({
+    id:'forest_wetland_small_omnivore',
+    habitat:WILDLIFE_HABITAT_ARCHETYPES.forestWetlandEdge,
+    ecology:WILDLIFE_ECOLOGY_ARCHETYPES.smallOpportunisticOmnivore,
+    body:WILDLIFE_BODY_ARCHETYPES.smallMaskedForager,
+    movement:WILDLIFE_MOVEMENT_ARCHETYPES.dexterousForager,
+    capabilities:WILDLIFE_CAPABILITY_ARCHETYPES.omnivoreForager,
+    life:WILDLIFE_LIFE_ARCHETYPES.smallGeneralistOmnivore,
+    prey:{rabbit:{preference:.16,damage:44,hungerRelief:20}}
   })
 };
 
