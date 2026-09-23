@@ -250,6 +250,7 @@ export function computeWildlifePredatorPressure(
   populations:CoarseWildlifePopulation[]
 ) {
   const speciesPressure=Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
+  const pairs:NonNullable<CoarseChunkState['wildlifePredatorPressure']>['pairs']=[];
   let strongestPair:NonNullable<CoarseChunkState['wildlifePredatorPressure']>['strongestPair'];
 
   for(const preySpecies of SPECIES){
@@ -262,11 +263,12 @@ export function computeWildlifePredatorPressure(
       const predatorDensity=predator.carryingCapacity>0
         ?Math.min(2.5,Math.max(0,predator.count/predator.carryingCapacity))
         :0;
-      const pairPressure=clamp(preference*predatorDensity*70,0,100);
+      const pairPressure=round(clamp(preference*predatorDensity*70,0,100));
+      if(pairPressure<=0)continue;
       aggregate+=preference*predatorDensity;
-      if(!strongestPair||pairPressure>strongestPair.pressure){
-        strongestPair={predatorSpecies,preySpecies,pressure:round(pairPressure)};
-      }
+      const pair={predatorSpecies,preySpecies,pressure:pairPressure};
+      pairs.push(pair);
+      if(!strongestPair||pairPressure>strongestPair.pressure)strongestPair=pair;
     }
     const pressure=round(clamp((1-Math.exp(-aggregate*.9))*100,0,100));
     speciesPressure[preySpecies]=pressure;
@@ -274,8 +276,9 @@ export function computeWildlifePredatorPressure(
     if(prey)prey.predatorPressure=pressure;
   }
 
+  pairs.sort((a,b)=>b.pressure-a.pressure||a.predatorSpecies.localeCompare(b.predatorSpecies)||a.preySpecies.localeCompare(b.preySpecies));
   const meanPressure=round(SPECIES.reduce((sum,species)=>sum+speciesPressure[species],0)/SPECIES.length);
-  chunk.wildlifePredatorPressure={speciesPressure,meanPressure,strongestPair};
+  chunk.wildlifePredatorPressure={speciesPressure,meanPressure,pairs,strongestPair};
   return chunk.wildlifePredatorPressure;
 }
 
