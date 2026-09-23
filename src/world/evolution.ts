@@ -412,7 +412,8 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
       const outcomes=record.predationOutcomes!;
       return role==='predator'
         ?(outcomes.asPredator.byPrey?.[counterpartSpecies]?.huntHits||0)>0
-        :(outcomes.asPrey.byPredator?.[counterpartSpecies]?.successfulEscapes||0)>0;
+        :((outcomes.asPrey.byPredator?.[counterpartSpecies]?.successfulEscapes||0)>0
+          ||(outcomes.asPrey.byPredator?.[counterpartSpecies]?.survivedAttacks||0)>0);
     });
     const sums={
       huntAttempts:0,huntHits:0,kills:0,
@@ -437,7 +438,7 @@ function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPred
       }
     }
     const average=traitMean(observed);
-    const successAverage=successful.length?traitMean(successful):zeroTraits();
+    const successAverage=successful.length?traitMean(successful):average;
     return {
       role,counterpartSpecies,observedIndividuals:observed.length,
       ...sums,
