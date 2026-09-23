@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, dominantWildlifeExposureBiome, lineageAncestors } from '../src/world/evolution.js';
+import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from '../src/world/evolution.js';
 import type { WildlifeLineageRecord, WildlifeTraits } from '../src/types.js';
 
 const traits=(wariness:number,size=1):WildlifeTraits=>({speed:1.5+wariness,size,fertility:.7,wariness});
@@ -423,4 +423,80 @@ test('network-linked source fitness keeps living juveniles right-censored',()=>{
   assert.ok(competition.offspringAssociation!<0);
   assert.ok(disease.reproductionAssociation!<0);
   assert.ok(competition.selectionDifferential.wariness<0);
+});
+
+
+test('interaction source generations keep reciprocal species histories independent',()=>{
+  const habitat={
+    biome:'plains' as const,ecology:80,food:72,water:70,danger:20,settlementLevel:0,plantBiomass:75,
+    competitionPressure:40,seasonalSuitability:78,diseasePressure:0,predatorPressure:0
+  };
+  const make=(id:string,species:'rabbit'|'goat',generation:number,source:'rabbit'|'goat',pressure:number,offspring:number,wariness:number):WildlifeLineageRecord=>{
+    const exposure=accumulateWildlifeHabitatExposure(
+      undefined,habitat,`chunk_${id}`,1,undefined,{[source]:pressure}
+    );
+    exposure.lastObservedDay=undefined;
+    return {
+      entityId:id,species,birthDay:1,deathDay:160+generation*12,deathReason:'other',
+      generation,birthChunk:`chunk_${id}`,traitsAtBirth:traits(wariness,.8+generation*.03),
+      birthHabitat:habitat,habitatExposure:exposure,origin:generation===0?'founder':'reproduction',
+      offspringCount:offspring,reproductiveSuccess:offspring>0
+    };
+  };
+
+  const sample:WildlifeLineageRecord[]=[
+    make('rabbit_g0','rabbit',0,'goat',10,2,.30),
+    make('rabbit_g2','rabbit',2,'goat',50,1,.55),
+    make('rabbit_g4','rabbit',4,'goat',90,0,.80),
+    make('goat_g1','goat',1,'rabbit',20,0,.40),
+    make('goat_g3','goat',3,'rabbit',45,1,.60),
+    make('goat_g5','goat',5,'rabbit',80,2,.85)
+  ];
+
+  const pair=computeWildlifeInteractionSelectionEvidence(sample,1000)
+    .find(entry=>entry.kind==='competition'&&
+      ((entry.speciesA==='goat'&&entry.speciesB==='rabbit')||(entry.speciesA==='rabbit'&&entry.speciesB==='goat')))!;
+
+  assert.equal(pair.bothSidesObserved,true);
+  const rabbitSide=pair.sideA.targetSpecies==='rabbit'?pair.sideA:pair.sideB;
+  const goatSide=pair.sideA.targetSpecies==='goat'?pair.sideA:pair.sideB;
+  assert.deepEqual(rabbitSide.generations.map(entry=>entry.generation),[0,2,4]);
+  assert.deepEqual(goatSide.generations.map(entry=>entry.generation),[1,3,5]);
+  assert.ok((rabbitSide.pressureTrendPerGeneration||0)>0);
+  assert.ok((goatSide.pressureTrendPerGeneration||0)>0);
+  assert.ok((rabbitSide.pressureOffspringAssociation||0)<-.9);
+  assert.ok((goatSide.pressureOffspringAssociation||0)>.9);
+  assert.ok((rabbitSide.pressureTraitAssociation.wariness||0)>.9);
+  assert.ok((goatSide.pressureTraitAssociation.wariness||0)>.9);
+  assert.ok((rabbitSide.traitTrendPerGeneration.wariness||0)>0);
+  assert.ok((goatSide.traitTrendPerGeneration.wariness||0)>0);
+});
+
+test('interaction source generations preserve one-sided disease evidence as partial',()=>{
+  const habitat={
+    biome:'forest' as const,ecology:78,food:65,water:74,danger:30,settlementLevel:0,plantBiomass:80,
+    competitionPressure:0,seasonalSuitability:75,diseasePressure:35,predatorPressure:0
+  };
+  const exposure=accumulateWildlifeHabitatExposure(
+    undefined,habitat,'disease_partial',1,undefined,undefined,{fox:35}
+  );
+  exposure.lastObservedDay=undefined;
+  const rabbit:WildlifeLineageRecord={
+    entityId:'rabbit_disease_partial',species:'rabbit',birthDay:1,deathDay:180,deathReason:'disease',
+    generation:2,birthChunk:'disease_partial',traitsAtBirth:traits(.7,.9),birthHabitat:habitat,
+    habitatExposure:exposure,origin:'reproduction',offspringCount:0,reproductiveSuccess:false
+  };
+
+  const pair=computeWildlifeInteractionSelectionEvidence([rabbit],1000)
+    .find(entry=>entry.kind==='disease'&&entry.speciesA==='fox'&&entry.speciesB==='rabbit')!;
+  assert.equal(pair.bothSidesObserved,false);
+  const rabbitSide=pair.sideA.targetSpecies==='rabbit'?pair.sideA:pair.sideB;
+  const foxSide=pair.sideA.targetSpecies==='fox'?pair.sideA:pair.sideB;
+  assert.equal(rabbitSide.generationsObserved,1);
+  assert.equal(rabbitSide.generations[0]?.pressureMean,35);
+  assert.equal(rabbitSide.generations[0]?.deaths,1);
+  assert.equal(rabbitSide.generations[0]?.lifespanPressureMean,35);
+  assert.equal(foxSide.generationsObserved,0);
+  assert.equal(rabbitSide.pressureBreederAssociation,null);
+  assert.equal(rabbitSide.pressureTraitAssociation.wariness,null);
 });
