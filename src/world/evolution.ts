@@ -842,7 +842,35 @@ function multifactorOutcomeStability(
 ):WildlifeMultifactorOutcomeStabilityEvidence {
   const base=multifactorOutcomeRecords(records,outcome,asOfDay);
   const generations=[...new Set(base.map(record=>record.generation))].sort((a,b)=>a-b);
-  const testedGenerations=boundedGenerationSample(generations,MULTIFACTOR_MAX_STABILITY_GENERATIONS);
+  const coefficientsWithoutReplicates=()=>pooledModel.coefficients.map(feature=>({
+    kind:feature.kind,
+    sourceSpecies:feature.sourceSpecies,
+    comparableReplicates:0,
+    coefficientMean:null,
+    coefficientMin:null,
+    coefficientMax:null,
+    signConsistency:null
+  }));
+  const subsetCannotRecover=['insufficient_features','insufficient_samples','no_outcome_variance'].includes(pooledModel.status);
+  if(subsetCannotRecover){
+    return {
+      outcome,
+      basis:'target_species_generation',
+      leaveOneGenerationOut:{
+        availableGenerations:generations.length,
+        testedGenerations:[],
+        attemptedReplicates:0,
+        estimableReplicates:0,
+        comparableReplicates:0,
+        coefficients:coefficientsWithoutReplicates()
+      },
+      localWindows:[]
+    };
+  }
+
+  const testedGenerations=generations.length>=2
+    ?boundedGenerationSample(generations,MULTIFACTOR_MAX_STABILITY_GENERATIONS)
+    :[];
   const replicates=testedGenerations.map(generation=>
     fitMultifactorOutcome(records.filter(record=>record.generation!==generation),outcome,asOfDay)
   );
