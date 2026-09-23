@@ -375,10 +375,16 @@ export interface WildlifePredatorOutcomeCounter {
   kills: number;
   /** Sum of predator minus prey traits across resolved hunt attempts; optional in legacy records. */
   attemptTraitDeltaSum?: WildlifeTraits;
+  /** Number of hunt attempts that carried both actor/counterpart trait snapshots. */
+  attemptTraitMatchCount?: number;
   /** Sum of predator minus prey traits across hunt hits. */
   hitTraitDeltaSum?: WildlifeTraits;
+  /** Number of hunt hits with paired trait snapshots. */
+  hitTraitMatchCount?: number;
   /** Sum of predator minus prey traits across kills. */
   killTraitDeltaSum?: WildlifeTraits;
+  /** Number of kills with paired trait snapshots. */
+  killTraitMatchCount?: number;
 }
 
 export interface WildlifePreyOutcomeCounter {
@@ -388,8 +394,20 @@ export interface WildlifePreyOutcomeCounter {
   survivedAttacks: number;
   /** Sum of prey minus predator traits across resolved flee attempts; optional in legacy records. */
   fleeTraitDeltaSum?: WildlifeTraits;
+  /** Number of flee attempts with paired trait snapshots. */
+  fleeTraitMatchCount?: number;
   /** Sum of prey minus predator traits across successful escapes. */
   escapeTraitDeltaSum?: WildlifeTraits;
+  /** Number of successful escapes with paired trait snapshots. */
+  escapeTraitMatchCount?: number;
+  /** Sum of prey minus predator traits across attacks received. */
+  attackTraitDeltaSum?: WildlifeTraits;
+  /** Number of received attacks with paired trait snapshots. */
+  attackTraitMatchCount?: number;
+  /** Sum of prey minus predator traits across survived attacks. */
+  survivedAttackTraitDeltaSum?: WildlifeTraits;
+  /** Number of survived attacks with paired trait snapshots. */
+  survivedAttackTraitMatchCount?: number;
 }
 
 export interface WildlifePredationOutcomes {
