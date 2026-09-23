@@ -126,3 +126,11 @@ The next ecology step is additional species/predators plus explicit fitness-by-h
 Evolution observability now links measured lifetime environment to concrete outcomes. For competition, seasonal suitability and disease pressure, God View can inspect whether higher exposure is associated with reproduction, offspring count or lifespan, and compare breeder rates and trait differentials across low/medium/high exposure cohorts. Living juveniles are right-censored until they have had a reproductive opportunity, while juvenile deaths remain completed fitness outcomes; insufficient or zero-variance samples are shown as unavailable rather than as a false zero correlation. This is a measurable bridge from community ecology to lineage success without presenting correlation as proof of selection causality.
 
 The next ecology expansion is additional species and predators. Their new trophic relationships should feed the same evidence layer so future worlds can measure predator pressure, prey specialization, niche displacement and multi-species adaptation across many generations.
+
+## Implemented milestone: goat and wolf food-web expansion
+
+The wildlife model has expanded beyond the original rabbit/deer/boar/fox quartet. Goat adds a hills/dryland herbivore whose grass/shrub niche overlaps existing herbivores in new ways; wolf adds a higher trophic predator that can hunt rabbit, deer, boar, goat and, weakly, fox. Both species participate in the same deterministic carrying-capacity, competition, seasonality, disease, migration, life-history, lineage and evolution systems as the original species.
+
+A shared species/predator module now prevents coarse and fine simulation from maintaining separate food-web truths. Predator-prey legality, preference, fine damage and hunger relief are simulation-owned definitions; Decision Providers only choose legal bounded intentions. This is the first step toward a larger extensible food web rather than a growing set of one-off species branches.
+
+The next ecology work should extend predator pressure and multi-species adaptation observability, then broaden niches/species and eventually connect morphology genes, movement/body constraints and organism generation to these same authoritative ecological rules.
