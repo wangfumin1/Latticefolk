@@ -4,7 +4,7 @@ import type { WildlifeState } from '../src/types.js';
 import {
   advanceWildlifeDomestication, canIssueWildlifeDomesticationCommand, domesticationCommandAllowedActions,
   domesticationPreservesSurvivalAction, individualizeWildlifeRepresentative, normalizeWildlifeDomestication,
-  releaseWildlifeDomestication, setWildlifeDomesticationCommand, wildlifeDomesticationInteractions
+  releaseWildlifeDomestication, setWildlifeDomesticationCommand, shouldWildlifeFollowPlayerAcrossChunk, wildlifeDomesticationInteractions
 } from '../src/world/wildlifeDomestication.js';
 import { foldFineWildlifePopulationCount } from '../src/world/fineWildlifeMigration.js';
 
@@ -67,6 +67,14 @@ test('only one represented individual can enter player taming interactions',()=>
   assert.deepEqual(individualizeWildlifeRepresentative(0,1,true),{nextInitialOrdinaryCount:0,nextFixedWeight:1});
   assert.equal(individualizeWildlifeRepresentative(3,2.5,true),undefined);
   assert.equal(individualizeWildlifeRepresentative(0,0,true),undefined);
+});
+
+test('only a bonded player-owned follow command can trigger owner-follow chunk transfer',()=>{
+  const bondedFollow={stage:'bonded' as const,progress:100,ownerKind:'player' as const,ownerId:'player',command:'follow' as const};
+  assert.equal(shouldWildlifeFollowPlayerAcrossChunk('sheep',bondedFollow),true);
+  assert.equal(shouldWildlifeFollowPlayerAcrossChunk('sheep',{...bondedFollow,command:'stay'}),false);
+  assert.equal(shouldWildlifeFollowPlayerAcrossChunk('sheep',{...bondedFollow,ownerKind:'npc',ownerId:'farmer'}),false);
+  assert.equal(shouldWildlifeFollowPlayerAcrossChunk('rabbit',bondedFollow),false);
 });
 
 test('release clears ownership and commands but keeps the domestication-capable species form',()=>{
