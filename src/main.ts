@@ -18,6 +18,11 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
+import {
+  advanceWildlifeDomestication, domesticationCommandAllowedActions, domesticationPreservesSurvivalAction,
+  normalizeWildlifeDomestication, releaseWildlifeDomestication, setWildlifeDomesticationCommand,
+  wildlifeDomesticationInteractions, type WildlifeDomesticationInteraction
+} from './world/wildlifeDomestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -241,6 +246,7 @@ class TownGame {
   coarseWorld!: CoarseWorldRuntime;
   interactionOpen = false;
   interactionObjectId?: string;
+  interactionWildlifeId?: string;
   locale = i18n.locale;
   activeFineChunkId?: string;
   materializedChunks = new Map<string,FineChunkRuntime>();
@@ -1182,6 +1188,7 @@ class TownGame {
     if(archived?.deathDay!==undefined)return false;
     state.phenotype=normalizeWildlifePhenotype(state.phenotype,state.id);
     state.organismGenome=normalizeWildlifeOrganismGenome(state.species,state.organismGenome,state.id);
+    state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
@@ -2620,7 +2627,7 @@ class TownGame {
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id);if(n)this.playerTalk(n);}
     else if(this.hoverEntity.type==='wildlife'){
       const animal=this.wildlife.get(this.hoverEntity.id);
-      if(animal)this.toast(`${this.wildlifeName(animal.state.species)} · ${i18n.t('wildlife.health')} ${animal.state.health.toFixed(0)} · ${i18n.t('wildlife.action')} ${animal.state.currentAction}`);
+      if(animal)this.playerUseWildlife(animal);
     }else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
   }
 
@@ -2670,6 +2677,7 @@ class TownGame {
     ui.interaction.classList.add('hidden');
     this.interactionOpen=false;
     this.interactionObjectId=undefined;
+    this.interactionWildlifeId=undefined;
     if(relock&&this.cameraMode==='firstPerson')this.controls.lock();
   }
 
