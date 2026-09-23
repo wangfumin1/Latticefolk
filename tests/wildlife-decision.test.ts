@@ -293,3 +293,46 @@ test('lynx can flee wolf because legality comes from the same shared prey graph'
   assert.equal(d.targetWildlifeId,'wolf_threat');
 });
 
+test('archetype-composed raccoon uses shared omnivore fallback to hunt legal rabbit prey',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'raccoon_1',species:'raccoon',ageDays:400,hunger:84,thirst:20,energy:76}),
+    world:world({nearbyWildlife:[
+      {id:'rabbit_for_raccoon',species:'rabbit',sex:'female',ageDays:180,distance:2.5,health:82,currentAction:'graze',mateAvailable:true}
+    ]}),
+    allowedActions:['hunt','forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'hunt');
+  assert.equal(d.targetWildlifeId,'rabbit_for_raccoon');
+});
+
+test('archetype-composed raccoon falls back to fruit-biased forage when legal prey is absent',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'raccoon_2',species:'raccoon',ageDays:400,hunger:84,thirst:20,energy:76}),
+    world:world({nearbyResources:[
+      {id:'fruit_tree',tags:['food','forage','fruit','apple'],distance:3,resourceAmount:5},
+      {id:'grass_patch',tags:['food','nature','grass'],distance:3,resourceAmount:5}
+    ]}),
+    allowedActions:['hunt','forage','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'forage');
+  assert.equal(d.targetObjectId,'fruit_tree');
+});
+
+test('bison capability bounds keep predator intent unavailable to the shared fallback',()=>{
+  const req:WildlifeDecisionBatchRequest={requests:[{
+    wildlife:animal({id:'bison_1',species:'bison',ageDays:700,hunger:84,thirst:20,energy:76}),
+    world:world({nearbyWildlife:[
+      {id:'rabbit_near_bison',species:'rabbit',sex:'female',ageDays:180,distance:2,health:82,currentAction:'graze',mateAvailable:true}
+    ],nearbyResources:[
+      {id:'grass_for_bison',tags:['food','nature','grass'],distance:2,resourceAmount:5}
+    ]}),
+    allowedActions:['graze','wander','rest']
+  }]};
+  const d=fallbackWildlifeDecisions(req).decisions[0]!;
+  assert.equal(d.action,'graze');
+  assert.equal(d.targetObjectId,'grass_for_bison');
+  assert.equal(d.targetWildlifeId,undefined);
+});
+
