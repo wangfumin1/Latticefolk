@@ -1,6 +1,7 @@
 import type {
   ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeDiseasePair, WildlifeSpecies, WorldSeason
 } from '../types';
+import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_SPECIES, wildlifePreySpecies } from './wildlifeSpecies.js';
 
 export interface WildlifeMigration {
   species: WildlifeSpecies;
@@ -9,7 +10,7 @@ export interface WildlifeMigration {
   amount: number;
 }
 
-const SPECIES:WildlifeSpecies[]=['rabbit','deer','boar','fox'];
+const SPECIES=[...WILDLIFE_SPECIES];
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 const round=(v:number)=>Math.round(v*1000)/1000;
 const plantTotal=(p:{grass:number;shrub:number;fruit:number;crop:number})=>p.grass+p.shrub+p.fruit+p.crop;
@@ -22,7 +23,9 @@ const BIOME_AFFINITY:Record<WildlifeSpecies,Record<ChunkBiome,number>>={
   rabbit:{plains:1,forest:.82,hills:.65,wetlands:.72,dryland:.35},
   deer:{plains:.72,forest:1,hills:.82,wetlands:.55,dryland:.28},
   boar:{plains:.68,forest:1,hills:.62,wetlands:.84,dryland:.25},
-  fox:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48}
+  goat:{plains:.62,forest:.52,hills:1,wetlands:.30,dryland:.76},
+  fox:{plains:.9,forest:.92,hills:.78,wetlands:.56,dryland:.48},
+  wolf:{plains:.68,forest:1,hills:.94,wetlands:.46,dryland:.44}
 };
 
 type NicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
@@ -30,7 +33,9 @@ const NICHE_PROFILE:Record<WildlifeSpecies,Record<NicheAxis,number>>={
   rabbit:{grass:.58,shrub:.30,fruit:0,crop:.12,prey:0,space:.15},
   deer:{grass:.38,shrub:.38,fruit:.24,crop:0,prey:0,space:.15},
   boar:{grass:0,shrub:.28,fruit:.34,crop:.38,prey:0,space:.15},
-  fox:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25}
+  goat:{grass:.48,shrub:.42,fruit:.06,crop:.04,prey:0,space:.18},
+  fox:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25},
+  wolf:{grass:0,shrub:0,fruit:0,crop:0,prey:.82,space:.36}
 };
 const NICHE_AXES:NicheAxis[]=['grass','shrub','fruit','crop','prey','space'];
 
@@ -53,11 +58,23 @@ const SEASONAL_BIOME_AFFINITY:Record<WildlifeSpecies,Record<WorldSeason,Record<C
     autumn:{plains:.90,forest:1.16,hills:.92,wetlands:1.00,dryland:.64},
     winter:{plains:.80,forest:1.10,hills:.86,wetlands:.88,dryland:.58}
   },
+  goat:{
+    spring:{plains:.96,forest:.78,hills:1.10,wetlands:.62,dryland:.96},
+    summer:{plains:.82,forest:.72,hills:1.08,wetlands:.52,dryland:1.04},
+    autumn:{plains:.90,forest:.76,hills:1.12,wetlands:.56,dryland:.98},
+    winter:{plains:.78,forest:.70,hills:1.02,wetlands:.46,dryland:.88}
+  },
   fox:{
     spring:{plains:1.05,forest:1.03,hills:.96,wetlands:.88,dryland:.76},
     summer:{plains:1.02,forest:1.00,hills:.98,wetlands:.90,dryland:.74},
     autumn:{plains:1.00,forest:1.08,hills:1.00,wetlands:.84,dryland:.76},
     winter:{plains:.94,forest:1.06,hills:.98,wetlands:.78,dryland:.72}
+  },
+  wolf:{
+    spring:{plains:.90,forest:1.08,hills:1.02,wetlands:.68,dryland:.66},
+    summer:{plains:.82,forest:1.02,hills:1.08,wetlands:.62,dryland:.60},
+    autumn:{plains:.88,forest:1.14,hills:1.06,wetlands:.64,dryland:.62},
+    winter:{plains:.92,forest:1.16,hills:1.08,wetlands:.58,dryland:.64}
   }
 };
 
@@ -71,10 +88,10 @@ function nicheOverlap(a:WildlifeSpecies,b:WildlifeSpecies){
 
 export function wildlifeDiseaseContactCoefficient(from:WildlifeSpecies,to:WildlifeSpecies){
   if(from===to)return 1;
-  const herbivores=new Set<WildlifeSpecies>(['rabbit','deer','boar']);
-  if(herbivores.has(from)&&herbivores.has(to))return .28;
-  if(from==='fox'&&['rabbit','deer'].includes(to))return .42;
-  if(to==='fox'&&['rabbit','deer'].includes(from))return .24;
+  if(WILDLIFE_HERBIVORES.includes(from)&&WILDLIFE_HERBIVORES.includes(to))return .28;
+  if(canWildlifePredate(from,to))return .42;
+  if(canWildlifePredate(to,from))return .24;
+  if(isWildlifePredator(from)&&isWildlifePredator(to))return .20;
   return .16;
 }
 
@@ -89,10 +106,11 @@ export function computeWildlifeDiseasePressure(
     (chunk.water>88?4:0)+
     (chunk.ecology<28?6:0)
   );
-  const localContactPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const crossSpeciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const importedPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
-  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const speciesRecord=()=>Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
+  const localContactPressure=speciesRecord();
+  const crossSpeciesPressure=speciesRecord();
+  const importedPressure=speciesRecord();
+  const speciesPressure=speciesRecord();
   let strongestPair:WildlifeDiseasePair|undefined;
 
   for(const target of populations){
@@ -202,7 +220,12 @@ function plantFoodIndex(chunk:CoarseChunkState,species:WildlifeSpecies){
   if(species==='rabbit')return p.grass*.58+p.shrub*.3+p.crop*.12;
   if(species==='deer')return p.grass*.38+p.shrub*.38+p.fruit*.24;
   if(species==='boar')return p.shrub*.28+p.fruit*.34+p.crop*.38;
-  return chunk.food*.55+chunk.ecology*.45;
+  if(species==='goat')return p.grass*.48+p.shrub*.42+p.fruit*.06+p.crop*.04;
+  const prey=wildlifePreySpecies(species);
+  const preyDensity=(chunk.wildlife||[])
+    .filter(pop=>prey.includes(pop.species))
+    .reduce((sum,pop)=>sum+Math.min(1.5,pop.count/Math.max(.001,pop.carryingCapacity||1)),0);
+  return clamp(chunk.ecology*.30+chunk.food*.20+preyDensity*24);
 }
 
 export function seasonalHabitatSuitability(chunk:CoarseChunkState,species:WildlifeSpecies,day:number){
@@ -218,8 +241,8 @@ function fundamentalCapacity(chunk:CoarseChunkState,species:WildlifeSpecies){
   const forage=plantFoodIndex(chunk,species);
   const habitat=(chunk.ecology*.38+forage*.32+chunk.water*.20+(100-chunk.danger)*.10)/100;
   const settlementPenalty=Math.max(.3,1-chunk.settlementLevel*.16);
-  const base=species==='rabbit'?36:species==='deer'?16:species==='boar'?12:7;
-  return Math.max(0,round(base*affinity*habitat*settlementPenalty));
+  const base:Record<WildlifeSpecies,number>={rabbit:36,deer:16,boar:12,goat:14,fox:7,wolf:5};
+  return Math.max(0,round(base[species]*affinity*habitat*settlementPenalty));
 }
 
 export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populations:CoarseWildlifePopulation[]) {
@@ -232,7 +255,7 @@ export function computeWildlifeNicheCompetition(chunk:CoarseChunkState,populatio
     density.set(species,Math.min(2.5,Math.max(0,(pop?.count||0)/k)));
   }
 
-  const speciesPressure={rabbit:0,deer:0,boar:0,fox:0} as Record<WildlifeSpecies,number>;
+  const speciesPressure=Object.fromEntries(SPECIES.map(species=>[species,0])) as Record<WildlifeSpecies,number>;
   let strongestPair:NonNullable<CoarseChunkState['nicheCompetition']>['strongestPair'];
   for(let i=0;i<SPECIES.length;i++){
     for(let j=i+1;j<SPECIES.length;j++){
@@ -299,6 +322,8 @@ function consumePlants(chunk:CoarseChunkState,species:WildlifeSpecies,amount:num
     p.grass=clamp(p.grass-amount*.40);p.shrub=clamp(p.shrub-amount*.38);p.fruit=clamp(p.fruit-amount*.22);
   }else if(species==='boar'){
     p.shrub=clamp(p.shrub-amount*.25);p.fruit=clamp(p.fruit-amount*.30);p.crop=clamp(p.crop-amount*.45);
+  }else if(species==='goat'){
+    p.grass=clamp(p.grass-amount*.52);p.shrub=clamp(p.shrub-amount*.42);p.fruit=clamp(p.fruit-amount*.06);
   }
 }
 
@@ -326,7 +351,8 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     const droughtPenalty=chunk.water<25?.006:0;
     const humanPressure=chunk.settlementLevel*.0012+Math.max(0,chunk.danger-65)*.00012;
     const diseaseMortality=(pop.diseaseLoad||0)*.000045;
-    const growthRate=pop.species==='rabbit'?.010:pop.species==='fox'?.0032:.0050;
+    const growthRateBySpecies:Record<WildlifeSpecies,number>={rabbit:.010,deer:.0046,boar:.0050,goat:.0058,fox:.0032,wolf:.0026};
+    const growthRate=growthRateBySpecies[pop.species];
     const natural=growthRate*pop.count*(1-density)*dt;
     const losses=(rainPenalty+droughtPenalty+humanPressure+diseaseMortality)*pop.count*dt;
     mortalityReturn+=Math.max(0,losses);
@@ -337,21 +363,35 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
     pop.health=clamp(pop.health+(habitatHealth-pop.health)*Math.min(.10,dt*.003));
   }
 
-  const rabbits=populations.find(x=>x.species==='rabbit')!;
-  const foxes=populations.find(x=>x.species==='fox')!;
-  const deer=populations.find(x=>x.species==='deer')!;
-  const boar=populations.find(x=>x.species==='boar')!;
-
   const beforeHerbivory=plantTotal(ensurePlantBiomass(chunk));
-  consumePlants(chunk,'rabbit',rabbits.count*.008*dt);
-  consumePlants(chunk,'deer',deer.count*.018*dt);
-  consumePlants(chunk,'boar',boar.count*.020*dt);
+  const herbivoryRate:Partial<Record<WildlifeSpecies,number>>={rabbit:.008,deer:.018,boar:.020,goat:.016};
+  for(const species of WILDLIFE_HERBIVORES){
+    const pop=populations.find(entry=>entry.species===species);
+    if(pop)consumePlants(chunk,species,pop.count*(herbivoryRate[species]||0)*dt);
+  }
   const herbivory=Math.max(0,beforeHerbivory-plantTotal(ensurePlantBiomass(chunk)));
 
-  const preyAvailable=rabbits.count+deer.count*.25;
-  const predation=Math.min(rabbits.count,foxes.count*Math.min(.015,preyAvailable*.0007)*dt);
-  rabbits.count=Math.max(0,round(rabbits.count-predation));
-  foxes.health=clamp(foxes.health+(predation>0?.07:-.05)*dt);
+  let predation=0;
+  const predationRate:Partial<Record<WildlifeSpecies,number>>={fox:.015,wolf:.021};
+  for(const predatorSpecies of ['fox','wolf'] as const){
+    const predator=populations.find(entry=>entry.species===predatorSpecies);
+    if(!predator||predator.count<=0)continue;
+    let predatorKills=0;
+    for(const preySpecies of wildlifePreySpecies(predatorSpecies)){
+      const prey=populations.find(entry=>entry.species===preySpecies);
+      if(!prey||prey.count<=0)continue;
+      const preference=predatorSpecies==='fox'
+        ?(preySpecies==='rabbit'?1:.22)
+        :(preySpecies==='deer'?.72:preySpecies==='goat'?.68:preySpecies==='boar'?.48:preySpecies==='rabbit'?.34:.08);
+      const potential=predator.count*(predationRate[predatorSpecies]||0)*preference*dt;
+      const kill=Math.min(prey.count,potential*Math.min(1,prey.count/Math.max(1,predator.count*2)));
+      if(kill<=0)continue;
+      prey.count=Math.max(0,round(prey.count-kill));
+      predatorKills+=kill;
+      predation+=kill;
+    }
+    predator.health=clamp(predator.health+(predatorKills>0?.07:-.05)*dt);
+  }
 
   const p=ensurePlantBiomass(chunk);
   const plantAverage=(p.grass+p.shrub+p.fruit+p.crop)/4;
