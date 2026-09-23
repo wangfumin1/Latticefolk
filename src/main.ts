@@ -1871,6 +1871,11 @@ class TownGame {
     const fatherPhenotype=fatherState
       ?normalizeWildlifePhenotype(fatherState.phenotype,fatherState.id)
       :(fatherLineage?.phenotypeAtDeath??fatherLineage?.phenotypeAtBirth??motherPhenotype);
+    const motherGenome=normalizeWildlifeOrganismGenome(s.species,s.organismGenome,s.id);
+    s.organismGenome=motherGenome;
+    const fatherGenome=fatherState
+      ?normalizeWildlifeOrganismGenome(fatherState.species,fatherState.organismGenome,fatherState.id)
+      :(fatherLineage?.organismGenomeAtDeath??fatherLineage?.organismGenomeAtBirth??motherGenome);
     const fatherGeneration=fatherState?.generation??fatherLineage?.generation??s.generation;
     for(let i=0;i<litter;i++){
       const generation=Math.max(s.generation,fatherGeneration)+1;
@@ -1882,10 +1887,11 @@ class TownGame {
         wariness:clamp(this.inheritTrait(s.traits.wariness,fatherTraits.wariness,`${id}:wariness`),.1,1)
       };
       const phenotype=inheritWildlifePhenotype(motherPhenotype,fatherPhenotype,id);
+      const organismGenome=inheritWildlifeOrganismGenome(s.species,motherGenome,fatherGenome,id);
       const baby:WildlifeState={
         id,chunkId:s.chunkId,species:s.species,position:{x:s.position.x+(i+1)*.18,z:s.position.z+(i%2?-.2:.2)},
         ageDays:0,health:88,hunger:15,thirst:15,energy:84,sex:this.deterministicChance(id+':sex',.5)?'female':'male',
-        generation,traits,phenotype,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
+        generation,traits,phenotype,organismGenome,currentAction:'rest',lastDecisionAt:Date.now(),birthDay:currentDay,
         diseaseLoad:Math.max(0,((s.diseaseLoad||0)+(fatherState?.diseaseLoad||0))*.12),motherId:s.id,fatherId:fatherState?.id??fatherLineage?.entityId??s.pregnantById
       };
       if(this.spawnWildlife(baby)){
@@ -2041,6 +2047,11 @@ class TownGame {
         existing.phenotypeProvenance='legacy_upgrade';
         changed=true;
       }
+      if(!existing.organismGenomeAtBirth&&state.organismGenome){
+        existing.organismGenomeAtBirth=structuredClone(state.organismGenome);
+        existing.organismGenomeProvenance='legacy_upgrade';
+        changed=true;
+      }
       if(changed)this.lineageEpoch++;
       return existing;
     }
@@ -2055,6 +2066,8 @@ class TownGame {
       traitsAtBirth:structuredClone(state.traits),
       phenotypeAtBirth:state.phenotype?structuredClone(state.phenotype):undefined,
       phenotypeProvenance:state.phenotype?(state.motherId||state.fatherId?'birth':'founder_seed'):undefined,
+      organismGenomeAtBirth:state.organismGenome?structuredClone(state.organismGenome):undefined,
+      organismGenomeProvenance:state.organismGenome?(state.motherId||state.fatherId?'birth':'founder_seed'):undefined,
       birthHabitat:this.wildlifeHabitatSnapshot(state.chunkId,state.species),
       origin:state.motherId||state.fatherId?'reproduction':'founder',
       offspringCount:0,
@@ -2111,6 +2124,7 @@ class TownGame {
       record.deathChunk=animal.state.chunkId;
       record.traitsAtDeath=structuredClone(animal.state.traits);
       record.phenotypeAtDeath=animal.state.phenotype?structuredClone(animal.state.phenotype):record.phenotypeAtBirth?structuredClone(record.phenotypeAtBirth):undefined;
+      record.organismGenomeAtDeath=animal.state.organismGenome?structuredClone(animal.state.organismGenome):record.organismGenomeAtBirth?structuredClone(record.organismGenomeAtBirth):undefined;
       record.deathHabitat=this.wildlifeHabitatSnapshot(animal.state.chunkId,animal.state.species);
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
