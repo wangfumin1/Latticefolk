@@ -300,6 +300,7 @@ export interface WildlifePredatorPressurePair {
 export interface WildlifePredatorPressureState {
   speciesPressure: Record<WildlifeSpecies,number>;
   meanPressure: number;
+  pairs: WildlifePredatorPressurePair[];
   strongestPair?: WildlifePredatorPressurePair;
 }
 
@@ -342,6 +343,8 @@ export interface WildlifeHabitatSnapshot {
 export interface WildlifeHabitatExposure {
   observedDays: number;
   habitatMean: Omit<WildlifeHabitatSnapshot,'biome'>;
+  /** Time-weighted predator-source pressure for the observed prey species; absent in legacy/unobserved records. */
+  predatorSourceMean?: Partial<Record<WildlifeSpecies,number>>;
   biomeDays: Partial<Record<ChunkBiome,number>>;
   chunkDays: Record<string,number>;
   observedTransitions: number;
@@ -432,6 +435,23 @@ export interface WildlifeHabitatFitnessStats {
   bands: WildlifeFitnessBandStats[];
 }
 
+export interface WildlifePredatorSpecializationStats {
+  predatorSpecies: WildlifeSpecies;
+  sampleSize: number;
+  reproductionEligibleSamples: number;
+  lifespanSamples: number;
+  observedExposureDaysMean: number;
+  pressureMean: number;
+  breederPressureMean: number | null;
+  nonBreederPressureMean: number | null;
+  reproductionAssociation: number | null;
+  offspringAssociation: number | null;
+  lifespanAssociation: number | null;
+  traitMean: WildlifeTraits;
+  breederTraitMean: WildlifeTraits;
+  selectionDifferential: WildlifeTraits;
+}
+
 export interface WildlifeBiomeSelectionStats {
   basis: 'origin' | 'lifetime';
   biome: ChunkBiome;
@@ -473,6 +493,7 @@ export interface WildlifeEvolutionStats {
   biomeSelection: WildlifeBiomeSelectionStats[];
   lifetimeBiomeSelection: WildlifeBiomeSelectionStats[];
   exposureFitness: WildlifeHabitatFitnessStats[];
+  predatorSpecialization: WildlifePredatorSpecializationStats[];
 }
 
 export interface WildlifeState {
