@@ -35,6 +35,11 @@ test('wildlife species profiles cover every configured species and biome/season 
     assert.equal(profile.capabilities.includes('hunt'),Object.keys(profile.prey).length>0);
     assert.ok(profile.movement.speedMultiplier>.8&&profile.movement.speedMultiplier<1.2);
     assert.ok(profile.movement.energyMultiplier>.8&&profile.movement.energyMultiplier<1.2);
+    assert.ok(profile.movement.accelerationRate>0);
+    assert.ok(profile.movement.decelerationRate>0);
+    assert.ok(profile.movement.turnRate>0);
+    assert.ok(profile.movement.arrivalRadius>=.04&&profile.movement.arrivalRadius<=.3);
+    assert.ok(['amble','trot','prowl','trudge','bound','scramble'].includes(profile.movement.gait));
     assert.ok(['wild','domesticated','monster'].includes(profile.form.kind));
     assert.ok(profile.form.settlementSensitivity>=0);
     assert.ok(profile.form.dangerSensitivity>=0);
@@ -143,5 +148,17 @@ test('warg validates monster form composition through the shared predator graph'
   assert.ok(canWildlifePredate('warg','sheep'));
   assert.ok(canWildlifePredate('warg','deer'));
   assert.ok(WILDLIFE_PREDATORS.includes('warg'));
+});
+
+test('movement archetypes expose distinct controller execution rather than speed labels only',()=>{
+  const bison=wildlifeSpeciesProfile('bison').movement;
+  const raccoon=wildlifeSpeciesProfile('raccoon').movement;
+  const lynx=wildlifeSpeciesProfile('lynx').movement;
+  assert.equal(bison.gait,'trudge');
+  assert.equal(raccoon.gait,'scramble');
+  assert.equal(lynx.gait,'prowl');
+  assert.ok(raccoon.turnRate>bison.turnRate);
+  assert.ok(lynx.accelerationRate>bison.accelerationRate);
+  assert.ok(bison.arrivalRadius>raccoon.arrivalRadius);
 });
 

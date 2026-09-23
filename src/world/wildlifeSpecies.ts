@@ -5,13 +5,23 @@ export type WildlifeTrophicRole='herbivore'|'omnivore'|'predator';
 export type WildlifeNicheAxis='grass'|'shrub'|'fruit'|'crop'|'prey'|'space';
 export type WildlifeMorphologyFeature='long_ears'|'antlers'|'horns'|'tail'|'dorsal_stripe'|'ear_tufts'|'face_mask'|'ringed_tail';
 export type WildlifeMovementMode='generalist'|'cursorial'|'ambush'|'sturdy'|'heavy_grazer'|'dexterous_forager';
+export type WildlifeGait='amble'|'trot'|'prowl'|'trudge'|'bound'|'scramble';
 
 export interface WildlifeMovementProfile {
   id:string;
   mode:WildlifeMovementMode;
+  gait:WildlifeGait;
   speedMultiplier:number;
   energyMultiplier:number;
   fastActionMultiplier:number;
+  /** Fractions of max speed gained per second while accelerating. */
+  accelerationRate:number;
+  /** Fractions of max speed lost per second while braking/turning. */
+  decelerationRate:number;
+  /** Maximum deterministic yaw change in radians per second. */
+  turnRate:number;
+  /** Fine-path waypoint acceptance radius in world units. */
+  arrivalRadius:number;
 }
 
 export type WildlifeOrganismForm='wild'|'domesticated'|'monster';

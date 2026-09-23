@@ -17,6 +17,7 @@ import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHunge
 import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlifePhenotype, wildlifeFunctionalPhenotype } from './world/wildlifePhenotype';
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
+import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -145,6 +146,8 @@ interface WildlifeRuntime {
   mesh: THREE.Group;
   path: Vec2[];
   pathIndex: number;
+  /** Fine-runtime momentum only; coarse/unloaded simulation does not persist frame velocity. */
+  controllerSpeed: number;
   nextDecisionAt: number;
   actionResolved: boolean;
   removed?: boolean;
@@ -1185,7 +1188,7 @@ class TownGame {
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
-    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
+    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return true;
   }
@@ -1491,23 +1494,41 @@ class TownGame {
   }
 
   moveWildlife(animal:WildlifeRuntime,dt:number) {
-    if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;return;}
+    if(animal.pathIndex>=animal.path.length){
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;return;
+    }
     const p=animal.path[animal.pathIndex]!;
     const pos=animal.mesh.position;
-    const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
-    if(d<.12){animal.pathIndex++;if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}return;}
     const fastAction=['flee','hunt','migrate'].includes(animal.state.currentAction);
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(animal.state.phenotype,animal.state.id));
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const locomotion=wildlifeOrganismLocomotion(genome);
     const movement=wildlifeSpeciesProfile(animal.state.species).movement;
-    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*movement.speedMultiplier*(fastAction?1.18:1);
-    pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
+    const maxSpeed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*movement.speedMultiplier*(fastAction?1.18:1);
+    const step=stepWildlifeMovementController({
+      x:pos.x,z:pos.z,targetX:p.x,targetZ:p.z,maxSpeed,dt,profile:movement,
+      state:{speed:animal.controllerSpeed,heading:animal.mesh.rotation.y}
+    });
+    animal.mesh.rotation.y=step.heading;
+    if(step.arrived){
+      animal.controllerSpeed=0;
+      animal.pathIndex++;
+      if(animal.pathIndex>=animal.path.length){animal.path=[];animal.pathIndex=0;}
+      return;
+    }
+
+    const nextX=pos.x+step.dx,nextZ=pos.z+step.dz;
+    if(this.isBlockedWorld(nextX,nextZ)){
+      animal.controllerSpeed=0;
+      return;
+    }
+    pos.x=nextX;pos.z=nextZ;
+    animal.controllerSpeed=step.speed;
+    const movementLoad=maxSpeed>0?clamp(step.speed/maxSpeed,.18,1):0;
     animal.state.energy=clamp(
-      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
+      animal.state.energy-dt*.018*movementLoad*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
       0,100
     );
-    animal.mesh.rotation.y=Math.atan2(dx,dz);
   }
 
   wildlifeAllowedActions(state:WildlifeState):WildlifeAction[] {
@@ -2770,7 +2791,7 @@ class TownGame {
         ui.npc.classList.remove('hidden');
         const lineage=this.wildlifeLineage.get(s.id);
         const coarsePopulation=this.coarseWorld.chunks.get(s.chunkId)?.wildlife?.find(entry=>entry.species===s.species);
-        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div>${(()=>{const profile=wildlifeSpeciesProfile(s.species);return `<div>family ${profile.organismFamily} · form ${profile.form.kind}${profile.archetypeId?` · archetype ${this.escape(profile.archetypeId)}`:''} · movement ${profile.movement.mode}</div><div>capabilities ${profile.capabilities.map(action=>this.escape(action)).join(' / ')}</div>`;})()}<div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${s.phenotype?`<div>morph L ${s.phenotype.morphology.bodyLength.toFixed(2)} · H ${s.phenotype.morphology.bodyHeight.toFixed(2)} · leg ${s.phenotype.morphology.legLength.toFixed(2)} · head ${s.phenotype.morphology.headScale.toFixed(2)} · behavior forage ${s.phenotype.behavior.forageDrive.toFixed(2)} · migrate ${s.phenotype.behavior.migrationDrive.toFixed(2)} · risk ${s.phenotype.behavior.riskTolerance.toFixed(2)} · recover ${s.phenotype.behavior.recoveryDrive.toFixed(2)}</div><div>${(()=>{const fn=wildlifeFunctionalPhenotype(s.phenotype);return `function speed ×${fn.movementSpeedMultiplier.toFixed(2)} · move cost ×${fn.movementEnergyMultiplier.toFixed(2)} · maintenance ×${fn.maintenanceMultiplier.toFixed(2)} · forage ×${fn.forageEfficiency.toFixed(2)} · rest ×${fn.recoveryEfficiency.toFixed(2)}`;})()}</div>`:''}${s.organismGenome?`<div>family ${s.organismGenome.family} · niche grass ×${s.organismGenome.niche.grass.toFixed(2)} shrub ×${s.organismGenome.niche.shrub.toFixed(2)} fruit ×${s.organismGenome.niche.fruit.toFixed(2)} crop ×${s.organismGenome.niche.crop.toFixed(2)}</div><div>${(()=>{const locomotion=wildlifeOrganismLocomotion(s.organismGenome!);return `genome locomotion stride ×${s.organismGenome!.locomotion.stride.toFixed(2)} · endurance ×${s.organismGenome!.locomotion.endurance.toFixed(2)} · speed ×${locomotion.speedMultiplier.toFixed(2)} · energy ×${locomotion.energyMultiplier.toFixed(2)}`;})()}</div>`:'' }${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease?.speciesPressure[s.species]??coarsePopulation.diseaseLoad??0).toFixed(0)} · ${i18n.t('evolution.predatorPressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifePredatorPressure?.speciesPressure[s.species]??coarsePopulation.predatorPressure??0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
+        ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div>${(()=>{const profile=wildlifeSpeciesProfile(s.species);return `<div>family ${profile.organismFamily} · form ${profile.form.kind}${profile.archetypeId?` · archetype ${this.escape(profile.archetypeId)}`:''} · movement ${profile.movement.mode}/${profile.movement.gait} · accel ${profile.movement.accelerationRate.toFixed(1)}×/s · turn ${profile.movement.turnRate.toFixed(1)}rad/s</div><div>capabilities ${profile.capabilities.map(action=>this.escape(action)).join(' / ')}</div>`;})()}<div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${s.phenotype?`<div>morph L ${s.phenotype.morphology.bodyLength.toFixed(2)} · H ${s.phenotype.morphology.bodyHeight.toFixed(2)} · leg ${s.phenotype.morphology.legLength.toFixed(2)} · head ${s.phenotype.morphology.headScale.toFixed(2)} · behavior forage ${s.phenotype.behavior.forageDrive.toFixed(2)} · migrate ${s.phenotype.behavior.migrationDrive.toFixed(2)} · risk ${s.phenotype.behavior.riskTolerance.toFixed(2)} · recover ${s.phenotype.behavior.recoveryDrive.toFixed(2)}</div><div>${(()=>{const fn=wildlifeFunctionalPhenotype(s.phenotype);return `function speed ×${fn.movementSpeedMultiplier.toFixed(2)} · move cost ×${fn.movementEnergyMultiplier.toFixed(2)} · maintenance ×${fn.maintenanceMultiplier.toFixed(2)} · forage ×${fn.forageEfficiency.toFixed(2)} · rest ×${fn.recoveryEfficiency.toFixed(2)}`;})()}</div>`:''}${s.organismGenome?`<div>family ${s.organismGenome.family} · niche grass ×${s.organismGenome.niche.grass.toFixed(2)} shrub ×${s.organismGenome.niche.shrub.toFixed(2)} fruit ×${s.organismGenome.niche.fruit.toFixed(2)} crop ×${s.organismGenome.niche.crop.toFixed(2)}</div><div>${(()=>{const locomotion=wildlifeOrganismLocomotion(s.organismGenome!);return `genome locomotion stride ×${s.organismGenome!.locomotion.stride.toFixed(2)} · endurance ×${s.organismGenome!.locomotion.endurance.toFixed(2)} · speed ×${locomotion.speedMultiplier.toFixed(2)} · energy ×${locomotion.energyMultiplier.toFixed(2)}`;})()}</div>`:'' }${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease?.speciesPressure[s.species]??coarsePopulation.diseaseLoad??0).toFixed(0)} · ${i18n.t('evolution.predatorPressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifePredatorPressure?.speciesPressure[s.species]??coarsePopulation.predatorPressure??0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
       }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
