@@ -1260,6 +1260,27 @@ class TownGame {
           const tuft=new THREE.Mesh(new THREE.ConeGeometry(.055*scale,.28*scale,5),featureMaterial);
           tuft.position.set(x*scale,headY+.38*scale,headZ);g.add(tuft);
         }
+      }else if(feature==='face_mask'){
+        const mask=new THREE.Mesh(
+          new THREE.BoxGeometry(morphology.headSize*.96*scale,.14*scale,.06*scale),
+          featureMaterial
+        );
+        mask.position.set(0,headY+.04*scale,headZ+morphology.headSize*.48*scale);g.add(mask);
+      }else if(feature==='ringed_tail'){
+        const tailLength=morphology.tailLength??.68;
+        const tailGroup=new THREE.Group();
+        const segments=5;
+        for(let i=0;i<segments;i++){
+          const material=i%2===0?bodyMaterial:featureMaterial;
+          const segment=new THREE.Mesh(
+            new THREE.BoxGeometry(.22*scale,.22*scale,(tailLength/segments)*scale),
+            material
+          );
+          segment.position.z=-(i+.5)*(tailLength/segments)*scale;
+          tailGroup.add(segment);
+        }
+        tailGroup.position.set(0,bodyCenter,-morphology.bodyZ*.5*scale);
+        tailGroup.rotation.x=-.30;g.add(tailGroup);
       }
     }
     g.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
