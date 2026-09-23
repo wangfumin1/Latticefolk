@@ -415,3 +415,42 @@ test('lynx habitat suitability is inherited from reusable temperate forest-hills
   assert.ok(seasonalHabitatSuitability(forest,'lynx',61)>seasonalHabitatSuitability(dryland,'lynx',61));
 });
 
+test('bison coarse ecology inherits open-plains large-grazer habitat and plant flow',()=>{
+  const plains=chunk('chunk_bison_plains',29,{biome:'plains',ecology:90,water:78,food:74});
+  const forest=chunk('chunk_bison_forest',30,{biome:'forest',ecology:90,water:78,food:74});
+  plains.plants={grass:82,shrub:55,fruit:30,crop:28};
+  forest.plants={grass:82,shrub:55,fruit:30,crop:28};
+  ensureWildlifePopulations(plains);ensureWildlifePopulations(forest);
+  assert.ok(seasonalHabitatSuitability(plains,'bison',31)>seasonalHabitatSuitability(forest,'bison',31));
+
+  for(const pop of plains.wildlife!){pop.count=0;pop.diseaseLoad=0;}
+  const bison=plains.wildlife!.find(pop=>pop.species==='bison')!;
+  bison.count=Math.max(2,bison.carryingCapacity*.7);
+  const grassBefore=plains.plants.grass;
+  for(let i=0;i<5;i++)simulateWildlife(plains,20,'clear',31);
+  assert.ok((plains.trophicFlux?.herbivory||0)>0);
+  assert.ok(plains.plants.grass<grassBefore);
+  assert.equal(plains.trophicFlux?.predation,0);
+});
+
+test('raccoon coarse ecology combines fruit forage and rabbit predation through shared profile loops',()=>{
+  const a=chunk('chunk_raccoon_omnivore',31,{biome:'wetlands',ecology:88,water:88,food:72});
+  const populations=ensureWildlifePopulations(a);
+  for(const pop of populations){pop.count=0;pop.diseaseLoad=0;}
+  const rabbit=populations.find(pop=>pop.species==='rabbit')!;
+  const raccoon=populations.find(pop=>pop.species==='raccoon')!;
+  rabbit.count=Math.max(5,rabbit.carryingCapacity*.7);
+  raccoon.count=Math.max(1,raccoon.carryingCapacity*.7);
+  a.plants={grass:62,shrub:70,fruit:82,crop:36};
+  const rabbitBefore=rabbit.count;
+  const fruitBefore=a.plants.fruit;
+  const pressure=computeWildlifePredatorPressure(a,populations);
+  assert.ok((pressure.speciesPressure.rabbit||0)>0);
+  assert.ok((pressure.pairs||[]).some(pair=>pair.predatorSpecies==='raccoon'&&pair.preySpecies==='rabbit'));
+  for(let i=0;i<6;i++)simulateWildlife(a,20,'clear',45);
+  assert.ok((a.trophicFlux?.herbivory||0)>0);
+  assert.ok((a.trophicFlux?.predation||0)>0);
+  assert.ok(a.plants.fruit<fruitBefore);
+  assert.ok(rabbit.count<rabbitBefore);
+});
+
