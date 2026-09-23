@@ -117,8 +117,8 @@ test('niche partitioning keeps fox competition lower than crowded plant consumer
     if(p.species==='rabbit')p.count=30;
     else if(p.species==='deer')p.count=14;
     else if(p.species==='boar')p.count=11;
-    else if(p.species==='lynx')p.count=0;
-    else p.count=5;
+    else if(p.species==='fox')p.count=5;
+    else p.count=0;
   }
   const state=computeWildlifeNicheCompetition(a,populations);
   assert.ok((state.speciesPressure.rabbit||0)>(state.speciesPressure.fox||0));
