@@ -242,6 +242,7 @@ class TownGame {
   coarseWorld!: CoarseWorldRuntime;
   interactionOpen = false;
   interactionObjectId?: string;
+  interactionWildlifeId?: string;
   locale = i18n.locale;
   activeFineChunkId?: string;
   materializedChunks = new Map<string,FineChunkRuntime>();
@@ -728,6 +729,7 @@ class TownGame {
     // God mode is observer-only: no player entity is exposed to NPC perception or targeting.
     this.playerMarker.visible=false;
     this.cancelPlayerTargeting();
+    this.suspendPlayerWildlifeFollowPaths();
     ui.crosshair.classList.add('hidden');
     ui.modeBtn.textContent=i18n.t('mode.first');ui.modeHint.textContent=i18n.t('mode.observer');
     this.toast('上帝视角：玩家已从 NPC 感知中移除 · 点击查看 · 双击/F 聚焦');
@@ -756,6 +758,16 @@ class TownGame {
       agent.state.currentAction='idle';
       agent.state.targetNpcId=undefined;
       agent.nextDecisionAt=now()+500+Math.random()*1000;
+    }
+  }
+
+  suspendPlayerWildlifeFollowPaths() {
+    for(const animal of this.wildlife.values()){
+      const domestication=normalizeWildlifeDomestication(animal.state.species,animal.state.domestication);
+      if(domestication?.ownerId!=='player'||domestication.command!=='follow')continue;
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+      animal.state.currentAction='rest';
+      animal.state.targetObjectId=undefined;animal.state.targetWildlifeId=undefined;animal.state.targetChunkId=undefined;
     }
   }
 
@@ -1450,6 +1462,60 @@ class TownGame {
     }
   }
 
+  applyOwnedWildlifeCommand(animal:WildlifeRuntime) {
+    const s=animal.state;
+    const domestication=normalizeWildlifeDomestication(s.species,s.domestication);
+    s.domestication=domestication;
+    if(!domestication?.ownerId||domestication.command==='none')return false;
+
+    s.targetObjectId=undefined;s.targetWildlifeId=undefined;s.targetChunkId=undefined;
+    if(domestication.command==='stay'){
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+      s.currentAction='rest';
+      return true;
+    }
+
+    if(domestication.command==='follow'){
+      if(domestication.ownerId!=='player'||this.cameraMode!=='firstPerson'){
+        animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+        s.currentAction='rest';
+        return true;
+      }
+      const ownerPosition=this.playerPosition;
+      const ownerDistance=dist(s.position,ownerPosition);
+      if(ownerDistance<=2.2){
+        animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+        s.currentAction='rest';
+        return true;
+      }
+      const finalWaypoint=animal.path.length?animal.path[animal.path.length-1]:undefined;
+      if(!finalWaypoint||dist(finalWaypoint,ownerPosition)>2.2){
+        const target=this.randomPassableNear(ownerPosition,1.1,s.chunkId);
+        animal.path=this.findPath(s.position,target);animal.pathIndex=0;animal.controllerSpeed=0;
+      }
+      s.currentAction='wander';animal.actionResolved=true;
+      return true;
+    }
+
+    if(domestication.command==='feed'){
+      if(s.hunger<28){
+        animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
+        s.currentAction='rest';
+        animal.nextDecisionAt=Math.max(animal.nextDecisionAt,now()+3500);
+        return true;
+      }
+      if(animal.path.length===0&&animal.actionResolved&&now()>=animal.nextDecisionAt){
+        const action=wildlifeSpeciesProfile(s.species).feedingAction;
+        this.applyWildlifeDecision(animal,{
+          wildlifeId:s.id,source:'owner-command',action,confidence:1,reasonCode:'owner_feed'
+        });
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   updateWildlife(dt:number) {
     for(const animal of [...this.wildlife.values()]){
       if(animal.removed)continue;
@@ -1484,6 +1550,7 @@ class TownGame {
       s.health=clamp(s.health-agePressure*dt*.12-(s.diseaseLoad||0)*dt*.0015,0,100);
       if(s.health<=0){this.removeWildlife(animal,this.classifyWildlifeDeath(s));continue;}
 
+      this.applyOwnedWildlifeCommand(animal);
       this.moveWildlife(animal,dt);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
       if(animal.removed)continue;
@@ -2634,8 +2701,91 @@ class TownGame {
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id);if(n)this.playerTalk(n);}
     else if(this.hoverEntity.type==='wildlife'){
       const animal=this.wildlife.get(this.hoverEntity.id);
-      if(animal)this.toast(`${this.wildlifeName(animal.state.species)} · ${i18n.t('wildlife.health')} ${animal.state.health.toFixed(0)} · ${i18n.t('wildlife.action')} ${animal.state.currentAction}`);
+      if(animal)this.playerUseWildlife(animal);
     }else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
+  }
+
+  playerUseWildlife(animal:WildlifeRuntime) {
+    if(this.cameraMode!=='firstPerson')return;
+    const state=animal.state;
+    if(!isWildlifeDomesticationEligible(state.species)){
+      this.toast(`${this.wildlifeName(state.species)} · ${i18n.t('wildlife.health')} ${state.health.toFixed(0)} · ${i18n.t('wildlife.action')} ${state.currentAction}`);
+      return;
+    }
+    this.openWildlifeInteractionMenu(animal);
+  }
+
+  openWildlifeInteractionMenu(animal:WildlifeRuntime) {
+    const state=animal.state;
+    state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
+    const domestication=state.domestication!;
+    this.interactionOpen=true;
+    this.interactionObjectId=undefined;
+    this.interactionWildlifeId=state.id;
+    ui.overlay.classList.add('hidden');
+    if(this.controls.isLocked)this.controls.unlock();
+    ui.interactionTitle.textContent=`${i18n.t('domestication.title')} · ${this.wildlifeName(state.species)}`;
+    ui.interactionMeta.textContent=`${i18n.t('domestication.progress')} ${domestication.tameProgress.toFixed(0)}/100 · ${i18n.t('domestication.owner')} ${domestication.ownerId||i18n.t('domestication.unowned')} · ${i18n.t('domestication.command')} ${i18n.t(`domestication.command.${domestication.command}`)} · ${i18n.t('domestication.breeding')} ${i18n.t(domestication.breedingAllowed?'domestication.breeding.on':'domestication.breeding.off')}`;
+    ui.interactionActions.innerHTML='';
+
+    const add=(label:string,run:()=>void)=>{
+      const button=document.createElement('button');
+      button.textContent=label;
+      button.addEventListener('click',()=>{run();this.closeInteractionMenu(true);});
+      ui.interactionActions.appendChild(button);
+    };
+
+    if(!domestication.ownerId){
+      add(i18n.t('domestication.feed'),()=>this.feedWildlifeForTaming(animal));
+    }else if(domestication.ownerId==='player'){
+      for(const command of ['follow','stay','feed','none'] as WildlifeDomesticationCommand[]){
+        add(i18n.t(`domestication.command.${command}`),()=>this.commandOwnedWildlife(animal,command));
+      }
+      add(i18n.t(domestication.breedingAllowed?'domestication.disableBreeding':'domestication.enableBreeding'),()=>this.toggleOwnedWildlifeBreeding(animal));
+    }
+    ui.interaction.classList.remove('hidden');
+  }
+
+  feedWildlifeForTaming(animal:WildlifeRuntime) {
+    if(this.cameraMode!=='firstPerson'||this.playerInventory.grain<=0){
+      this.toast(i18n.t('domestication.needGrain'));return;
+    }
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const result=feedWildlifeForTaming(animal.state.species,animal.state.domestication,'player',currentDay);
+    if(!result.applied||!result.state){
+      this.toast(result.reason==='ineligible'?i18n.t('domestication.ineligible'):i18n.t('domestication.owner'));return;
+    }
+    this.playerInventory.grain--;
+    animal.state.domestication=result.state;
+    animal.state.hunger=clamp(animal.state.hunger-18,0,100);
+    this.event(`${this.wildlifeName(animal.state.species)} ${i18n.t('domestication.progress')} → ${result.state.tameProgress.toFixed(0)}/100`);
+    if(result.claimed)this.toast(i18n.t('domestication.claimed'));
+    else this.toast(`${i18n.t('domestication.progress')} ${result.state.tameProgress.toFixed(0)}/100`);
+    void this.saveWorldState();
+  }
+
+  commandOwnedWildlife(animal:WildlifeRuntime,command:WildlifeDomesticationCommand) {
+    if(this.cameraMode!=='firstPerson')return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const next=setWildlifeDomesticationCommand(animal.state.species,animal.state.domestication,'player',command,currentDay);
+    if(!next)return;
+    animal.state.domestication=next;
+    animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;animal.nextDecisionAt=now();
+    animal.state.targetObjectId=undefined;animal.state.targetWildlifeId=undefined;animal.state.targetChunkId=undefined;
+    this.event(`${this.wildlifeName(animal.state.species)} ${i18n.t('domestication.command')} → ${i18n.t(`domestication.command.${command}`)}`);
+    void this.saveWorldState();
+  }
+
+  toggleOwnedWildlifeBreeding(animal:WildlifeRuntime) {
+    if(this.cameraMode!=='firstPerson')return;
+    const currentDay=this.day+this.minuteOfDay/1440;
+    const current=normalizeWildlifeDomestication(animal.state.species,animal.state.domestication);
+    if(!current)return;
+    const next=setWildlifeBreedingPermission(animal.state.species,current,'player',!current.breedingAllowed,currentDay);
+    if(!next)return;
+    animal.state.domestication=next;
+    this.event(`${this.wildlifeName(animal.state.species)} ${i18n.t('domestication.breeding')} → ${i18n.t(next.breedingAllowed?'domestication.breeding.on':'domestication.breeding.off')}`);
+    void this.saveWorldState();
   }
 
   async npcTalkPlayerAuto(n:NpcRuntime,intent:SocialIntent) {
@@ -2684,6 +2834,7 @@ class TownGame {
     ui.interaction.classList.add('hidden');
     this.interactionOpen=false;
     this.interactionObjectId=undefined;
+    this.interactionWildlifeId=undefined;
     if(relock&&this.cameraMode==='firstPerson')this.controls.lock();
   }
 
@@ -2782,7 +2933,7 @@ class TownGame {
     }
     if(!this.hoverEntity){ui.prompt.textContent='';return;}
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.talk',{name:n.state.name});}
-    else if(this.hoverEntity.type==='wildlife'){const w=this.wildlife.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.wildlife',{name:this.wildlifeName(w.state.species)});}
+    else if(this.hoverEntity.type==='wildlife'){const w=this.wildlife.get(this.hoverEntity.id)!;const key=isWildlifeDomesticationEligible(w.state.species)?'prompt.domesticated':'prompt.wildlife';ui.prompt.textContent=i18n.t(key,{name:this.wildlifeName(w.state.species)});}
     else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:o.state.name,count});}
   }
 
