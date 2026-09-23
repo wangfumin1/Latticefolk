@@ -46,6 +46,8 @@ export interface WildlifeSpeciesProfile {
   growthRate:number;
   herbivoryRate:number;
   predationRate:number;
+  huntEnergyCost:number;
+  rainMortality:number;
   feedingAction:Extract<WildlifeAction,'graze'|'forage'>;
   forageTags:readonly string[];
   fine:WildlifeFineProfile;
@@ -72,7 +74,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     niche:{grass:.58,shrub:.30,fruit:0,crop:.12,prey:0,space:.15},
     plantForageWeights:{grass:.58,shrub:.30,fruit:0,crop:.12},
     plantConsumptionWeights:{grass:.72,shrub:.154,fruit:0,crop:0},
-    baseCarryingCapacity:36,growthRate:.010,herbivoryRate:.008,predationRate:0,
+    baseCarryingCapacity:36,growthRate:.010,herbivoryRate:.008,predationRate:0,huntEnergyCost:0,rainMortality:.0025,
     feedingAction:'graze',forageTags:['nature','food','grass'],
     fine:{speed:2.4,size:.55,fertility:.9,wariness:.88,maxFine:3,maxInitialAge:500},
     morphology:{body:0xb8a48d,accent:0xe4d4c1,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['long_ears']},
@@ -91,7 +93,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     niche:{grass:.38,shrub:.38,fruit:.24,crop:0,prey:0,space:.15},
     plantForageWeights:{grass:.38,shrub:.38,fruit:.24,crop:0},
     plantConsumptionWeights:{grass:.40,shrub:.38,fruit:.22,crop:0},
-    baseCarryingCapacity:16,growthRate:.0046,herbivoryRate:.018,predationRate:0,
+    baseCarryingCapacity:16,growthRate:.0046,herbivoryRate:.018,predationRate:0,huntEnergyCost:0,rainMortality:0,
     feedingAction:'graze',forageTags:['nature','food','grass'],
     fine:{speed:2.8,size:1.15,fertility:.48,wariness:.82,maxFine:2,maxInitialAge:3200},
     morphology:{body:0x9a6945,accent:0xd2b28f,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['antlers'],featureColor:0x5b4331},
@@ -110,7 +112,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     niche:{grass:0,shrub:.28,fruit:.34,crop:.38,prey:0,space:.15},
     plantForageWeights:{grass:0,shrub:.28,fruit:.34,crop:.38},
     plantConsumptionWeights:{grass:0,shrub:.25,fruit:.30,crop:.45},
-    baseCarryingCapacity:12,growthRate:.0050,herbivoryRate:.020,predationRate:0,
+    baseCarryingCapacity:12,growthRate:.0050,herbivoryRate:.020,predationRate:0,huntEnergyCost:0,rainMortality:0,
     feedingAction:'forage',forageTags:['forage','food','farm'],
     fine:{speed:1.9,size:1.0,fertility:.55,wariness:.58,maxFine:2,maxInitialAge:3000},
     morphology:{body:0x5d4a3c,accent:0x796354,bodyX:1.2,bodyY:.7,bodyZ:.6,headSize:.50,legHeight:.45,features:[]},
@@ -129,7 +131,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     niche:{grass:.48,shrub:.42,fruit:.06,crop:.04,prey:0,space:.18},
     plantForageWeights:{grass:.48,shrub:.42,fruit:.06,crop:.04},
     plantConsumptionWeights:{grass:.52,shrub:.42,fruit:.06,crop:0},
-    baseCarryingCapacity:14,growthRate:.0058,herbivoryRate:.016,predationRate:0,
+    baseCarryingCapacity:14,growthRate:.0058,herbivoryRate:.016,predationRate:0,huntEnergyCost:0,rainMortality:0,
     feedingAction:'graze',forageTags:['nature','food','grass'],
     fine:{speed:2.5,size:.82,fertility:.62,wariness:.72,maxFine:2,maxInitialAge:2600},
     morphology:{body:0xc2b8a0,accent:0xe4dcc8,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['horns'],featureColor:0x75684f},
@@ -147,7 +149,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     ),
     niche:{grass:0,shrub:0,fruit:0,crop:0,prey:.75,space:.25},
     plantForageWeights:zeroPlants,plantConsumptionWeights:zeroPlants,
-    baseCarryingCapacity:7,growthRate:.0032,herbivoryRate:0,predationRate:.015,
+    baseCarryingCapacity:7,growthRate:.0032,herbivoryRate:0,predationRate:.015,huntEnergyCost:8,rainMortality:0,
     feedingAction:'forage',forageTags:['forage','food'],
     fine:{speed:2.7,size:.7,fertility:.42,wariness:.76,maxFine:1,maxInitialAge:1800},
     morphology:{body:0xc86f35,accent:0xf0d0a5,bodyX:1.15,bodyY:.65,bodyZ:.55,headSize:.48,legHeight:.5,features:['tail'],tailLength:.75},
@@ -165,7 +167,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     ),
     niche:{grass:0,shrub:0,fruit:0,crop:0,prey:.82,space:.36},
     plantForageWeights:zeroPlants,plantConsumptionWeights:zeroPlants,
-    baseCarryingCapacity:5,growthRate:.0026,herbivoryRate:0,predationRate:.021,
+    baseCarryingCapacity:5,growthRate:.0026,herbivoryRate:0,predationRate:.021,huntEnergyCost:10,rainMortality:0,
     feedingAction:'forage',forageTags:['forage','food'],
     fine:{speed:3.0,size:1.0,fertility:.36,wariness:.70,maxFine:1,maxInitialAge:2200},
     morphology:{body:0x696d72,accent:0xb0b3b7,bodyX:1.18,bodyY:.68,bodyZ:.58,headSize:.49,legHeight:.52,features:['tail'],tailLength:.82},
@@ -191,7 +193,7 @@ export const WILDLIFE_SPECIES_PROFILES:Record<WildlifeSpecies,WildlifeSpeciesPro
     niche:{grass:.05,shrub:.18,fruit:.22,crop:.15,prey:.28,space:.22},
     plantForageWeights:{grass:.05,shrub:.25,fruit:.42,crop:.28},
     plantConsumptionWeights:{grass:.02,shrub:.08,fruit:.12,crop:.08},
-    baseCarryingCapacity:8,growthRate:.0038,herbivoryRate:.007,predationRate:.010,
+    baseCarryingCapacity:8,growthRate:.0038,herbivoryRate:.007,predationRate:.010,huntEnergyCost:7,rainMortality:0,
     feedingAction:'forage',forageTags:['forage','food','nature','farm'],
     fine:{speed:2.2,size:.78,fertility:.38,wariness:.68,maxFine:1,maxInitialAge:2100},
     morphology:{body:0x454944,accent:0xd8d5c8,bodyX:1.28,bodyY:.56,bodyZ:.62,headSize:.44,legHeight:.38,features:['tail','dorsal_stripe'],featureColor:0xf0ead8,tailLength:.42},
