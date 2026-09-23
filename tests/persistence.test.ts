@@ -21,7 +21,31 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       id:'chunk_2_-1',cx:2,cz:-1,biome:'plains',settlementLevel:2,population:18,
       food:61,wood:44,water:70,ecology:66,danger:19,prosperity:57,
       strategy:'trade_route',migrationPolicy:'retain',ecologyPolicy:'balance',
-      lastDecisionAt:123,decisionVersion:4
+      lastDecisionAt:123,decisionVersion:4,
+      wildlife:[
+        {species:'rabbit',count:8,carryingCapacity:18,health:80},
+        {species:'fox',count:2,carryingCapacity:4,health:82}
+      ],
+      wildlifePredatorPressure:{
+        speciesPressure:{rabbit:32,deer:0,boar:0,goat:0,fox:0,wolf:0},meanPressure:5.3,
+        pairs:[{predatorSpecies:'fox',preySpecies:'rabbit',pressure:32}],
+        strongestPair:{predatorSpecies:'fox',preySpecies:'rabbit',pressure:32}
+      },
+      nicheCompetition:{
+        speciesPressure:{rabbit:14,deer:0,boar:0,goat:0,fox:14,wolf:0},meanPressure:4.7,
+        pairs:[{speciesA:'rabbit',speciesB:'fox',nicheOverlap:.15,pressure:14}],
+        strongestPair:{speciesA:'rabbit',speciesB:'fox',nicheOverlap:.15,pressure:14}
+      },
+      wildlifeDisease:{
+        environmentalPressure:0,
+        speciesPressure:{rabbit:8,deer:0,boar:0,goat:0,fox:0,wolf:0},
+        localContactPressure:{rabbit:0,deer:0,boar:0,goat:0,fox:0,wolf:0},
+        crossSpeciesPressure:{rabbit:8,deer:0,boar:0,goat:0,fox:0,wolf:0},
+        importedPressure:{rabbit:0,deer:0,boar:0,goat:0,fox:0,wolf:0},
+        meanPressure:1.3,
+        pairs:[{fromSpecies:'fox',toSpecies:'rabbit',pressure:8}],
+        strongestPair:{fromSpecies:'fox',toSpecies:'rabbit',pressure:8}
+      }
     }],
     fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[],wildlifeStates:[{
       id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
@@ -87,6 +111,10 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.wildlifeTransfers?.[0]?.state.representedPopulation,2.5);
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.stats().pendingWildlifeTransfers,1);
+  const interactionNetwork=store.interactionNetwork();
+  assert.deepEqual(interactionNetwork.coverage,{predation:1,competition:1,disease:1});
+  assert.equal(interactionNetwork.edges.find(edge=>edge.kind==='predation'&&edge.fromSpecies==='fox'&&edge.toSpecies==='rabbit')?.meanPressure,32);
+  assert.equal(interactionNetwork.nodes.find(node=>node.species==='rabbit')?.population,8);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
   const coevolution=store.coevolutionStats().find(entry=>entry.predatorSpecies==='fox'&&entry.preySpecies==='rabbit');
   assert.equal(coevolution?.bothSidesObserved,false);
