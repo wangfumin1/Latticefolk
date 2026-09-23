@@ -88,6 +88,12 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(store.stats().lineageRecords,1);
   assert.equal(store.stats().pendingWildlifeTransfers,1);
   assert.equal(store.evolutionStats().find(entry=>entry.species==='rabbit')?.deaths,1);
+  const coevolution=store.coevolutionStats().find(entry=>entry.predatorSpecies==='fox'&&entry.preySpecies==='rabbit');
+  assert.equal(coevolution?.bothSidesObserved,false);
+  assert.equal(coevolution?.prey.generationsObserved,1);
+  assert.equal(coevolution?.prey.generations[0]?.attempts,3);
+  assert.equal(coevolution?.prey.generations[0]?.terminalAttempts,2);
+  assert.equal(coevolution?.prey.generations[0]?.eligibleIndividuals,1,'dead juveniles are completed reproductive outcomes');
 
   store.save({...snapshot,wildlifeLineage:[],wildlifeTransfers:[]});
   const afterSparseSave=store.load();
