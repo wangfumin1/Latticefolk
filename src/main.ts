@@ -1479,10 +1479,11 @@ class TownGame {
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(animal.state.phenotype,animal.state.id));
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const locomotion=wildlifeOrganismLocomotion(genome);
-    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*(fastAction?1.18:1);
+    const movement=wildlifeSpeciesProfile(animal.state.species).movement;
+    const speed=animal.state.traits.speed*functional.movementSpeedMultiplier*locomotion.speedMultiplier*movement.speedMultiplier*(fastAction?1.18:1);
     pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;
     animal.state.energy=clamp(
-      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*locomotion.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*1.45:1),
+      animal.state.energy-dt*.018*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
       0,100
     );
     animal.mesh.rotation.y=Math.atan2(dx,dz);
@@ -1490,14 +1491,16 @@ class TownGame {
 
   wildlifeAllowedActions(state:WildlifeState):WildlifeAction[] {
     const profile=wildlifeSpeciesProfile(state.species);
-    const actions:WildlifeAction[]=['wander','rest','drink','flee',profile.feedingAction];
     const life=this.wildlifeLifeHistory(state.species);
     const currentDay=this.day+this.minuteOfDay/1440;
     const pregnant=state.sex==='female'&&Boolean(state.pregnantUntilDay&&state.pregnantUntilDay>currentDay);
     const baseline=this.materializedChunks.get(state.chunkId)?.initialWildlifeIds.has(state.id)??false;
-    if(state.ageDays>=life.adultAge&&!pregnant)actions.push('seek_mate');
-    if(baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant)actions.push('migrate');
-    if(isWildlifePredator(state.species))actions.push('hunt');
+    const actions=profile.capabilities.filter(action=>{
+      if(action==='seek_mate')return state.ageDays>=life.adultAge&&!pregnant;
+      if(action==='migrate')return baseline&&state.ageDays>=life.adultAge*.4&&state.energy>30&&state.health>45&&!pregnant;
+      if(action==='hunt')return isWildlifePredator(state.species);
+      return true;
+    });
     return [...new Set(actions)];
   }
 
