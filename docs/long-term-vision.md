@@ -158,3 +158,11 @@ The evolutionary evidence layer now distinguishes ecological pressure from actua
 God View can inspect aggregate and pair-specific hit, kill, escape and survival rates together with simple success-vs-observed trait differentials. These counters come from deterministic movement, distance, damage and health resolution; Jev or another provider can choose an intention but cannot award itself a successful hunt or escape.
 
 The next ecology step is predator/prey trait matching across generations: relate predator speed/size and prey speed/wariness to realized pair outcomes, while controlling reporting for sparse cohorts and avoiding causal overclaiming. This creates a path from environmental pressure to actual interaction performance and eventually to morphology-constrained coevolution.
+
+## Implemented milestone: predator/prey trait matching across generations
+
+Realized predation evidence now measures the actual trait relationship between interacting individuals. A fox hunt against a rabbit records predator-minus-prey trait deltas for the attempt and, when applicable, for the hit and kill; prey evidence records prey-minus-predator deltas for escape and attack-survival outcomes. This is materially stronger than comparing species averages because it preserves who actually interacted.
+
+Generation-level summaries expose whether realized pair outcomes and their associated trait advantages change across generations, while explicit paired-snapshot coverage prevents pre-feature historical attempts from being misread as zero trait advantage. God View surfaces those raw rates and deltas without turning them into an automatic causal selection verdict.
+
+The next step is multi-generation coevolution evidence: connect realized interaction performance, lineage reproductive success and inherited trait trends on both sides of a predator/prey relationship. Later morphology genes and movement constraints can feed the same evidence path rather than creating a separate evolutionary subsystem.
