@@ -782,6 +782,7 @@ export interface WildlifeMultifactorLocalWindowEvidence {
 
 export interface WildlifeMultifactorOutcomeStabilityEvidence {
   outcome: WildlifeMultifactorOutcome;
+  basis: 'target_species_generation';
   leaveOneGenerationOut: WildlifeMultifactorLeaveOneGenerationOutEvidence;
   localWindows: WildlifeMultifactorLocalWindowEvidence[];
 }
