@@ -6,6 +6,7 @@ import {
   domesticationPreservesSurvivalAction, individualizeWildlifeRepresentative, normalizeWildlifeDomestication,
   releaseWildlifeDomestication, setWildlifeDomesticationCommand, wildlifeDomesticationInteractions
 } from '../src/world/wildlifeDomestication.js';
+import { foldFineWildlifePopulationCount } from '../src/world/fineWildlifeMigration.js';
 
 const sheep=(patch:Partial<WildlifeState>={}):WildlifeState=>({
   id:'sheep_1',chunkId:'chunk_0_0',species:'sheep',position:{x:0,z:0},ageDays:500,
@@ -77,3 +78,26 @@ test('release clears ownership and commands but keeps the domestication-capable 
   });
   assert.deepEqual(wildlifeDomesticationInteractions({...sheep(),domestication:released}),['inspect','feed_tame']);
 });
+
+test('individualizing an existing representative conserves coarse count while individualizing a fine birth adds one',()=>{
+  const existing=individualizeWildlifeRepresentative(3,0,true)!;
+  const conserved=foldFineWildlifePopulationCount(
+    10,
+    existing.nextInitialOrdinaryCount,
+    existing.nextInitialOrdinaryCount,
+    existing.nextFixedWeight,
+    existing.nextFixedWeight
+  );
+  assert.equal(conserved.nextCount,10);
+
+  const newborn=individualizeWildlifeRepresentative(3,0,false)!;
+  const withBirth=foldFineWildlifePopulationCount(
+    10,
+    3,
+    3,
+    0,
+    newborn.nextFixedWeight
+  );
+  assert.equal(withBirth.nextCount,11);
+});
+
