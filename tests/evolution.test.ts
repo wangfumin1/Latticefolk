@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from '../src/world/evolution.js';
-import type { WildlifeLineageRecord, WildlifeTraits } from '../src/types.js';
+import type { WildlifeLineageRecord, WildlifePhenotype, WildlifeTraits } from '../src/types.js';
 
 const traits=(wariness:number,size=1):WildlifeTraits=>({speed:1.5+wariness,size,fertility:.7,wariness});
 
@@ -759,5 +759,40 @@ test('multi-factor stability keeps long generation histories computationally bou
   assert.equal(stability.leaveOneGenerationOut.testedGenerations.at(-1),19);
   assert.ok(stability.localWindows.length<=6);
   assert.ok(stability.localWindows.every(window=>window.generations.length<=8));
+});
+
+const phenotype=(bodyLength:number,riskTolerance:number):WildlifePhenotype=>({
+  morphology:{bodyLength,bodyHeight:1,legLength:1,headScale:1,tailScale:1},
+  behavior:{forageDrive:1,migrationDrive:1,riskTolerance,recoveryDrive:1}
+});
+
+test('phenotype observability keeps legacy coverage explicit and measures generation trends plus breeder differentials',()=>{
+  const legacy=computeEvolutionStatistics(records).find(entry=>entry.species==='rabbit')!;
+  assert.equal(legacy.phenotype.sampleSize,0);
+  assert.equal(legacy.phenotype.mean,null);
+  assert.equal(legacy.phenotype.trendPerGeneration,null);
+
+  const sample:WildlifeLineageRecord[]=[];
+  for(let generation=0;generation<3;generation++){
+    sample.push({
+      entityId:`phenotype_g${generation}_a`,species:'rabbit',birthDay:1+generation*20,generation,birthChunk:'a',
+      traitsAtBirth:traits(.4),phenotypeAtBirth:phenotype(.90+generation*.05,.85+generation*.04),
+      origin:generation===0?'founder':'reproduction',offspringCount:0,reproductiveSuccess:false
+    });
+    sample.push({
+      entityId:`phenotype_g${generation}_b`,species:'rabbit',birthDay:2+generation*20,generation,birthChunk:'a',
+      traitsAtBirth:traits(.6),phenotypeAtBirth:phenotype(1.02+generation*.05,1.02+generation*.04),
+      origin:generation===0?'founder':'reproduction',offspringCount:2,reproductiveSuccess:true
+    });
+  }
+  const rabbit=computeEvolutionStatistics(sample).find(entry=>entry.species==='rabbit')!;
+  assert.equal(rabbit.phenotype.sampleSize,6);
+  assert.ok((rabbit.phenotype.variance?.morphology.bodyLength||0)>0);
+  assert.ok((rabbit.phenotype.trendPerGeneration?.morphology.bodyLength||0)>0);
+  assert.ok((rabbit.phenotype.trendPerGeneration?.behavior.riskTolerance||0)>0);
+  assert.ok((rabbit.phenotype.breederDifferential?.morphology.bodyLength||0)>0);
+  assert.ok((rabbit.phenotype.breederDifferential?.behavior.riskTolerance||0)>0);
+  assert.equal(rabbit.cohorts[0]?.phenotypeSamples,2);
+  assert.ok(rabbit.cohorts.every(cohort=>cohort.phenotypeMean!==null));
 });
 
