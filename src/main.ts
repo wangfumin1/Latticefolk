@@ -2809,8 +2809,8 @@ class TownGame {
         ${entry.multifactorSelection.models.filter(model=>model.candidateFeatures>=2).map(model=>`
           <div class="evo-selection">
             <b>${i18n.t('evolution.multifactor')} · ${i18n.t(`evolution.outcome.${model.outcome}`)}</b> · ${model.estimable
-              ?`n=${model.samples}/${model.baseSamples} · p=${model.selectedFeatures} · R² ${model.rSquared===null?'—':model.rSquared.toFixed(2)} · max|rX| ${model.maxFeatureCorrelation===null?'—':model.maxFeatureCorrelation.toFixed(2)} · λ ${model.ridgeLambda.toFixed(2)}`
-              :`${i18n.t('evolution.multifactor.unavailable')} · base ${model.baseSamples} · complete ${model.samples} · candidates ${model.candidateFeatures} · selected ${model.selectedFeatures}`}
+              ?`n=${model.samples}/${model.baseSamples} · p=${model.selectedFeatures} · R² ${model.rSquared===null?'—':model.rSquared.toFixed(2)} · max|rX| ${model.maxFeatureCorrelation===null?'—':model.maxFeatureCorrelation.toFixed(2)} · max VIF ${model.maxVarianceInflationFactor===null?'—':model.maxVarianceInflationFactor.toFixed(1)} · λ ${model.ridgeLambda.toFixed(2)}`
+              :`${i18n.t('evolution.multifactor.unavailable')} [${model.status}] · base ${model.baseSamples} · complete ${model.samples} · candidates ${model.candidateFeatures} · selected ${model.selectedFeatures}${model.maxFeatureCorrelation===null?'':` · max|rX| ${model.maxFeatureCorrelation.toFixed(2)}`}${model.maxVarianceInflationFactor===null?'':` · max VIF ${model.maxVarianceInflationFactor.toFixed(1)}`}`}
             ${model.coefficients.length?`<div class="evo-traits">${model.coefficients.map(feature=>`${i18n.t(`evolution.interaction.${feature.kind}`)} ← ${this.escape(this.wildlifeName(feature.sourceSpecies))} · β* ${feature.standardizedCoefficient===null?'—':feature.standardizedCoefficient.toFixed(2)} · cov ${feature.coverageSamples}/${model.baseSamples} · μ ${feature.mean.toFixed(1)} · σ ${feature.stdDev.toFixed(1)}`).join('<br>')}</div>`:''}
           </div>`).join('')}
       </div>`).join('');
