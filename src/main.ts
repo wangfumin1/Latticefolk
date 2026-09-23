@@ -1834,7 +1834,7 @@ class TownGame {
 
   wildlifePredatorSourcePressure(chunkId:string,preySpecies:WildlifeSpecies) {
     const pressure=this.coarseWorld.chunks.get(chunkId)?.wildlifePredatorPressure;
-    if(!pressure)return undefined;
+    if(!pressure?.pairs)return undefined;
     const out:Partial<Record<WildlifeSpecies,number>>={};
     for(const predatorSpecies of WILDLIFE_SPECIES){
       if(!canWildlifePredate(predatorSpecies,preySpecies))continue;
