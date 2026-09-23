@@ -358,6 +358,20 @@ export interface WildlifeTraits {
   wariness: number;
 }
 
+export type WildlifeDomesticationStage='feral'|'taming'|'bonded';
+export type WildlifeDomesticationOwnerKind='player'|'npc'|'settlement';
+export type WildlifeDomesticationCommand='autonomous'|'follow'|'stay'|'graze';
+
+export interface WildlifeDomesticationState {
+  stage: WildlifeDomesticationStage;
+  progress: number;
+  ownerKind?: WildlifeDomesticationOwnerKind;
+  ownerId?: string;
+  command: WildlifeDomesticationCommand;
+  bondedDay?: number;
+  lastInteractionDay?: number;
+}
+
 export interface WildlifeMorphologyPhenotype {
   /** Multipliers relative to the species morphology profile. */
   bodyLength: number;
@@ -1022,6 +1036,8 @@ export interface WildlifeState {
   phenotype?: WildlifePhenotype;
   /** Family-constrained material/niche/locomotion genes; additive for legacy saves. */
   organismGenome?: WildlifeOrganismGenome;
+  /** Mutable per-individual ownership/taming state, separate from immutable species organism form. */
+  domestication?: WildlifeDomesticationState;
   currentAction: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;
