@@ -1,6 +1,6 @@
 import type {
   WildlifeBiomeSelectionStats, WildlifeDeathReason, WildlifeEvolutionStats, WildlifeFitnessBandStats, WildlifeFitnessExposureDimension,
-  WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot,
+  WildlifeGenerationCohortStats, WildlifeHabitatExposure, WildlifeHabitatFitnessStats, WildlifeHabitatSnapshot, WildlifeInteractionSourceFitnessStats,
   WildlifeCoevolutionGenerationEvidence, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeLineageRecord,
   WildlifeNullableTraits, WildlifePredationGenerationPerformance, WildlifePredationPairPerformance, WildlifePredatorSpecializationStats,
   WildlifeRealizedPredationStats, WildlifeSelectionSignal, WildlifeSpecies, WildlifeTraits
@@ -22,12 +22,32 @@ const zeroHabitat=():Omit<WildlifeHabitatSnapshot,'biome'>=>({ecology:0,food:0,w
 const HABITAT_KEYS:(keyof Omit<WildlifeHabitatSnapshot,'biome'>)[]=['ecology','food','water','danger','settlementLevel','plantBiomass','competitionPressure','seasonalSuitability','diseasePressure','predatorPressure'];
 const MIN_LIFETIME_EXPOSURE_DAYS=.02;
 
+function accumulateSourceExposure(
+  previousMean:Partial<Record<WildlifeSpecies,number>>|undefined,
+  previousDays:number|undefined,
+  current:Partial<Record<WildlifeSpecies,number>>|undefined,
+  days:number
+) {
+  const observedDays=Math.max(0,previousDays||0);
+  if(!current||days<=0)return {mean:previousMean?{...previousMean}:undefined,observedDays};
+  const nextDays=observedDays+days;
+  const next=previousMean?{...previousMean}:{} as Partial<Record<WildlifeSpecies,number>>;
+  for(const species of SPECIES){
+    const before=Number(next[species]||0);
+    const value=Number(current[species]||0);
+    next[species]=(before*observedDays+value*days)/nextDays;
+  }
+  return {mean:next,observedDays:nextDays};
+}
+
 export function accumulateWildlifeHabitatExposure(
   exposure:WildlifeHabitatExposure|undefined,
   habitat:WildlifeHabitatSnapshot,
   chunkId:string,
   observedDays:number,
-  predatorSourcePressure?:Partial<Record<WildlifeSpecies,number>>
+  predatorSourcePressure?:Partial<Record<WildlifeSpecies,number>>,
+  competitionSourcePressure?:Partial<Record<WildlifeSpecies,number>>,
+  diseaseSourcePressure?:Partial<Record<WildlifeSpecies,number>>
 ):WildlifeHabitatExposure {
   const days=Math.max(0,observedDays);
   const previousDays=Math.max(0,exposure?.observedDays||0);
@@ -40,18 +60,15 @@ export function accumulateWildlifeHabitatExposure(
       habitatMean[key]=(previous*previousDays+current*days)/totalDays;
     }
   }
-  let predatorSourceMean=exposure?.predatorSourceMean?{...exposure.predatorSourceMean}:undefined;
-  let predatorSourceObservedDays=Math.max(0,exposure?.predatorSourceObservedDays||0);
-  if(predatorSourcePressure&&days>0){
-    const nextSourceDays=predatorSourceObservedDays+days;
-    predatorSourceMean??={};
-    for(const predator of SPECIES){
-      const previous=Number(predatorSourceMean[predator]||0);
-      const current=Number(predatorSourcePressure[predator]||0);
-      predatorSourceMean[predator]=(previous*predatorSourceObservedDays+current*days)/nextSourceDays;
-    }
-    predatorSourceObservedDays=nextSourceDays;
-  }
+  const predatorSource=accumulateSourceExposure(
+    exposure?.predatorSourceMean,exposure?.predatorSourceObservedDays,predatorSourcePressure,days
+  );
+  const competitionSource=accumulateSourceExposure(
+    exposure?.competitionSourceMean,exposure?.competitionSourceObservedDays,competitionSourcePressure,days
+  );
+  const diseaseSource=accumulateSourceExposure(
+    exposure?.diseaseSourceMean,exposure?.diseaseSourceObservedDays,diseaseSourcePressure,days
+  );
   const biomeDays={...(exposure?.biomeDays||{})};
   const chunkDays={...(exposure?.chunkDays||{})};
   if(days>0){
@@ -62,8 +79,12 @@ export function accumulateWildlifeHabitatExposure(
   return {
     observedDays:totalDays,
     habitatMean,
-    predatorSourceMean,
-    predatorSourceObservedDays,
+    predatorSourceMean:predatorSource.mean,
+    predatorSourceObservedDays:predatorSource.observedDays,
+    competitionSourceMean:competitionSource.mean,
+    competitionSourceObservedDays:competitionSource.observedDays,
+    diseaseSourceMean:diseaseSource.mean,
+    diseaseSourceObservedDays:diseaseSource.observedDays,
     biomeDays,
     chunkDays,
     observedTransitions:(exposure?.observedTransitions||0)+(transitioned?1:0),
@@ -393,6 +414,56 @@ function predatorSpecialization(records:WildlifeLineageRecord[],asOfDay?:number)
     };
   }).filter((x):x is WildlifePredatorSpecializationStats=>Boolean(x))
     .sort((a,b)=>b.pressureMean-a.pressureMean||b.sampleSize-a.sampleSize||a.predatorSpecies.localeCompare(b.predatorSpecies));
+}
+
+function interactionSourceFitness(
+  records:WildlifeLineageRecord[],
+  asOfDay?:number
+):WildlifeInteractionSourceFitnessStats[] {
+  const dimensions=[
+    {kind:'competition' as const,meanKey:'competitionSourceMean' as const,daysKey:'competitionSourceObservedDays' as const},
+    {kind:'disease' as const,meanKey:'diseaseSourceMean' as const,daysKey:'diseaseSourceObservedDays' as const}
+  ];
+  const results:WildlifeInteractionSourceFitnessStats[]=[];
+  for(const dimension of dimensions){
+    for(const sourceSpecies of SPECIES){
+      const samples=records.map(record=>{
+        const exposure=record.habitatExposure;
+        const value=exposure?.[dimension.meanKey]?.[sourceSpecies];
+        const sourceDays=Number(exposure?.[dimension.daysKey]||0);
+        return sourceDays>=MIN_LIFETIME_EXPOSURE_DAYS&&typeof value==='number'&&Number.isFinite(value)
+          ?{record,exposureDays:sourceDays,value}
+          :undefined;
+      }).filter((x):x is {record:WildlifeLineageRecord;exposureDays:number;value:number}=>Boolean(x));
+      if(!samples.length||!samples.some(sample=>sample.value>0))continue;
+      const eligible=samples.filter(sample=>fitnessOutcomeEligible(sample.record,asOfDay));
+      const breeders=eligible.filter(sample=>sample.record.offspringCount>0);
+      const nonBreeders=eligible.filter(sample=>sample.record.offspringCount<=0);
+      const dead=samples.filter(sample=>sample.record.deathDay!==undefined);
+      const average=traitMean(eligible.map(sample=>sample.record));
+      const breederAverage=breeders.length?traitMean(breeders.map(sample=>sample.record)):zeroTraits();
+      results.push({
+        kind:dimension.kind,sourceSpecies,
+        sampleSize:samples.length,
+        reproductionEligibleSamples:eligible.length,
+        lifespanSamples:dead.length,
+        observedExposureDaysMean:mean(samples.map(sample=>sample.exposureDays)),
+        pressureMean:mean(samples.map(sample=>sample.value)),
+        breederPressureMean:breeders.length?mean(breeders.map(sample=>sample.value)):null,
+        nonBreederPressureMean:nonBreeders.length?mean(nonBreeders.map(sample=>sample.value)):null,
+        reproductionAssociation:correlation(eligible.map(sample=>sample.value),eligible.map(sample=>sample.record.offspringCount>0?1:0)),
+        offspringAssociation:correlation(eligible.map(sample=>sample.value),eligible.map(sample=>sample.record.offspringCount)),
+        lifespanAssociation:correlation(
+          dead.map(sample=>sample.value),
+          dead.map(sample=>Math.max(0,(sample.record.deathDay??sample.record.birthDay)-sample.record.birthDay))
+        ),
+        traitMean:average,
+        breederTraitMean:breederAverage,
+        selectionDifferential:subtractTraits(breederAverage,average)
+      });
+    }
+  }
+  return results.sort((a,b)=>a.kind.localeCompare(b.kind)||b.pressureMean-a.pressureMean||b.sampleSize-a.sampleSize||a.sourceSpecies.localeCompare(b.sourceSpecies));
 }
 
 function realizedPredation(records:WildlifeLineageRecord[]):WildlifeRealizedPredationStats {
@@ -767,6 +838,7 @@ export function computeEvolutionStatistics(records:Iterable<WildlifeLineageRecor
       lifetimeBiomeSelection:biomeSelection(speciesRecords,'lifetime'),
       exposureFitness:habitatFitness(speciesRecords,asOfDay),
       predatorSpecialization:predatorSpecialization(speciesRecords,asOfDay),
+      interactionSourceFitness:interactionSourceFitness(speciesRecords,asOfDay),
       realizedPredation:realizedPredation(speciesRecords)
     };
   });
