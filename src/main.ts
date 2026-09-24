@@ -19,7 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
-import { registerFineTerrainForChunk } from './world/fineTerrain';
+import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -294,6 +294,7 @@ class TownGame {
   }
 
   setupWorld() {
+    registerHomeTerrain(this.physics,WORLD_SIZE);
     const ground = new THREE.Mesh(
       new THREE.BoxGeometry(WORLD_SIZE, .25, WORLD_SIZE),
       new THREE.MeshStandardMaterial({color:0x74a95d, roughness:1})

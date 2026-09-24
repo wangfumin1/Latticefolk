@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fineTerrainSurfaceForChunk, registerFineTerrainForChunk } from '../src/world/fineTerrain.js';
+import { fineTerrainSurfaceForChunk, homeTerrainSurface, registerFineTerrainForChunk, registerHomeTerrain } from '../src/world/fineTerrain.js';
 import { FinePhysicsAuthority } from '../src/world/finePhysics.js';
+
+test('home terrain matches the authored town footprint and is not chunk-scoped',()=>{
+  const surface=homeTerrainSurface(72);
+  assert.deepEqual(surface,{
+    id:'terrain:home',minX:-36,maxX:36,minZ:-36,maxZ:36,
+    originX:0,originZ:0,originY:0,slopeX:0,slopeZ:0
+  });
+  const physics=new FinePhysicsAuthority();
+  registerHomeTerrain(physics,72);
+  assert.equal(physics.groundContactAt(35.9,-35.9)?.surfaceId,'terrain:home');
+  assert.equal(physics.groundContactAt(36.1,0),undefined);
+  physics.clearChunk('chunk_0_0');
+  assert.equal(physics.groundContactAt(0,0)?.surfaceId,'terrain:home');
+});
 
 test('materialized chunk terrain matches the deterministic chunk footprint',()=>{
   const surface=fineTerrainSurfaceForChunk({id:'chunk_2_-1',cx:2,cz:-1},24);

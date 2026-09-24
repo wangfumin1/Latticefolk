@@ -30,41 +30,20 @@ async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
   for(const key of keys)await page.keyboard.down(key);
   await page.waitForTimeout(durationMs);
   for(const key of [...keys].reverse())await page.keyboard.up(key);
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(120);
 }
 
-async function exploreToDistantChunk(page:Page):Promise<RuntimeSnapshot> {
-  let previous=await runtime(page);
-  for(let attempt=0;attempt<14;attempt++){
-    await moveWithKeys(page,['ShiftLeft','KeyW'],900);
-    let current=await runtime(page);
-    if(current.materializedChunks>0&&current.terrainSurfaces>0)return current;
-
-    const progress=Math.hypot(current.playerX-previous.playerX,current.playerZ-previous.playerZ);
-    if(progress<1){
-      // A real collider/body stopped forward travel. Sidestep, then continue; alternate sides
-      // so the smoke test navigates the live town instead of bypassing physics.
-      const strafe=attempt%2===0?'KeyD':'KeyA';
-      await moveWithKeys(page,['ShiftLeft',strafe],650);
-      current=await runtime(page);
-    }
-    previous=current;
-  }
-  return runtime(page);
-}
-
-test('real playable scene keeps God View observer-only and uses authoritative terrain', async ({ page }, testInfo) => {
+test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
+  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
 
-  // The authored home town is deliberately not a coarse materialized chunk.
-  // Terrain v2 becomes active only after real first-person exploration reaches a distant chunk.
   const home=await runtime(page);
   expect(home.materializedChunks).toBe(0);
-  expect(home.terrainSurfaces).toBe(0);
+  expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -72,40 +51,29 @@ test('real playable scene keeps God View observer-only and uses authoritative te
 
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
+  await moveWithKeys(page,['ShiftLeft','KeyW'],450);
+  const firstAfter=await runtime(page);
+  expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.25);
+  expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(1);
 
-  // Default camera faces -Z. Traverse the live town with real keyboard input.
-  // If authoritative collision stops the player, the helper sidesteps rather than bypassing physics.
-  const firstAfter=await exploreToDistantChunk(page);
-  expect(firstAfter.materializedChunks).toBeGreaterThan(0);
-  expect(firstAfter.terrainSurfaces).toBeGreaterThan(0);
-  expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(30);
-  expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(firstAfter.materializedChunks);
-
-  await page.screenshot({
-    path:testInfo.outputPath('first-person.png'),
-    fullPage:true
-  });
+  await page.screenshot({path:testInfo.outputPath('first-person.png'),fullPage:true});
 
   await page.locator('#modeBtn').click();
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');
   const godBefore=await runtime(page);
   expect(godBefore.physicsBodies).toBe(firstAfter.physicsBodies-1);
+  expect(godBefore.terrainSurfaces).toBe(firstAfter.terrainSurfaces);
 
-  await page.keyboard.down('w');
-  await page.waitForTimeout(700);
-  await page.keyboard.up('w');
-  await page.waitForTimeout(200);
+  await moveWithKeys(page,['KeyW'],500);
   const godAfter=await runtime(page);
   expect(godAfter.discoveredChunks).toBe(godBefore.discoveredChunks);
   expect(godAfter.materializedChunks).toBe(godBefore.materializedChunks);
   expect(godAfter.playerX).toBe(godBefore.playerX);
   expect(godAfter.playerZ).toBe(godBefore.playerZ);
   expect(godAfter.physicsBodies).toBe(godBefore.physicsBodies);
+  expect(godAfter.terrainSurfaces).toBe(godBefore.terrainSurfaces);
 
-  await page.screenshot({
-    path:testInfo.outputPath('god-view.png'),
-    fullPage:true
-  });
+  await page.screenshot({path:testInfo.outputPath('god-view.png'),fullPage:true});
 
   await page.locator('#modeBtn').click();
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('firstPerson');

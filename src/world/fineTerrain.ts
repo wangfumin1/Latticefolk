@@ -1,6 +1,29 @@
 import type { CoarseChunkState } from '../types';
 import { FinePhysicsAuthority, type TerrainSurface } from './finePhysics.js';
 
+
+/** Authoritative flat ground for the authored home-town footprint. */
+export function homeTerrainSurface(worldSize:number):TerrainSurface {
+  const size=Math.max(1,Number.isFinite(worldSize)?worldSize:72);
+  const half=size/2;
+  return {
+    id:'terrain:home',
+    minX:-half,
+    maxX:half,
+    minZ:-half,
+    maxZ:half,
+    originX:0,
+    originZ:0,
+    originY:0,
+    slopeX:0,
+    slopeZ:0
+  };
+}
+
+export function registerHomeTerrain(physics:FinePhysicsAuthority,worldSize:number):TerrainSurface {
+  return physics.registerTerrain(homeTerrainSurface(worldSize));
+}
+
 /**
  * Converts a materialized coarse chunk into the authoritative fine-physics ground footprint.
  *
