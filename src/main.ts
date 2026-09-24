@@ -19,6 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
+import { buildingPhysicsLayout } from './world/buildingPhysics';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
@@ -122,7 +123,7 @@ const ui = {
   localeSelect: document.querySelector<HTMLSelectElement>('#localeSelect')!,
 };
 
-interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
+interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; doorVisual?: THREE.Group; }
 interface AssetTemplate { scene: THREE.Object3D; animations: THREE.AnimationClip[]; }
 interface VisualTarget { group: THREE.Group; asset: string; height: number; rotationY?: number; targetWidth?: number; targetDepth?: number; }
 interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
@@ -350,47 +351,31 @@ class TownGame {
   }
 
   addBuilding(name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
-    const g = new THREE.Group();
-    const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9});
-    const trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,3,d), wallMat);
-    wall.position.y=1.5; wall.castShadow=true; wall.receiveShadow=true; g.add(wall);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));
-    roof.position.y=4; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(.95,1.9,.12),trimMat);
-    door.position.set(0,.95,d/2+.065); g.add(door);
-    for(const sx of [-1,1]){
-      const window=new THREE.Mesh(new THREE.BoxGeometry(.75,.7,.09),new THREE.MeshStandardMaterial({color:0x9ed5e8,roughness:.35,metalness:.05}));
-      window.position.set(sx*Math.min(1.5,w*.25),1.75,d/2+.07);g.add(window);
-    }
-    const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));
-    foundation.position.y=.12;foundation.receiveShadow=true;g.add(foundation);
-    g.position.set(x,0,z); this.scene.add(g);
-    if(asset)this.attachVisualTarget({group:g,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
+    const objectId=options?.id||`building_${name}`,profile=this.buildingInteractionProfile(name);
+    const layout=buildingPhysicsLayout({id:objectId,x,z,w,d,rotationY,chunkId:options?.chunkId});
+    const root=new THREE.Group();root.userData={entityType:'object',entityId:objectId};
+    const visual=new THREE.Group();visual.position.set(x,0,z);root.add(visual);
+    const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9}),trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
+    for(const c of layout.walls){const m=new THREE.Mesh(new THREE.BoxGeometry(c.maxX-c.minX,3,c.maxZ-c.minZ),wallMat);m.position.set((c.minX+c.maxX)/2-x,1.5,(c.minZ+c.maxZ)/2-z);m.castShadow=true;m.receiveShadow=true;visual.add(m);}
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));roof.position.y=4;roof.rotation.y=Math.PI/4;roof.castShadow=true;visual.add(roof);
+    const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));foundation.position.y=.12;foundation.receiveShadow=true;visual.add(foundation);
+    const doorVisual=new THREE.Group();doorVisual.position.set(layout.doorCenter.x,0,layout.doorCenter.z);doorVisual.rotation.y=layout.doorRotationY;doorVisual.userData.closedRotationY=layout.doorRotationY;
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(layout.doorWidth,1.9,.12),trimMat);panel.position.y=.95;panel.castShadow=true;doorVisual.add(panel);root.add(doorVisual);
+    this.scene.add(root);if(asset)this.attachVisualTarget({group:visual,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
+    const object:WorldObjectState={id:objectId,chunkId:options?.chunkId,kind:'building',name,position:{...layout.interactionPosition},tags:[...profile.tags,'door'],usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined,doorOpen:false};
+    this.objects.set(object.id,{state:object,mesh:root,doorVisual});for(const c of layout.walls)this.physics.registerStatic(c);this.physics.registerDoor({...layout.door,open:false});
+    this.physics.registerTrigger({id:`object-trigger:${object.id}`,minX:layout.interactionPosition.x-1.15,maxX:layout.interactionPosition.x+1.15,minZ:layout.interactionPosition.z-1.15,maxZ:layout.interactionPosition.z+1.15,chunkId:options?.chunkId,tag:'interaction'});
+    this.syncBuildingDoor(this.objects.get(object.id)!);if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(visual);return root;
+  }
 
-    const profile=this.buildingInteractionProfile(name);
-    const doorDistance=d/2+1.15;
-    const interactionPosition={x:x+Math.sin(rotationY)*doorDistance,z:z+Math.cos(rotationY)*doorDistance};
-    const object:WorldObjectState={
-      id:options?.id||`building_${name}`,chunkId:options?.chunkId,kind:'building',name,position:interactionPosition,tags:profile.tags,
-      usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined
-    };
-    g.userData={entityType:'object',entityId:object.id};
-    this.objects.set(object.id,{state:object,mesh:g});
-    this.physics.registerStatic({
-      id:`building:${object.id}`,
-      minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
-      chunkId:options?.chunkId
-    });
-    this.physics.registerTrigger({
-      id:`object-trigger:${object.id}`,
-      minX:interactionPosition.x-1.15,maxX:interactionPosition.x+1.15,
-      minZ:interactionPosition.z-1.15,maxZ:interactionPosition.z+1.15,
-      chunkId:options?.chunkId,tag:'interaction'
-    });
-
-    if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(g);
-    return g;
+  syncBuildingDoor(o:RuntimeObject) {
+    if(o.state.kind!=='building')return;const open=Boolean(o.state.doorOpen);this.physics.setDoorOpen(`door:${o.state.id}`,open);
+    if(o.doorVisual){const closed=Number(o.doorVisual.userData.closedRotationY||0);o.doorVisual.rotation.y=closed+(open?Math.PI/2:0);o.doorVisual.userData.open=open;}
+  }
+  setBuildingDoorOpen(o:RuntimeObject,open:boolean) {
+    if(o.state.kind!=='building')return false;
+    if(!this.physics.setDoorOpen(`door:${o.state.id}`,open,this.physicsDynamicColliders())){this.toast(i18n.t('door.blocked',{name:o.state.name}));return false;}
+    o.state.doorOpen=open;this.syncBuildingDoor(o);this.toast(i18n.t(open?'door.opened':'door.closed',{name:o.state.name}));void this.saveWorldState();return true;
   }
 
   buildingInteractionProfile(name:string):{tags:string[];capabilities:InteractionCapability[];storage?:boolean} {
@@ -1018,6 +1003,7 @@ class TownGame {
       runtime.state.chunkId=undefined;
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
+      this.syncBuildingDoor(runtime);
     }
   }
 
@@ -1099,6 +1085,7 @@ class TownGame {
       const saved=cachedObjects.get(b.id);
       const object=this.objects.get(b.id);
       if(saved&&object)Object.assign(object.state,structuredClone(saved),{chunkId:chunk.id});
+      if(object)this.syncBuildingDoor(object);
     }
 
     for(const p of plan.objects){
@@ -2902,9 +2889,9 @@ class TownGame {
 
   playerUse(o:RuntimeObject) {
     if(this.cameraMode!=='firstPerson')return;
-    const actions=o.state.capabilities?.length?o.state.capabilities:this.defaultCapabilities(o.state);
-    if(actions.length===1){this.executePlayerInteraction(o,actions[0]);return;}
-    this.openInteractionMenu(o,actions);
+    let actions=[...(o.state.capabilities?.length?o.state.capabilities:this.defaultCapabilities(o.state))];
+    if(o.state.kind==='building'){actions=actions.filter(a=>a!=='open_door'&&a!=='close_door');actions=[o.state.doorOpen?'close_door':'open_door',...actions];}
+    if(actions.length===1){this.executePlayerInteraction(o,actions[0]);return;}this.openInteractionMenu(o,actions);
   }
 
   openInteractionMenu(o:RuntimeObject,actions:InteractionCapability[]) {
@@ -2917,6 +2904,7 @@ class TownGame {
     ui.interactionActions.innerHTML='';
     for(const action of actions){
       const button=document.createElement('button');
+      button.dataset.action=action;
       button.textContent=this.interactionLabel(action);
       button.addEventListener('click',()=>{
         const current=this.objects.get(this.interactionObjectId||'');
@@ -3008,6 +2996,8 @@ class TownGame {
         this.minuteOfDay+=15;this.toast('休息了一会儿');break;
       case 'sleep':
         this.minuteOfDay+=60;this.toast('睡了一小时');this.event(`玩家在${s.name}休息。`);break;
+      case 'open_door': this.setBuildingDoorOpen(o,true);break;
+      case 'close_door': this.setBuildingDoorOpen(o,false);break;
       case 'visit':
         this.toast(`拜访：${s.name}`);this.event(`玩家拜访了${s.name}。`);break;
     }
@@ -3047,9 +3037,10 @@ class TownGame {
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
     ui.world.dataset.physicsBodies=String(activePhysicsBodies);
     ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
+    ui.world.dataset.doors=String(physicsStats.doors);ui.world.dataset.openDoors=String(physicsStats.openDoors);ui.world.dataset.assetsReady=String(this.assetsReady);
     ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
     ui.world.dataset.playerZ=this.playerPosition.z.toFixed(4);
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.doors} doors(${physicsStats.openDoors} open) / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;

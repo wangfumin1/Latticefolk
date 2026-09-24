@@ -104,8 +104,9 @@ export class FinePhysicsAuthority {
     return {...normalized};
   }
 
-  setDoorOpen(id:string,open:boolean){
+  setDoorOpen(id:string,open:boolean,dynamic:readonly DynamicCollider[]=[]){
     const door=this.doors.get(id);if(!door)return false;
+    if(!open&&door.open&&dynamic.some(body=>circleIntersectsAabb(body.x,body.z,Math.max(.01,body.radius),door)))return false;
     door.open=Boolean(open);return true;
   }
 
@@ -153,7 +154,7 @@ export class FinePhysicsAuthority {
 
   clear(){this.staticColliders.clear();this.doors.clear();this.triggers.clear();this.terrain.clear();}
 
-  stats(){return {staticColliders:this.staticColliders.size,doors:this.doors.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size};}
+  stats(){return {staticColliders:this.staticColliders.size,doors:this.doors.size,openDoors:[...this.doors.values()].filter(door=>door.open).length,triggers:this.triggers.size,terrainSurfaces:this.terrain.size};}
 
   isBlocked(x:number,z:number,radius=0){
     const r=Math.max(0,radius);
