@@ -26,6 +26,33 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
   });
 }
 
+async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
+  for(const key of keys)await page.keyboard.down(key);
+  await page.waitForTimeout(durationMs);
+  for(const key of [...keys].reverse())await page.keyboard.up(key);
+  await page.waitForTimeout(100);
+}
+
+async function exploreToDistantChunk(page:Page):Promise<RuntimeSnapshot> {
+  let previous=await runtime(page);
+  for(let attempt=0;attempt<14;attempt++){
+    await moveWithKeys(page,['ShiftLeft','KeyW'],900);
+    let current=await runtime(page);
+    if(current.materializedChunks>0&&current.terrainSurfaces>0)return current;
+
+    const progress=Math.hypot(current.playerX-previous.playerX,current.playerZ-previous.playerZ);
+    if(progress<1){
+      // A real collider/body stopped forward travel. Sidestep, then continue; alternate sides
+      // so the smoke test navigates the live town instead of bypassing physics.
+      const strafe=attempt%2===0?'KeyD':'KeyA';
+      await moveWithKeys(page,['ShiftLeft',strafe],650);
+      current=await runtime(page);
+    }
+    previous=current;
+  }
+  return runtime(page);
+}
+
 test('real playable scene keeps God View observer-only and uses authoritative terrain', async ({ page }, testInfo) => {
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
@@ -46,17 +73,11 @@ test('real playable scene keeps God View observer-only and uses authoritative te
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
 
-  // Default camera faces -Z. Sprint down the central road far enough to leave
-  // the home 3x3 area; this is genuine player-driven discovery/materialization.
-  await page.keyboard.down('ShiftLeft');
-  await page.keyboard.down('KeyW');
-  await page.waitForTimeout(7_000);
-  await page.keyboard.up('KeyW');
-  await page.keyboard.up('ShiftLeft');
-
-  await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:15_000}).toBeGreaterThan(0);
-  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
-  const firstAfter=await runtime(page);
+  // Default camera faces -Z. Traverse the live town with real keyboard input.
+  // If authoritative collision stops the player, the helper sidesteps rather than bypassing physics.
+  const firstAfter=await exploreToDistantChunk(page);
+  expect(firstAfter.materializedChunks).toBeGreaterThan(0);
+  expect(firstAfter.terrainSurfaces).toBeGreaterThan(0);
   expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(30);
   expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(firstAfter.materializedChunks);
 
