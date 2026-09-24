@@ -287,11 +287,28 @@ class TownGame {
     this.setupNpcs();
     void this.loadVisualAssets();
     this.bindInput();
+    this.installE2eHarness();
     window.addEventListener('beforeunload',()=>this.flushWorldBeacon());
     this.refreshHealth();
     void this.initializePersistence();
     this.log('Latticefolk 已启动；未配置远程决策引擎时使用本地规则 provider。');
     this.animate();
+  }
+
+  installE2eHarness() {
+    if(!import.meta.env.DEV||new URLSearchParams(location.search).get('e2e')!=='1')return;
+    type E2eHarness={placePlayer:(x:number,z:number,yaw?:number)=>{x:number;z:number;cameraMode:CameraMode}};
+    const target=window as typeof window & {__LATTICEFOLK_E2E__?:E2eHarness};
+    target.__LATTICEFOLK_E2E__={
+      placePlayer:(x:number,z:number,yaw=0)=>{
+        if(this.cameraMode==='god')this.enterFirstPerson();
+        this.camera.position.set(x,1.7,z);
+        this.camera.rotation.set(0,yaw,0,'YXZ');
+        this.playerPosition={x,z};
+        this.firstPersonRotation.copy(this.camera.rotation);
+        return{x,z,cameraMode:this.cameraMode};
+      }
+    };
   }
 
   setupWorld() {
