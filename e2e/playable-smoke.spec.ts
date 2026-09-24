@@ -44,16 +44,24 @@ async function enterPlayable(page:Page) {
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 }
 
-async function placeAtBakeryDoor(page:Page) {
-  const placed=await page.evaluate(()=>{
+async function placeWithHarness(page:Page,x:number,z:number,yaw=0) {
+  const placed=await page.evaluate(({x,z,yaw})=>{
     const harness=(window as typeof window & {__LATTICEFOLK_E2E__?:{placePlayer:(x:number,z:number,yaw?:number)=>{x:number;z:number}}}).__LATTICEFOLK_E2E__;
     if(!harness)throw new Error('E2E harness unavailable');
-    return harness.placePlayer(-10,-12.35,0);
-  });
-  expect(placed.x).toBe(-10);
-  expect(placed.z).toBe(-12.35);
-  await expect.poll(async()=>Math.abs((await runtime(page)).playerX+10)).toBeLessThan(.08);
-  await expect.poll(async()=>Math.abs((await runtime(page)).playerZ+12.35)).toBeLessThan(.08);
+    return harness.placePlayer(x,z,yaw);
+  },{x,z,yaw});
+  expect(placed.x).toBe(x);
+  expect(placed.z).toBe(z);
+  await expect.poll(async()=>Math.abs((await runtime(page)).playerX-x)).toBeLessThan(.08);
+  await expect.poll(async()=>Math.abs((await runtime(page)).playerZ-z)).toBeLessThan(.08);
+}
+
+async function placeForBakeryInteraction(page:Page) {
+  await placeWithHarness(page,-10.55,-12.25,-0.42);
+}
+
+async function placeAtBakeryThreshold(page:Page) {
+  await placeWithHarness(page,-10,-12.35,0);
 }
 
 async function waitForObjectPrompt(page:Page,name:string) {
@@ -94,7 +102,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   // Long-distance town traversal is setup, not the behavior under test. The DEV+?e2e=1
   // harness only places the already-loaded authoritative player near the real bakery threshold.
   // Door interaction and threshold traversal below still use the real pointer-lock/input path.
-  await placeAtBakeryDoor(page);
+  await placeForBakeryInteraction(page);
   await waitForObjectPrompt(page,'面包房');
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
@@ -109,7 +117,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);
   expect(await persistedDoorOpen(page,'building_面包房')).toBe(true);
   await enterPlayable(page);
-  await placeAtBakeryDoor(page);
+  await placeAtBakeryThreshold(page);
 
   await move(page,['KeyW'],850);
   const inside=await runtime(page);
@@ -118,6 +126,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await move(page,['KeyS'],850);
   const outside=await runtime(page);
   expect(outside.playerZ).toBeGreaterThan(-12.70);
+  await placeForBakeryInteraction(page);
   await waitForObjectPrompt(page,'面包房');
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
@@ -125,7 +134,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(0);
   await expect.poll(async()=>persistedDoorOpen(page,'building_面包房')).toBe(false);
 
-  await placeAtBakeryDoor(page);
+  await placeAtBakeryThreshold(page);
   const closedBefore=await runtime(page);
   await move(page,['KeyW'],850);
   const blocked=await runtime(page);
