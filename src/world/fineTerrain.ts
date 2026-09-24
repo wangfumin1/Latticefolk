@@ -1,5 +1,5 @@
 import type { CoarseChunkState } from '../types';
-import type { TerrainSurface } from './finePhysics.js';
+import { FinePhysicsAuthority, type TerrainSurface } from './finePhysics.js';
 
 /**
  * Converts a materialized coarse chunk into the authoritative fine-physics ground footprint.
@@ -27,4 +27,16 @@ export function fineTerrainSurfaceForChunk(chunk:Pick<CoarseChunkState,'id'|'cx'
     slopeX:0,
     slopeZ:0
   };
+}
+
+/**
+ * Materialization boundary for fine terrain. Keeping registration here prevents callers from
+ * reconstructing a second terrain footprint and guarantees clearChunk(chunk.id) owns teardown.
+ */
+export function registerFineTerrainForChunk(
+  physics:FinePhysicsAuthority,
+  chunk:Pick<CoarseChunkState,'id'|'cx'|'cz'>,
+  chunkSize:number
+):TerrainSurface {
+  return physics.registerTerrain(fineTerrainSurfaceForChunk(chunk,chunkSize));
 }
