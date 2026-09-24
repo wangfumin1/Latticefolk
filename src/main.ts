@@ -696,6 +696,7 @@ class TownGame {
     model.userData={entityType:'object',entityId:state.id};
     this.scene.add(model);
     this.objects.set(state.id,{state,mesh:model});
+    this.registerWorldObjectPhysics(state);
   }
 
   setNpcAnimation(agent:NpcRuntime,name:string) {
@@ -2786,7 +2787,10 @@ class TownGame {
     else if(this.hoverEntity.type==='wildlife'){
       const animal=this.wildlife.get(this.hoverEntity.id);
       if(animal)this.playerUseWildlife(animal);
-    }else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
+    }else {
+      const o=this.objects.get(this.hoverEntity.id);
+      if(o&&this.playerOverlapsObjectTrigger(o.state.id))this.playerUse(o);
+    }
   }
 
   playerUseWildlife(animal:WildlifeRuntime) {
@@ -3010,6 +3014,9 @@ class TownGame {
   updateRaycast() {
     const pointer=this.cameraMode==='god'?this.godPointer:new THREE.Vector2(0,0);
     this.hoverEntity=this.pickEntity(pointer,this.cameraMode==='god'?Infinity:3.2);
+    if(this.cameraMode==='firstPerson'&&this.hoverEntity?.type==='object'&&!this.playerOverlapsObjectTrigger(this.hoverEntity.id)){
+      this.hoverEntity=undefined;
+    }
     if(this.cameraMode==='god'){
       if(!this.hoverEntity){ui.prompt.textContent='';return;}
       const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):this.objects.get(this.hoverEntity.id)?.state.name;
@@ -3273,6 +3280,11 @@ class TownGame {
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
+
+  playerOverlapsObjectTrigger(objectId:string) {
+    return this.physics.overlappingTriggers(this.playerPosition,.30)
+      .some(trigger=>trigger.id===`object-trigger:${objectId}`);
+  }
 
   wildlifePhysicsRadius(state:WildlifeState) {
     return clamp(.20+state.traits.size*.10,.24,.48);
