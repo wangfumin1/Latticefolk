@@ -19,6 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
+import { registerFineTerrainForChunk } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -1067,6 +1068,7 @@ class TownGame {
     };
     this.materializedChunks.set(chunk.id,runtime);
     this.coarseWorld.setMaterialized(chunk.id,true);
+    registerFineTerrainForChunk(this.physics,chunk,this.coarseWorld.chunkSize);
 
     const cached=this.fineChunkCache.get(chunk.id);
     const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
