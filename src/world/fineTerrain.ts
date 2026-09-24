@@ -1,0 +1,30 @@
+import type { CoarseChunkState } from '../types';
+import type { TerrainSurface } from './finePhysics.js';
+
+/**
+ * Converts a materialized coarse chunk into the authoritative fine-physics ground footprint.
+ *
+ * The current rendered world is flat, so runtime terrain is deliberately flat too. This keeps
+ * visual ground, navigation and physical contact aligned while the terrain authority is rolled
+ * out. Future procedural elevation must change the rendered terrain and this descriptor together;
+ * it must not introduce a second height/collision source.
+ */
+export function fineTerrainSurfaceForChunk(chunk:Pick<CoarseChunkState,'id'|'cx'|'cz'>,chunkSize:number):TerrainSurface {
+  const size=Math.max(1,Number.isFinite(chunkSize)?chunkSize:24);
+  const half=size/2;
+  const originX=chunk.cx*size;
+  const originZ=chunk.cz*size;
+  return {
+    id:`terrain:${chunk.id}`,
+    chunkId:chunk.id,
+    minX:originX-half,
+    maxX:originX+half,
+    minZ:originZ-half,
+    maxZ:originZ+half,
+    originX,
+    originZ,
+    originY:0,
+    slopeX:0,
+    slopeZ:0
+  };
+}
