@@ -109,6 +109,9 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await page.locator('button[data-action="open_door"]').click();
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);
   await expect.poll(async()=>persistedDoorOpen(page,'building_面包房')).toBe(true);
+  // Capture visual evidence from a representative viewing distance, not pressed against the panel.
+  await placeWithHarness(page,-10,-10.8,0);
+  await page.waitForTimeout(250);
   await page.screenshot({path:testInfo.outputPath('door-open.png'),fullPage:true});
 
   await page.reload();
@@ -140,6 +143,9 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   const blocked=await runtime(page);
   expect(blocked.playerZ).toBeLessThan(closedBefore.playerZ-.15);
   expect(blocked.playerZ).toBeGreaterThan(-13.12);
+  // The collision assertion above is made at contact; back the camera away only for useful visual evidence.
+  await placeWithHarness(page,-10,-10.8,0);
+  await page.waitForTimeout(250);
   await page.screenshot({path:testInfo.outputPath('door-closed-blocked.png'),fullPage:true});
 
   await page.keyboard.press('KeyG');
