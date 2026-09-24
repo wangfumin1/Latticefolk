@@ -460,7 +460,7 @@ class TownGame {
 
 
   registerWorldObjectPhysics(state:WorldObjectState) {
-    if(state.usable){
+    if(state.usable||state.pickupable||(state.capabilities?.length??0)>0){
       const triggerRadius=state.kind==='well'||state.kind==='food_stall'?1.45:1.15;
       this.physics.registerTrigger({
         id:`object-trigger:${state.id}`,
