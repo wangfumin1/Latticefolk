@@ -153,18 +153,22 @@ export class FinePhysicsAuthority {
     for(let i=0;i<steps;i++){
       // Axis-separated resolution gives deterministic wall sliding and avoids
       // diagonal corner tunnelling while keeping the simulation strictly 2D.
-      const xBlock=blockersAt(x+stepX,z);
-      if(!xBlock.statics.length&&!xBlock.dynamics.length)x+=stepX;
-      else{
-        for(const id of xBlock.statics)staticHits.add(id);
-        for(const id of xBlock.dynamics)dynamicHits.add(id);
+      if(Math.abs(stepX)>1e-12){
+        const xBlock=blockersAt(x+stepX,z);
+        if(!xBlock.statics.length&&!xBlock.dynamics.length)x+=stepX;
+        else{
+          for(const id of xBlock.statics)staticHits.add(id);
+          for(const id of xBlock.dynamics)dynamicHits.add(id);
+        }
       }
 
-      const zBlock=blockersAt(x,z+stepZ);
-      if(!zBlock.statics.length&&!zBlock.dynamics.length)z+=stepZ;
-      else{
-        for(const id of zBlock.statics)staticHits.add(id);
-        for(const id of zBlock.dynamics)dynamicHits.add(id);
+      if(Math.abs(stepZ)>1e-12){
+        const zBlock=blockersAt(x,z+stepZ);
+        if(!zBlock.statics.length&&!zBlock.dynamics.length)z+=stepZ;
+        else{
+          for(const id of zBlock.statics)staticHits.add(id);
+          for(const id of zBlock.dynamics)dynamicHits.add(id);
+        }
       }
     }
 
