@@ -297,7 +297,7 @@ class TownGame {
 
   installE2eHarness() {
     if(!import.meta.env.DEV||new URLSearchParams(location.search).get('e2e')!=='1')return;
-    type E2eHarness={placePlayer:(x:number,z:number,yaw?:number)=>{x:number;z:number;cameraMode:CameraMode}};
+    type E2eHarness={placePlayer:(x:number,z:number,yaw?:number)=>{x:number;z:number;cameraMode:'firstPerson'|'god'}};
     const target=window as typeof window & {__LATTICEFOLK_E2E__?:E2eHarness};
     target.__LATTICEFOLK_E2E__={
       placePlayer:(x:number,z:number,yaw=0)=>{
