@@ -32,8 +32,12 @@ test('real playable scene keeps God View observer-only and uses authoritative te
 
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
-  await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:30_000}).toBeGreaterThan(0);
-  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:30_000}).toBeGreaterThan(0);
+
+  // The authored home town is deliberately not a coarse materialized chunk.
+  // Terrain v2 becomes active only after real first-person exploration reaches a distant chunk.
+  const home=await runtime(page);
+  expect(home.materializedChunks).toBe(0);
+  expect(home.terrainSurfaces).toBe(0);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -41,14 +45,20 @@ test('real playable scene keeps God View observer-only and uses authoritative te
 
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
-  expect(firstBefore.terrainSurfaces).toBeGreaterThanOrEqual(firstBefore.materializedChunks);
 
-  await page.keyboard.down('w');
-  await page.waitForTimeout(500);
-  await page.keyboard.up('w');
-  await page.waitForTimeout(150);
+  // Default camera faces -Z. Sprint down the central road far enough to leave
+  // the home 3x3 area; this is genuine player-driven discovery/materialization.
+  await page.keyboard.down('ShiftLeft');
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(7_000);
+  await page.keyboard.up('KeyW');
+  await page.keyboard.up('ShiftLeft');
+
+  await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
   const firstAfter=await runtime(page);
-  expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.05);
+  expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(30);
+  expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(firstAfter.materializedChunks);
 
   await page.screenshot({
     path:testInfo.outputPath('first-person.png'),
