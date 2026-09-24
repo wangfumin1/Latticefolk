@@ -382,6 +382,12 @@ class TownGame {
       minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
       chunkId:options?.chunkId
     });
+    this.physics.registerTrigger({
+      id:`object-trigger:${object.id}`,
+      minX:interactionPosition.x-1.15,maxX:interactionPosition.x+1.15,
+      minZ:interactionPosition.z-1.15,maxZ:interactionPosition.z+1.15,
+      chunkId:options?.chunkId,tag:'interaction'
+    });
 
     const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
     for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++){
@@ -449,6 +455,7 @@ class TownGame {
     this.scene.add(g);
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
+    this.registerWorldObjectPhysics(state);
     if(assetOverride)this.attachVisualTarget({group:g,asset:assetOverride,height:assetHeight||2,rotationY});
     else if(state.kind==='well') this.attachVisualTarget({group:g,asset:'wellAsset',height:3.4,targetWidth:3.6,targetDepth:3.6});
     else if(state.kind==='tree') this.attachVisualTarget({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
@@ -458,6 +465,46 @@ class TownGame {
     return g;
   }
 
+
+  registerWorldObjectPhysics(state:WorldObjectState) {
+    if(state.usable){
+      const triggerRadius=state.kind==='well'||state.kind==='food_stall'?1.45:1.15;
+      this.physics.registerTrigger({
+        id:`object-trigger:${state.id}`,
+        minX:state.position.x-triggerRadius,maxX:state.position.x+triggerRadius,
+        minZ:state.position.z-triggerRadius,maxZ:state.position.z+triggerRadius,
+        chunkId:state.chunkId,tag:'interaction'
+      });
+    }
+
+    const halfExtents:Partial<Record<WorldObjectState['kind'],[number,number]>>={
+      well:[.95,.95],
+      bench:[.90,.34],
+      bed:[.92,.46],
+      food_stall:[1.08,.54],
+      workstation:[.92,.44],
+      tree:[.34,.34],
+      crate:[.38,.38],
+      rock:[.44,.44],
+      cart:[1.05,.52]
+    };
+    const extent=halfExtents[state.kind];
+    if(!extent||state.pickupable)return;
+    const [halfX,halfZ]=extent;
+    this.physics.registerStatic({
+      id:`object:${state.id}`,
+      minX:state.position.x-halfX,maxX:state.position.x+halfX,
+      minZ:state.position.z-halfZ,maxZ:state.position.z+halfZ,
+      chunkId:state.chunkId
+    });
+    const minX=Math.floor(state.position.x-halfX),maxX=Math.ceil(state.position.x+halfX);
+    const minZ=Math.floor(state.position.z-halfZ),maxZ=Math.ceil(state.position.z+halfZ);
+    for(let gx=minX;gx<=maxX;gx++)for(let gz=minZ;gz<=maxZ;gz++){
+      const key=keyOf(gx,gz);
+      this.blocked.add(key);
+      if(state.chunkId)this.materializedChunks.get(state.chunkId)?.blockedKeys.push(key);
+    }
+  }
 
   defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
     switch(state.kind){
@@ -3276,7 +3323,7 @@ class TownGame {
     for(let i=0;i<60;i++){
       const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,minX,maxX));
       const z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,minZ,maxZ));
-      if(!this.blocked.has(keyOf(x,z)))return{x,z};
+      if(!this.blocked.has(keyOf(x,z))&&!this.physics.isBlocked(x,z,.28))return{x,z};
     }
     return{x:p.x,z:p.z};
   }
@@ -3285,7 +3332,7 @@ class TownGame {
     const s={x:Math.round(start.x),z:Math.round(start.z)},g={x:Math.round(end.x),z:Math.round(end.z)};
     const margin=Math.max(24,Math.abs(g.x-s.x)+Math.abs(g.z-s.z)+12);
     const minX=Math.min(s.x,g.x)-margin,maxX=Math.max(s.x,g.x)+margin,minZ=Math.min(s.z,g.z)-margin,maxZ=Math.max(s.z,g.z)+margin;
-    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&(!this.blocked.has(keyOf(x,z))||(x===g.x&&z===g.z));
+    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&((!this.blocked.has(keyOf(x,z))&&!this.physics.isBlocked(x,z,.24))||(x===g.x&&z===g.z));
     const open=[s],came=new Map<string,string>(),cost=new Map<string,number>([[keyOf(s.x,s.z),0]]);const goalKey=keyOf(g.x,g.z);let found=false;
     while(open.length&&cost.size<9000){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
     if(!found)return[];const rev:Vec2[]=[];let k=goalKey;while(k!==keyOf(s.x,s.z)){const [x,z]=k.split(',').map(Number);rev.push({x,z});const prev=came.get(k);if(!prev)break;k=prev;}return rev.reverse();
