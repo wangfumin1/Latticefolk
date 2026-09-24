@@ -1640,6 +1640,10 @@ class TownGame {
       dynamic:this.physicsDynamicColliders(`wildlife:${animal.state.id}`)
     });
     pos.x=resolved.position.x;pos.z=resolved.position.z;
+    if(resolved.collided&&animal.pathIndex===animal.path.length-1&&step.distance<=1.55){
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;
+      return;
+    }
     const requestedDistance=Math.hypot(step.dx,step.dz);
     const realizedDistance=Math.hypot(resolved.displacement.x,resolved.displacement.z);
     const realizedRatio=requestedDistance>1e-6?clamp(realizedDistance/requestedDistance,0,1):0;
@@ -2497,6 +2501,9 @@ class TownGame {
       dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
     });
     pos.x=resolved.position.x;pos.z=resolved.position.z;
+    if(resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
+      agent.path=[];agent.pathIndex=0;
+    }
     agent.mesh.rotation.y=Math.atan2(dx,dz);
   }
 
