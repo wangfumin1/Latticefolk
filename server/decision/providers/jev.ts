@@ -556,6 +556,11 @@ export class JevDecisionProvider implements DecisionProvider {
         organismGenome:entry.wildlife.organismGenome,
         organismForm:wildlifeSpeciesProfile(entry.wildlife.species).form.kind,
         movementMode:wildlifeSpeciesProfile(entry.wildlife.species).movement.mode,
+        domestication:entry.wildlife.domestication?{
+          tameProgress:entry.wildlife.domestication.tameProgress,
+          command:entry.wildlife.domestication.command,
+          breedingAllowed:entry.wildlife.domestication.breedingAllowed
+        }:undefined,
         allowedActions:entry.allowedActions,
         currentHabitat:entry.world.currentHabitat,
         nearbyChunks:entry.world.nearbyChunks,
@@ -563,7 +568,7 @@ export class JevDecisionProvider implements DecisionProvider {
         nearbyWildlife:entry.world.nearbyWildlife
       })),
       world:{gameTime:requests[0]!.world.gameTime,minuteOfDay:requests[0]!.world.minuteOfDay,weather:requests[0]!.world.weather},
-      authority:'Select behavior and supplied targets only. Phenotype, organism-family genome, organism form, movement mode and capabilities are simulation-owned read-only context. Never directly mutate health, needs, reproduction, population, resources, phenotype, organism genome, organism form, capabilities, physiology, or genetics.'
+      authority:'Select behavior and supplied targets only. Phenotype, organism-family genome, organism form, movement mode, capabilities and domestication progress/command/breeding flags are simulation-owned read-only context. Owner identity is intentionally withheld. Never directly mutate health, needs, reproduction, population, resources, phenotype, organism genome, organism form, domestication, ownership, commands, capabilities, physiology, or genetics.'
     };
 
     try{

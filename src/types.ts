@@ -556,7 +556,7 @@ export interface WildlifeMigrationEvent {
   fromBiome: ChunkBiome;
   toBiome: ChunkBiome;
   representedPopulation: number;
-  reason: 'behavioral_migration';
+  reason: 'behavioral_migration' | 'owner_follow';
 }
 
 export interface WildlifePredatorOutcomeCounter {
@@ -630,6 +630,9 @@ export interface WildlifeLineageRecord {
   organismGenomeAtBirth?: WildlifeOrganismGenome;
   organismGenomeAtDeath?: WildlifeOrganismGenome;
   organismGenomeProvenance?: WildlifePhenotypeProvenance;
+  /** Factual individual domestication snapshots; no causal evolutionary interpretation is implied. */
+  domesticationAtBirth?: WildlifeDomesticationState;
+  domesticationAtDeath?: WildlifeDomesticationState;
   birthHabitat?: WildlifeHabitatSnapshot;
   deathHabitat?: WildlifeHabitatSnapshot;
   habitatExposure?: WildlifeHabitatExposure;
@@ -1005,6 +1008,21 @@ export interface WildlifeEvolutionStats {
   realizedPredation: WildlifeRealizedPredationStats;
 }
 
+export type WildlifeDomesticationCommand = 'none' | 'follow' | 'stay' | 'graze';
+
+export interface WildlifeDomesticationState {
+  /** 0..100 deterministic taming progress; ownership requires 100. */
+  tameProgress: number;
+  /** Durable world-entity owner identifier. Current player ownership uses the stable id "player". */
+  ownerId?: string;
+  /** Mutable owner command. Player-targeting commands are suspended outside first-person mode. */
+  command: WildlifeDomesticationCommand;
+  /** Owned animals may reproduce only when explicitly enabled. */
+  breedingAllowed: boolean;
+  claimedDay?: number;
+  lastInteractionDay?: number;
+}
+
 export interface WildlifeState {
   id: string;
   chunkId: string;
@@ -1022,6 +1040,8 @@ export interface WildlifeState {
   phenotype?: WildlifePhenotype;
   /** Family-constrained material/niche/locomotion genes; additive for legacy saves. */
   organismGenome?: WildlifeOrganismGenome;
+  /** Mutable per-individual domestication authority; distinct from immutable species organism form. */
+  domestication?: WildlifeDomesticationState;
   currentAction: WildlifeAction;
   targetObjectId?: string;
   targetWildlifeId?: string;

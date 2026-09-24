@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {
   CoarseChunkState, PersistedFineChunk, PersistedWildlifeTransfer, WorldPersistenceMeta, WorldPersistenceSnapshot,
-  NpcState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeMigrationEvent, WildlifeOrganismGenome, WildlifePhenotype, WildlifeState, WildlifeTraits, WorldObjectState
+  NpcState, WildlifeDomesticationState, WildlifeHabitatExposure, WildlifeHabitatSnapshot, WildlifeLineageRecord, WildlifeMigrationEvent, WildlifeOrganismGenome, WildlifePhenotype, WildlifeState, WildlifeTraits, WorldObjectState
 } from '../src/types.js';
 import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence } from '../src/world/evolution.js';
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
@@ -72,6 +72,8 @@ export class WorldPersistence {
         organism_genome_at_birth_json TEXT,
         organism_genome_at_death_json TEXT,
         organism_genome_provenance TEXT,
+        domestication_at_birth_json TEXT,
+        domestication_at_death_json TEXT,
         birth_habitat_json TEXT,
         death_habitat_json TEXT,
         habitat_exposure_json TEXT,
@@ -119,6 +121,12 @@ export class WorldPersistence {
     if(!lineageColumns.some(column=>column.name==='organism_genome_provenance')){
       this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN organism_genome_provenance TEXT");
     }
+    if(!lineageColumns.some(column=>column.name==='domestication_at_birth_json')){
+      this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN domestication_at_birth_json TEXT");
+    }
+    if(!lineageColumns.some(column=>column.name==='domestication_at_death_json')){
+      this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN domestication_at_death_json TEXT");
+    }
     if(!lineageColumns.some(column=>column.name==='birth_habitat_json')){
       this.db.exec("ALTER TABLE wildlife_lineage ADD COLUMN birth_habitat_json TEXT");
     }
@@ -157,8 +165,8 @@ export class WorldPersistence {
     const upsertLineage=this.db.prepare(`
       INSERT INTO wildlife_lineage(
         entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,phenotype_at_birth_json,phenotype_at_death_json,phenotype_provenance,organism_genome_at_birth_json,organism_genome_at_death_json,organism_genome_provenance,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,predation_outcomes_json,origin,offspring_count,reproductive_success,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,phenotype_at_birth_json,phenotype_at_death_json,phenotype_provenance,organism_genome_at_birth_json,organism_genome_at_death_json,organism_genome_provenance,domestication_at_birth_json,domestication_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,predation_outcomes_json,origin,offspring_count,reproductive_success,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(entity_id) DO UPDATE SET
         species=excluded.species,
         mother_id=COALESCE(wildlife_lineage.mother_id,excluded.mother_id),
@@ -177,6 +185,8 @@ export class WorldPersistence {
         organism_genome_at_birth_json=COALESCE(wildlife_lineage.organism_genome_at_birth_json,excluded.organism_genome_at_birth_json),
         organism_genome_at_death_json=COALESCE(wildlife_lineage.organism_genome_at_death_json,excluded.organism_genome_at_death_json),
         organism_genome_provenance=COALESCE(wildlife_lineage.organism_genome_provenance,excluded.organism_genome_provenance),
+        domestication_at_birth_json=COALESCE(wildlife_lineage.domestication_at_birth_json,excluded.domestication_at_birth_json),
+        domestication_at_death_json=COALESCE(excluded.domestication_at_death_json,wildlife_lineage.domestication_at_death_json),
         birth_habitat_json=COALESCE(wildlife_lineage.birth_habitat_json,excluded.birth_habitat_json),
         death_habitat_json=COALESCE(wildlife_lineage.death_habitat_json,excluded.death_habitat_json),
         habitat_exposure_json=COALESCE(excluded.habitat_exposure_json,wildlife_lineage.habitat_exposure_json),
@@ -224,6 +234,8 @@ export class WorldPersistence {
           record.organismGenomeAtBirth?JSON.stringify(record.organismGenomeAtBirth):null,
           record.organismGenomeAtDeath?JSON.stringify(record.organismGenomeAtDeath):null,
           record.organismGenomeProvenance??null,
+          record.domesticationAtBirth?JSON.stringify(record.domesticationAtBirth):null,
+          record.domesticationAtDeath?JSON.stringify(record.domesticationAtDeath):null,
           record.birthHabitat?JSON.stringify(record.birthHabitat):null,record.deathHabitat?JSON.stringify(record.deathHabitat):null,
           record.habitatExposure?JSON.stringify(record.habitatExposure):null,
           record.migrationHistory?JSON.stringify(record.migrationHistory):null,
@@ -255,7 +267,7 @@ export class WorldPersistence {
     const transferRows=this.db.prepare('SELECT transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{transfer_json:string}>;
     const lineageRows=this.db.prepare(`
       SELECT entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
-             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,phenotype_at_birth_json,phenotype_at_death_json,phenotype_provenance,organism_genome_at_birth_json,organism_genome_at_death_json,organism_genome_provenance,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,predation_outcomes_json,origin,offspring_count,reproductive_success
+             birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,phenotype_at_birth_json,phenotype_at_death_json,phenotype_provenance,organism_genome_at_birth_json,organism_genome_at_death_json,organism_genome_provenance,domestication_at_birth_json,domestication_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,predation_outcomes_json,origin,offspring_count,reproductive_success
       FROM wildlife_lineage ORDER BY birth_day,entity_id
     `).all() as Array<{
       entity_id:string;species:WildlifeLineageRecord['species'];mother_id:string|null;father_id:string|null;
@@ -263,6 +275,7 @@ export class WorldPersistence {
       birth_chunk:string;death_chunk:string|null;traits_at_birth_json:string;traits_at_death_json:string|null;
       phenotype_at_birth_json:string|null;phenotype_at_death_json:string|null;phenotype_provenance:WildlifeLineageRecord['phenotypeProvenance']|null;
       organism_genome_at_birth_json:string|null;organism_genome_at_death_json:string|null;organism_genome_provenance:WildlifeLineageRecord['organismGenomeProvenance']|null;
+      domestication_at_birth_json:string|null;domestication_at_death_json:string|null;
       birth_habitat_json:string|null;death_habitat_json:string|null;habitat_exposure_json:string|null;migration_history_json:string|null;predation_outcomes_json:string|null;origin:'founder'|'reproduction';
       offspring_count:number;reproductive_success:number;
     }>;
@@ -296,6 +309,8 @@ export class WorldPersistence {
       organismGenomeAtBirth:row.organism_genome_at_birth_json?parse<WildlifeOrganismGenome|undefined>(row.organism_genome_at_birth_json,undefined):undefined,
       organismGenomeAtDeath:row.organism_genome_at_death_json?parse<WildlifeOrganismGenome|undefined>(row.organism_genome_at_death_json,undefined):undefined,
       organismGenomeProvenance:row.organism_genome_provenance??undefined,
+      domesticationAtBirth:row.domestication_at_birth_json?parse<WildlifeDomesticationState|undefined>(row.domestication_at_birth_json,undefined):undefined,
+      domesticationAtDeath:row.domestication_at_death_json?parse<WildlifeDomesticationState|undefined>(row.domestication_at_death_json,undefined):undefined,
       birthHabitat:row.birth_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.birth_habitat_json,undefined):undefined,
       deathHabitat:row.death_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.death_habitat_json,undefined):undefined,
       habitatExposure:row.habitat_exposure_json?parse<WildlifeHabitatExposure|undefined>(row.habitat_exposure_json,undefined):undefined,
