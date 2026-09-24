@@ -100,6 +100,10 @@ export class FinePhysicsAuthority {
     this.triggers.clear();
   }
 
+  stats(){
+    return {staticColliders:this.staticColliders.size,triggers:this.triggers.size};
+  }
+
   isBlocked(x:number,z:number,radius=0){
     const r=Math.max(0,radius);
     for(const collider of this.staticColliders.values()){
