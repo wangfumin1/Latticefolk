@@ -18,6 +18,7 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
+import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -183,6 +184,7 @@ class TownGame {
   sun = new THREE.DirectionalLight(0xffffff, 1.5);
   ambient = new THREE.HemisphereLight(0xbfe8ff, 0x557044, 1.25);
   blocked = new Set<string>();
+  physics = new FinePhysicsAuthority();
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
@@ -375,6 +377,11 @@ class TownGame {
     };
     g.userData={entityType:'object',entityId:object.id};
     this.objects.set(object.id,{state:object,mesh:g});
+    this.physics.registerStatic({
+      id:`building:${object.id}`,
+      minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
+      chunkId:options?.chunkId
+    });
 
     const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
     for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++){
@@ -404,6 +411,7 @@ class TownGame {
     const trunk = new THREE.Mesh(new THREE.BoxGeometry(.65,2,.65),new THREE.MeshStandardMaterial({color:0x725033})); trunk.position.y=1;
     const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2,2.2,2.2),new THREE.MeshStandardMaterial({color:0x4f8e4b})); crown.position.y=2.65; crown.castShadow=true;
     g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g); this.blocked.add(keyOf(Math.round(x),Math.round(z)));
+    this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
     this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
@@ -833,9 +841,13 @@ class TownGame {
       const speed=(this.keys.has('ShiftLeft')?7.2:4.5)*dt;
       const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);dir.y=0;dir.normalize();
       const right=new THREE.Vector3(-dir.z,0,dir.x);const move=dir.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
-      const old=this.camera.position.clone(),nx=old.x+move.x,nz=old.z+move.z;
-      if(!this.isBlockedWorld(nx,old.z))this.camera.position.x=nx;
-      if(!this.isBlockedWorld(this.camera.position.x,nz))this.camera.position.z=nz;
+      const resolved=this.physics.moveKinematic({
+        id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
+        displacement:{x:move.x,z:move.z},radius:.30,
+        dynamic:this.physicsDynamicColliders('player')
+      });
+      this.camera.position.x=resolved.position.x;
+      this.camera.position.z=resolved.position.z;
     }
     this.camera.position.y=1.7;
     this.playerPosition.x=this.camera.position.x;this.playerPosition.z=this.camera.position.z;
@@ -861,7 +873,6 @@ class TownGame {
     // Do not materialize a player avatar while observing from god mode.
   }
 
-  isBlockedWorld(x:number,z:number) { return this.blocked.has(keyOf(Math.round(x),Math.round(z))); }
 
   async initializePersistence() {
     try{
@@ -1424,6 +1435,7 @@ class TownGame {
     }
 
     for(const key of runtime.blockedKeys)this.blocked.delete(key);
+    this.physics.clearChunk(chunkId);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
     this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
@@ -1587,14 +1599,19 @@ class TownGame {
       return;
     }
 
-    const nextX=pos.x+step.dx,nextZ=pos.z+step.dz;
-    if(this.isBlockedWorld(nextX,nextZ)){
-      animal.controllerSpeed=0;
-      return;
-    }
-    pos.x=nextX;pos.z=nextZ;
-    animal.controllerSpeed=step.speed;
-    const movementLoad=maxSpeed>0?clamp(step.speed/maxSpeed,.18,1):0;
+    const resolved=this.physics.moveKinematic({
+      id:`wildlife:${animal.state.id}`,
+      position:{x:pos.x,z:pos.z},
+      displacement:{x:step.dx,z:step.dz},
+      radius:this.wildlifePhysicsRadius(animal.state),
+      dynamic:this.physicsDynamicColliders(`wildlife:${animal.state.id}`)
+    });
+    pos.x=resolved.position.x;pos.z=resolved.position.z;
+    const requestedDistance=Math.hypot(step.dx,step.dz);
+    const realizedDistance=Math.hypot(resolved.displacement.x,resolved.displacement.z);
+    const realizedRatio=requestedDistance>1e-6?clamp(realizedDistance/requestedDistance,0,1):0;
+    animal.controllerSpeed=step.speed*realizedRatio;
+    const movementLoad=maxSpeed>0?clamp(animal.controllerSpeed/maxSpeed,.18,1):0;
     animal.state.energy=clamp(
       animal.state.energy-dt*.018*movementLoad*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
       0,100
@@ -2437,7 +2454,17 @@ class TownGame {
     if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
-    const speed=1.65; pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;agent.mesh.rotation.y=Math.atan2(dx,dz);
+    const speed=1.65;
+    const step=Math.min(d,speed*dt);
+    const resolved=this.physics.moveKinematic({
+      id:`npc:${agent.state.id}`,
+      position:{x:pos.x,z:pos.z},
+      displacement:{x:dx/d*step,z:dz/d*step},
+      radius:.32,
+      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+    });
+    pos.x=resolved.position.x;pos.z=resolved.position.z;
+    agent.mesh.rotation.y=Math.atan2(dx,dz);
   }
 
   async requestDecision(agent:NpcRuntime) {
@@ -3214,6 +3241,30 @@ class TownGame {
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
+
+  wildlifePhysicsRadius(state:WildlifeState) {
+    return clamp(.20+state.traits.size*.10,.24,.48);
+  }
+
+  physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
+    const colliders:DynamicCollider[]=[];
+    if(this.cameraMode==='firstPerson'){
+      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,radius:.30});
+    }
+    for(const agent of this.npcs.values()){
+      if(agent.removed)continue;
+      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,radius:.32});
+    }
+    for(const animal of this.wildlife.values()){
+      if(animal.removed)continue;
+      colliders.push({
+        id:`wildlife:${animal.state.id}`,
+        x:animal.mesh.position.x,z:animal.mesh.position.z,
+        radius:this.wildlifePhysicsRadius(animal.state)
+      });
+    }
+    return excludeId?colliders.filter(collider=>collider.id!==excludeId):colliders;
+  }
 
   randomPassableNear(p:Vec2,radius:number,chunkId?:string):Vec2 {
     const chunk=chunkId?this.coarseWorld.chunks.get(chunkId):undefined;
