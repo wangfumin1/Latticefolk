@@ -348,7 +348,7 @@ class TownGame {
     this.addObject({id:'bench_w',kind:'bench',name:'西侧长椅',position:{x:-4,z:3},tags:['rest','social'],usable:true,pickupable:false});
     this.addObject({id:'bench_e',kind:'bench',name:'东侧长椅',position:{x:4,z:-3},tags:['rest','social'],usable:true,pickupable:false});
     this.addObject({id:'farm_plot',kind:'farm_plot',name:'南侧农田',position:{x:-22,z:-10},tags:['work','farm','food'],usable:true,pickupable:false});
-    this.addObject({id:'oven',kind:'workstation',name:'面包炉',position:{x:-10,z:-13},tags:['work','baker','bread'],usable:true,pickupable:false});
+    this.addObject({id:'oven',kind:'workstation',name:'面包炉',position:{x:-12.5,z:-12.5},tags:['work','baker','bread'],usable:true,pickupable:false});
     this.addObject({id:'market',kind:'food_stall',name:'集市摊位',position:{x:8,z:-11},tags:['food','trade','market'],usable:true,pickupable:false,item:'bread'});
     this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
     this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
@@ -1056,6 +1056,14 @@ class TownGame {
       if(!runtime)continue;
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
+      if(runtime.state.id==='oven'&&Math.abs(runtime.state.position.x+10)<.01&&Math.abs(runtime.state.position.z+13)<.01){
+        // Physics v2 doors exposed a legacy authored-layout conflict: the old oven occupied the bakery threshold.
+        runtime.state.position={x:-12.5,z:-12.5};
+        runtime.mesh.position.set(runtime.state.position.x,0,runtime.state.position.z);
+        this.physics.unregisterStatic('object:oven');
+        this.physics.unregisterTrigger('object-trigger:oven');
+        this.registerWorldObjectPhysics(runtime.state);
+      }
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
       this.syncBuildingDoor(runtime);

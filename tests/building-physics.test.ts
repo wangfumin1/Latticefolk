@@ -16,3 +16,10 @@ test('entrance face follows nearest cardinal authored orientation',()=>{
  assert.equal(buildingPhysicsLayout({id:'e',x:0,z:0,w:8,d:6,rotationY:Math.PI/2}).entrance,'east');
  assert.equal(buildingPhysicsLayout({id:'w',x:0,z:0,w:8,d:6,rotationY:-Math.PI/2}).entrance,'west');
 });
+
+test('authored bakery workstation stays clear of the authoritative doorway',()=>{
+  const bakery=buildingPhysicsLayout({id:'bakery',x:-10,z:-18,w:10,d:9,rotationY:-.08});
+  const oven={minX:-12.5-.92,maxX:-12.5+.92,minZ:-12.5-.44,maxZ:-12.5+.44};
+  const overlaps=!(oven.maxX<=bakery.door.minX||oven.minX>=bakery.door.maxX||oven.maxZ<=bakery.door.minZ||oven.minZ>=bakery.door.maxZ);
+  assert.equal(overlaps,false);
+});
