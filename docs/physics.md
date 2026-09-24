@@ -2,13 +2,14 @@
 
 Latticefolk keeps physical outcomes inside deterministic simulation. Decision Providers may choose intentions such as moving toward a target, fleeing, hunting, following an owner, or interacting with an object, but they do not choose whether a body passes through a wall, overlaps another body, enters a trigger, or reaches a physical destination.
 
-This document describes the dedicated fine-physics authority and the first Physics v2 terrain increment. It replaces the previous ad-hoc blocked-cell movement checks and now owns materialized ground contact as well, without claiming that doors or general rigid bodies are complete.
+This document describes the dedicated fine-physics authority and Physics v2 terrain/door foundations. It replaces the previous ad-hoc blocked-cell movement checks, owns materialized ground contact, and now provides simulation-owned door collider state. General rigid bodies are not complete.
 
 ## Authority boundary
 
 The current fine physics layer owns:
 
 - materialized static collision geometry represented as 2D AABBs;
+- simulation-owned door colliders with deterministic open/closed state;
 - kinematic circular character collision for the first-person player, NPCs, and fine wildlife;
 - deterministic sub-stepped displacement to prevent large-frame tunnelling;
 - axis-separated collision resolution so a character can slide along a wall rather than losing all movement;
@@ -16,12 +17,12 @@ The current fine physics layer owns:
 - non-blocking semantic trigger volumes;
 - chunk-scoped deterministic terrain surfaces and ground-contact queries;
 - bounded maximum slope and vertical ground-step legality during kinematic movement;
-- chunk-scoped registration and cleanup of colliders, triggers, and terrain;
+- chunk-scoped registration and cleanup of colliders, doors, triggers, and terrain;
 - the final physical displacement applied to fine characters.
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-The next physics phases still need authoritative door open/close collider state, general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
+Door state is an authority primitive in this increment, not yet a claim that authored building entrances are interactive. Runtime building decomposition, semantic open/close interaction and persistence must be wired together before doors become player-visible gameplay. The next physics phases also need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
 
 ## Runtime model
 
@@ -40,6 +41,8 @@ Static colliders are code/runtime-owned AABBs:
 }
 ```
 
+Doors use the same bounds plus an `open` flag. Closed doors participate in the exact same blocking query used by character movement and navigation passability; open doors are omitted from blocking geometry without mutating any render mesh. `setDoorOpen`, `doorState`, `unregisterDoor`, `clearChunk`, and `clear` keep this state inside the physics authority. This is deliberately separate from Decision Providers: a provider may eventually choose an `open_door` intention, but deterministic simulation must validate and apply it.
+
 Triggers use the same bounds but never block motion. The current gameplay integration registers interaction triggers for semantic WorldObjects and building interaction points. First-person object interaction requires both the existing visual/raycast target and an overlapping physics trigger, so an object cannot be used merely because its mesh is visible through a wall or from outside its interaction volume.
 
 Dynamic characters are not duplicated into a second persistent physics database. Every kinematic move receives a snapshot of currently materialized character circles. That keeps authoritative identity/state in the existing NPC/wildlife/player systems while physics owns contact resolution.
@@ -50,19 +53,9 @@ Dynamic characters are not duplicated into a second persistent physics database.
 
 Ground contact is deterministic when surfaces overlap: the highest surface wins, with stable surface id as the tie-break. Kinematic movement rejects candidate ground whose angle exceeds `maxSlope` or whose per-substep height discontinuity exceeds `maxGroundStep`. The returned movement result includes read-only ground contact and terrain-hit evidence; Decision Providers cannot author either outcome.
 
-
 ## Kinematic movement
 
-A caller submits:
-
-- current position;
-- desired displacement;
-- body radius;
-- current materialized dynamic colliders.
-
-The authority subdivides long displacement into bounded substeps, resolves X and Z independently, rejects penetration into static/dynamic bodies, and returns the actual displacement. The caller applies only that returned displacement.
-
-This means:
+A caller submits current position, desired displacement, body radius, and current materialized dynamic colliders. The authority subdivides long displacement into bounded substeps, resolves X and Z independently, rejects penetration into static/dynamic/closed-door bodies, and returns the actual displacement. The caller applies only that returned displacement.
 
 ```text
 Decision / input
@@ -74,7 +67,7 @@ FinePhysicsAuthority
 authoritative fine position
 ```
 
-The player, NPCs, and wildlife now all use this path. The old `blocked Set` is no longer a second collision truth. Grid A* remains a navigation algorithm, but passability is queried from physics static geometry.
+The player, NPCs, and wildlife now all use this path. The old `blocked Set` is no longer a second collision truth. Grid A* remains a navigation algorithm, but passability is queried from physics blocking geometry.
 
 Wildlife still uses its movement archetype controller to determine gait, acceleration, turn rate and desired displacement. Physics then resolves whether that displacement is actually possible. Energy cost is based on realized controller movement rather than an impossible requested displacement.
 
@@ -86,41 +79,23 @@ For the final waypoint, a collision inside the legal approach radius therefore c
 
 ## Static semantic objects
 
-Buildings register their real footprint as static physics geometry and register a separate interaction trigger near the semantic interaction point.
+Buildings currently register their real footprint as static physics geometry and register a separate interaction trigger near the semantic interaction point. The door authority primitive is intentionally not wired into these authored buildings until wall/threshold decomposition and persistent semantic door state can be introduced as one complete gameplay increment; this avoids creating a visual doorway that disagrees with collision truth.
 
-The initial WorldObject collider set includes solid objects such as:
-
-- well;
-- bench;
-- bed;
-- food stall;
-- workstation;
-- tree;
-- rock;
-- cart;
-- non-pickupable crate.
-
-Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise.
-
-Pickupable objects receive interaction triggers but are not treated as fixed static geometry.
+The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, cart, and non-pickupable crate. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise. Pickupable objects receive interaction triggers but are not treated as fixed static geometry.
 
 ## Chunk lifecycle and sleeping
 
 Physics exists only for fine/materialized content.
 
-A collider or trigger may carry a `chunkId`. When that chunk folds back to coarse simulation, `physics.clearChunk(chunkId)` removes its fine collision/trigger state. Fine character bodies likewise disappear because dynamic colliders are generated only from currently materialized runtime entities.
+A collider, door, trigger, or terrain surface may carry a `chunkId`. When that chunk folds back to coarse simulation, `physics.clearChunk(chunkId)` removes its fine physical state. Fine character bodies likewise disappear because dynamic colliders are generated only from currently materialized runtime entities.
 
 This is the current unloaded-chunk sleeping boundary: no per-frame velocity/contact solver runs for distant chunks. Their authoritative evolution remains in the coarse deterministic simulation.
 
-Transient wildlife movement speed was already non-persistent. Fine physics adds no new persistence schema.
+Transient wildlife movement speed was already non-persistent. The door primitive itself adds no persistence schema; persistent gameplay door state will be added when semantic runtime doors are wired.
 
 ## God View invariant
 
-God View remains an out-of-world observer.
-
-The physics dynamic-body snapshot contains the player only in first-person mode. When God View is active, there is no player collider for NPCs or wildlife to contact, avoid, follow, or target. Moving the God camera also does not register physics geometry, materialize new chunks, or change simulation state.
-
-God View may display physics counts for observability; that display is read-only.
+God View remains an out-of-world observer. The physics dynamic-body snapshot contains the player only in first-person mode. When God View is active, there is no player collider for NPCs or wildlife to contact, avoid, follow, or target. Moving the God camera also does not register physics geometry, materialize new chunks, or change simulation state. God View may display physics counts for observability; that display is read-only.
 
 ## Restored overlap
 
@@ -130,34 +105,28 @@ Legacy saves or procedural materialization can occasionally place two dynamic ci
 
 Triggers are observational volumes and do not block movement. `overlappingTriggers` returns deterministic ID-sorted results. The first gameplay consumer is first-person WorldObject interaction.
 
-Future uses can include doors, hazard volumes, building interiors, water depth, biome-local effects, scripted semantic zones, and physics-backed interaction sensors, provided those systems keep authoritative state changes in deterministic simulation.
+Future uses can include door thresholds, hazard volumes, building interiors, water depth, biome-local effects, scripted semantic zones, and physics-backed interaction sensors, provided those systems keep authoritative state changes in deterministic simulation.
 
 ## Tests
 
-`tests/fine-physics.test.ts` covers:
+`tests/fine-physics.test.ts` covers anti-tunnelling substeps, wall sliding, dynamic body collision, separation from legacy overlap, chunk-scoped cleanup, non-blocking trigger overlap, closed-door collision, open-door traversal, and door cleanup with chunk teardown.
 
-- anti-tunnelling substeps;
-- wall sliding;
-- dynamic body collision;
-- separation from legacy overlap;
-- chunk-scoped cleanup;
-- non-blocking trigger overlap.
-
-The normal CI pipeline runs these tests together with typecheck, all existing simulation tests, and the production build.
+The normal CI pipeline runs these tests together with typecheck, all existing simulation tests, the production build, and the real Chromium playable smoke gate.
 
 ## Next physics work
 
 The next implementation step should extend the same authority rather than reintroducing local collision branches:
 
-1. terrain/ground contact and bounded slope traversal;
-2. door/open-close collider state and trigger-backed thresholds;
+1. wire authored/modular building wall geometry around explicit door thresholds;
+2. persist semantic door state and connect validated open/close interaction to `FinePhysicsAuthority`;
 3. general rigid bodies for movable props, carts and stacking;
 4. projectile/contact queries;
 5. richer sleeping/wakeup rules across fine/coarse boundaries.
 
 Decision Providers continue to supply only intentions. Physical contacts and their consequences remain deterministic.
 
-
 ## Playable verification
 
 Gameplay and physics changes are gated by a real Chromium smoke test in addition to deterministic unit tests. The Playwright path starts the actual server and Vite client, verifies the authored home ground is registered in the physics authority, enters first person with pointer lock, performs real physics-resolved movement, switches to God View, verifies the player physics body disappears and observer-camera movement does not expand discovered chunks, and captures first-person/God View screenshots as CI artifacts. Distant chunk terrain registration/teardown remains covered by deterministic materialization tests so the browser gate does not spend most of its budget walking across the authored home area. A green typecheck/unit/build job alone is not treated as playable or visual verification.
+
+The door-authority primitive currently has deterministic unit coverage but no player-visible runtime door to exercise. Browser evidence therefore verifies that the unchanged playable runtime and God View invariants remain healthy; a later runtime-door increment must add a real closed→open traversal scenario and visual evidence before merge.

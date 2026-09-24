@@ -31,6 +31,10 @@ export interface TerrainContact {
   slope:number;
 }
 
+export interface DoorCollider extends StaticCollider {
+  open:boolean;
+}
+
 export interface DynamicCollider {
   id:string;
   x:number;
@@ -78,10 +82,11 @@ function circleIntersectsCircle(x:number,z:number,radius:number,other:DynamicCol
 
 /**
  * Deterministic fine-simulation collision authority.
- * Static geometry, terrain contact and semantic triggers live here while a chunk is materialized.
+ * Static geometry, authoritative door state, terrain contact and semantic triggers live here while a chunk is materialized.
  */
 export class FinePhysicsAuthority {
   private staticColliders=new Map<string,StaticCollider>();
+  private doors=new Map<string,DoorCollider>();
   private triggers=new Map<string,PhysicsTrigger>();
   private terrain=new Map<string,TerrainSurface>();
 
@@ -92,6 +97,20 @@ export class FinePhysicsAuthority {
   }
 
   unregisterStatic(id:string){this.staticColliders.delete(id);}
+
+  registerDoor(door:DoorCollider){
+    const normalized={...this.normalize(door),open:Boolean(door.open)};
+    this.doors.set(normalized.id,normalized);
+    return {...normalized};
+  }
+
+  setDoorOpen(id:string,open:boolean){
+    const door=this.doors.get(id);if(!door)return false;
+    door.open=Boolean(open);return true;
+  }
+
+  doorState(id:string){const door=this.doors.get(id);return door?{...door}:undefined;}
+  unregisterDoor(id:string){this.doors.delete(id);}
 
   registerBlockedCell(id:string,x:number,z:number,chunkId?:string){
     return this.registerStatic({id,minX:x-.5,maxX:x+.5,minZ:z-.5,maxZ:z+.5,chunkId});
@@ -116,7 +135,6 @@ export class FinePhysicsAuthority {
   groundContactAt(x:number,z:number):TerrainContact|undefined {
     const candidates=[...this.terrain.values()].filter(surface=>x>=surface.minX&&x<=surface.maxX&&z>=surface.minZ&&z<=surface.maxZ).sort((a,b)=>a.id.localeCompare(b.id));
     if(!candidates.length)return undefined;
-    // Overlap is resolved deterministically by highest ground, then stable id.
     let best:TerrainContact|undefined;
     for(const surface of candidates){
       const height=surface.originY+surface.slopeX*(x-surface.originX)+surface.slopeZ*(z-surface.originZ);
@@ -128,17 +146,18 @@ export class FinePhysicsAuthority {
 
   clearChunk(chunkId:string){
     for(const [id,collider] of this.staticColliders)if(collider.chunkId===chunkId)this.staticColliders.delete(id);
+    for(const [id,door] of this.doors)if(door.chunkId===chunkId)this.doors.delete(id);
     for(const [id,trigger] of this.triggers)if(trigger.chunkId===chunkId)this.triggers.delete(id);
     for(const [id,surface] of this.terrain)if(surface.chunkId===chunkId)this.terrain.delete(id);
   }
 
-  clear(){this.staticColliders.clear();this.triggers.clear();this.terrain.clear();}
+  clear(){this.staticColliders.clear();this.doors.clear();this.triggers.clear();this.terrain.clear();}
 
-  stats(){return {staticColliders:this.staticColliders.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size};}
+  stats(){return {staticColliders:this.staticColliders.size,doors:this.doors.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size};}
 
   isBlocked(x:number,z:number,radius=0){
     const r=Math.max(0,radius);
-    for(const collider of this.staticColliders.values())if(r>0?circleIntersectsAabb(x,z,r,collider):x>collider.minX&&x<collider.maxX&&z>collider.minZ&&z<collider.maxZ)return true;
+    for(const collider of this.blockingColliders())if(r>0?circleIntersectsAabb(x,z,r,collider):x>collider.minX&&x<collider.maxX&&z>collider.minZ&&z<collider.maxZ)return true;
     return false;
   }
 
@@ -158,7 +177,7 @@ export class FinePhysicsAuthority {
     const staticHits=new Set<string>(),dynamicHits=new Set<string>(),terrainHits=new Set<string>();
 
     const blockersAt=(cx:number,cz:number)=>{
-      const statics:string[]=[];for(const collider of this.staticColliders.values())if(circleIntersectsAabb(cx,cz,radius,collider))statics.push(collider.id);
+      const statics:string[]=[];for(const collider of this.blockingColliders())if(circleIntersectsAabb(cx,cz,radius,collider))statics.push(collider.id);
       const dynamics:string[]=[];
       for(const other of input.dynamic||[]){
         if(other.id===input.id||!circleIntersectsCircle(cx,cz,radius,other))continue;
@@ -182,6 +201,11 @@ export class FinePhysicsAuthority {
       if(Math.abs(stepZ)>1e-12){const hit=blockersAt(x,z+stepZ);if(!hit.statics.length&&!hit.dynamics.length&&!hit.terrain.length)z+=stepZ;else{hit.statics.forEach(id=>staticHits.add(id));hit.dynamics.forEach(id=>dynamicHits.add(id));hit.terrain.forEach(id=>terrainHits.add(id));}}
     }
     return {position:{x,z},displacement:{x:x-input.position.x,z:z-input.position.z},collided:staticHits.size>0||dynamicHits.size>0||terrainHits.size>0,staticHits:[...staticHits].sort(),dynamicHits:[...dynamicHits].sort(),terrainHits:[...terrainHits].sort(),ground:this.groundContactAt(x,z)};
+  }
+
+  private *blockingColliders():Iterable<StaticCollider>{
+    yield* this.staticColliders.values();
+    for(const door of this.doors.values())if(!door.open)yield door;
   }
 
   private normalize<T extends StaticCollider>(collider:T):T {

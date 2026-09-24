@@ -34,6 +34,9 @@ async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
 }
 
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
+  // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
+  // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
+  test.setTimeout(120_000);
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
