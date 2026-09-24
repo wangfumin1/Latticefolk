@@ -74,3 +74,17 @@ test('trigger overlap is observational and does not block movement',()=>{
   assert.ok(moved.position.x>-0.01);
   assert.equal(physics.overlappingTriggers(moved.position,.25)[0]?.tag,'water');
 });
+
+test('existing dynamic overlap can separate instead of trapping restored bodies forever',()=>{
+  const physics=new FinePhysicsAuthority();
+  const moved=physics.moveKinematic({
+    id:'npc:a',
+    position:{x:0,z:0},
+    displacement:{x:-.6,z:0},
+    radius:.35,
+    dynamic:[{id:'npc:b',x:.2,z:0,radius:.35}]
+  });
+  assert.equal(moved.dynamicHits.length,0);
+  assert.ok(moved.position.x<-.5);
+});
+
