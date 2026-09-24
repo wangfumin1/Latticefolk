@@ -275,4 +275,10 @@ Breeding is authoritative as well. Unowned animals retain natural reproduction. 
 
 Owned followers reuse the conserved identity-preserving fine transfer system when a first-person player crosses an adjacent chunk. Source/target population accounting and target carrying capacity are resolved before destination coordinates are committed, and lineage provenance records `owner_follow`. Fine-state JSON, transfer JSON and additive SQLite lineage columns therefore retain ownership without introducing a second wildlife persistence authority. See [Authoritative domestication](domestication.md).
 
-The next major simulation step is **dedicated physics / character-controller integration**: replace blocked-cell/contact resolution with a physics authority for characters, wildlife, rigid bodies, triggers, slopes and sleeping unloaded chunks while keeping Decision Providers restricted to intent.
+## Implemented milestone: fine physics authority v1
+
+Fine movement no longer has separate ad-hoc collision rules. `FinePhysicsAuthority` owns materialized static AABBs, non-blocking triggers and final kinematic displacement for player, NPC and wildlife circular bodies. Long frame displacement is sub-stepped to prevent tunnelling, axis resolution permits wall sliding, dynamic bodies cannot overlap, and restored legacy overlap can move outward rather than trapping entities. Grid navigation remains an A* planning layer but queries the same physics geometry instead of maintaining a second blocked-cell truth.
+
+Semantic buildings/WorldObjects register colliders and interaction triggers with chunk lifetime. Fine chunk collapse clears chunk-scoped physics state; dynamic character bodies exist only for materialized entities, so distant chunks naturally return to coarse simulation instead of persisting frame contacts/velocity. First-person object use requires trigger overlap plus the existing visual target. God View contributes no player physics body and camera movement cannot create contact, triggers or chunks. See [Fine physics authority](physics.md).
+
+The next major physics step is **terrain/contact and rigid-body expansion**: bounded ground/slope traversal, stateful doors, general movable/stackable bodies, carts/vehicles and projectiles/contact events. Decision Providers remain restricted to intent while physics resolves actual motion/contact.
