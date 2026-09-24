@@ -134,7 +134,6 @@ interface FineChunkRuntime {
   initialWildlifeCounts:Partial<Record<WildlifeSpecies,number>>;
   initialWildlifeIds:Set<string>;
   fixedWildlifeWeights:Map<string,number>;
-  blockedKeys:string[];
   groups:THREE.Object3D[];
   initialMetrics:FineMetrics;
 }
@@ -183,7 +182,6 @@ class TownGame {
   clock = new THREE.Clock();
   sun = new THREE.DirectionalLight(0xffffff, 1.5);
   ambient = new THREE.HemisphereLight(0xbfe8ff, 0x557044, 1.25);
-  blocked = new Set<string>();
   physics = new FinePhysicsAuthority();
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
@@ -389,11 +387,6 @@ class TownGame {
       chunkId:options?.chunkId,tag:'interaction'
     });
 
-    const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
-    for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++){
-      const key=keyOf(gx,gz);this.blocked.add(key);
-      if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.blockedKeys.push(key);
-    }
     if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(g);
     return g;
   }
@@ -416,7 +409,7 @@ class TownGame {
     const g = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.BoxGeometry(.65,2,.65),new THREE.MeshStandardMaterial({color:0x725033})); trunk.position.y=1;
     const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2,2.2,2.2),new THREE.MeshStandardMaterial({color:0x4f8e4b})); crown.position.y=2.65; crown.castShadow=true;
-    g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g); this.blocked.add(keyOf(Math.round(x),Math.round(z)));
+    g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g);
     this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
     this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
@@ -497,13 +490,6 @@ class TownGame {
       minZ:state.position.z-halfZ,maxZ:state.position.z+halfZ,
       chunkId:state.chunkId
     });
-    const minX=Math.floor(state.position.x-halfX),maxX=Math.ceil(state.position.x+halfX);
-    const minZ=Math.floor(state.position.z-halfZ),maxZ=Math.ceil(state.position.z+halfZ);
-    for(let gx=minX;gx<=maxX;gx++)for(let gz=minZ;gz<=maxZ;gz++){
-      const key=keyOf(gx,gz);
-      this.blocked.add(key);
-      if(state.chunkId)this.materializedChunks.get(state.chunkId)?.blockedKeys.push(key);
-    }
   }
 
   defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
@@ -1075,7 +1061,7 @@ class TownGame {
     const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
     const runtime:FineChunkRuntime={
       chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},
-      initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),blockedKeys:[],groups:[],
+      initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),groups:[],
       initialMetrics:{food:0,wood:0,ecology:0,prosperity:0,shrub:0,fruit:0,crop:0}
     };
     this.materializedChunks.set(chunk.id,runtime);
@@ -1481,7 +1467,6 @@ class TownGame {
       this.objects.delete(id);
     }
 
-    for(const key of runtime.blockedKeys)this.blocked.delete(key);
     this.physics.clearChunk(chunkId);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
     this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
@@ -3323,7 +3308,7 @@ class TownGame {
     for(let i=0;i<60;i++){
       const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,minX,maxX));
       const z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,minZ,maxZ));
-      if(!this.blocked.has(keyOf(x,z))&&!this.physics.isBlocked(x,z,.28))return{x,z};
+      if(!this.physics.isBlocked(x,z,.28))return{x,z};
     }
     return{x:p.x,z:p.z};
   }
@@ -3332,7 +3317,7 @@ class TownGame {
     const s={x:Math.round(start.x),z:Math.round(start.z)},g={x:Math.round(end.x),z:Math.round(end.z)};
     const margin=Math.max(24,Math.abs(g.x-s.x)+Math.abs(g.z-s.z)+12);
     const minX=Math.min(s.x,g.x)-margin,maxX=Math.max(s.x,g.x)+margin,minZ=Math.min(s.z,g.z)-margin,maxZ=Math.max(s.z,g.z)+margin;
-    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&((!this.blocked.has(keyOf(x,z))&&!this.physics.isBlocked(x,z,.24))||(x===g.x&&z===g.z));
+    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&(!this.physics.isBlocked(x,z,.24)||(x===g.x&&z===g.z));
     const open=[s],came=new Map<string,string>(),cost=new Map<string,number>([[keyOf(s.x,s.z),0]]);const goalKey=keyOf(g.x,g.z);let found=false;
     while(open.length&&cost.size<9000){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
     if(!found)return[];const rev:Vec2[]=[];let k=goalKey;while(k!==keyOf(s.x,s.z)){const [x,z]=k.split(',').map(Number);rev.push({x,z});const prev=came.get(k);if(!prev)break;k=prev;}return rev.reverse();
