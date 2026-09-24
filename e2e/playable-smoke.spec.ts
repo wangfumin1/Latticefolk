@@ -128,7 +128,8 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
 
   await move(page,['KeyS'],850);
   const outside=await runtime(page);
-  expect(outside.playerZ).toBeGreaterThan(-12.70);
+  expect(outside.playerZ-inside.playerZ).toBeGreaterThan(.25);
+  expect(outside.playerZ).toBeGreaterThan(-13.20);
   await placeAtBakeryThreshold(page);
   await waitForObjectPrompt(page,'面包房');
   await page.keyboard.press('KeyE');
