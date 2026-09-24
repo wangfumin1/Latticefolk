@@ -113,6 +113,16 @@ export class FinePhysicsAuthority {
     this.triggers.delete(id);
   }
 
+  setTriggerBounds(id:string,bounds:Pick<StaticCollider,'minX'|'maxX'|'minZ'|'maxZ'>){
+    const trigger=this.triggers.get(id);
+    if(!trigger)return false;
+    trigger.minX=Math.min(bounds.minX,bounds.maxX);
+    trigger.maxX=Math.max(bounds.minX,bounds.maxX);
+    trigger.minZ=Math.min(bounds.minZ,bounds.maxZ);
+    trigger.maxZ=Math.max(bounds.minZ,bounds.maxZ);
+    return true;
+  }
+
   clearChunk(chunkId:string){
     for(const [id,collider] of this.staticColliders)if(collider.chunkId===chunkId)this.staticColliders.delete(id);
     for(const [id,trigger] of this.triggers)if(trigger.chunkId===chunkId)this.triggers.delete(id);
