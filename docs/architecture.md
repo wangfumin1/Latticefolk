@@ -353,7 +353,7 @@ God View keeps the hard observer invariant. The player dynamic collider exists o
 
 Unloaded chunks run no fine collision/contact solver. Their static physics is cleared on fold-back and dynamic bodies disappear with fine runtime entities, while coarse simulation remains authoritative. Fine physics adds no persistence schema.
 
-This is the first physics phase, not a complete rigid-body engine. Terrain/ground height and slope limits, stateful doors, general rigid bodies, stacking, carts/vehicles and projectiles remain explicit next work. See [Physics](physics.md).
+Terrain/ground legality and stateful semantic doors now extend the same authority: buildings expose deterministic wall segments plus one persistent threshold collider, while visual door motion follows simulation-owned `doorOpen`. General rigid bodies, stacking, carts/vehicles and projectiles remain explicit next work. See [Physics](physics.md).
 
 ## Predator-pressure adaptation evidence
 

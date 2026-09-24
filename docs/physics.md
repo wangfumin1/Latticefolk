@@ -2,7 +2,7 @@
 
 Latticefolk keeps physical outcomes inside deterministic simulation. Decision Providers may choose intentions such as moving toward a target, fleeing, hunting, following an owner, or interacting with an object, but they do not choose whether a body passes through a wall, overlaps another body, enters a trigger, or reaches a physical destination.
 
-This document describes the dedicated fine-physics authority and Physics v2 terrain/door foundations. It replaces the previous ad-hoc blocked-cell movement checks, owns materialized ground contact, and now provides simulation-owned door collider state. General rigid bodies are not complete.
+This document describes the dedicated fine-physics authority and Physics v2 terrain/door increments. It replaces the previous ad-hoc blocked-cell movement checks, owns materialized ground contact, and now provides simulation-owned door collider state. General rigid bodies are not complete.
 
 ## Authority boundary
 
@@ -22,7 +22,7 @@ The current fine physics layer owns:
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-Door state is an authority primitive in this increment, not yet a claim that authored building entrances are interactive. Runtime building decomposition, semantic open/close interaction and persistence must be wired together before doors become player-visible gameplay. The next physics phases also need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
+Door state is now wired into semantic buildings end-to-end. Decision/provider layers may request an open/close interaction, but deterministic simulation validates and mutates `WorldObjectState.doorOpen`, physics owns threshold blocking, and rendering follows that state. The next physics phases need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
 
 ## Runtime model
 
@@ -79,7 +79,7 @@ For the final waypoint, a collision inside the legal approach radius therefore c
 
 ## Static semantic objects
 
-Buildings currently register their real footprint as static physics geometry and register a separate interaction trigger near the semantic interaction point. The door authority primitive is intentionally not wired into these authored buildings until wall/threshold decomposition and persistent semantic door state can be introduced as one complete gameplay increment; this avoids creating a visual doorway that disagrees with collision truth.
+Buildings no longer register one solid footprint AABB. `buildingPhysicsLayout()` deterministically decomposes the axis-aligned physical footprint into wall segments plus one threshold/door collider on the face nearest the authored entrance orientation. The semantic building keeps a trigger outside that threshold. This makes the physical entrance real while preserving a single collision authority.
 
 The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, cart, and non-pickupable crate. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise. Pickupable objects receive interaction triggers but are not treated as fixed static geometry.
 
@@ -91,7 +91,7 @@ A collider, door, trigger, or terrain surface may carry a `chunkId`. When that c
 
 This is the current unloaded-chunk sleeping boundary: no per-frame velocity/contact solver runs for distant chunks. Their authoritative evolution remains in the coarse deterministic simulation.
 
-Transient wildlife movement speed was already non-persistent. The door primitive itself adds no persistence schema; persistent gameplay door state will be added when semantic runtime doors are wired.
+Transient wildlife movement speed remains non-persistent. Doors add no dedicated physics table: optional `WorldObjectState.doorOpen` is stored in existing home/fine object JSON, with absent legacy values restoring closed. Load/rematerialization reconstructs collider and door visual from semantic object state.
 
 ## God View invariant
 
@@ -117,8 +117,8 @@ The normal CI pipeline runs these tests together with typecheck, all existing si
 
 The next implementation step should extend the same authority rather than reintroducing local collision branches:
 
-1. wire authored/modular building wall geometry around explicit door thresholds;
-2. persist semantic door state and connect validated open/close interaction to `FinePhysicsAuthority`;
+1. ✅ authored/modular building wall geometry around explicit door thresholds;
+2. ✅ persistent semantic door state connected to validated open/close interaction and `FinePhysicsAuthority`;
 3. general rigid bodies for movable props, carts and stacking;
 4. projectile/contact queries;
 5. richer sleeping/wakeup rules across fine/coarse boundaries.
@@ -129,4 +129,4 @@ Decision Providers continue to supply only intentions. Physical contacts and the
 
 Gameplay and physics changes are gated by a real Chromium smoke test in addition to deterministic unit tests. The Playwright path starts the actual server and Vite client, verifies the authored home ground is registered in the physics authority, enters first person with pointer lock, performs real physics-resolved movement, switches to God View, verifies the player physics body disappears and observer-camera movement does not expand discovered chunks, and captures first-person/God View screenshots as CI artifacts. Distant chunk terrain registration/teardown remains covered by deterministic materialization tests so the browser gate does not spend most of its budget walking across the authored home area. A green typecheck/unit/build job alone is not treated as playable or visual verification.
 
-The door-authority primitive currently has deterministic unit coverage but no player-visible runtime door to exercise. Browser evidence therefore verifies that the unchanged playable runtime and God View invariants remain healthy; a later runtime-door increment must add a real closed→open traversal scenario and visual evidence before merge.
+The browser gate now exercises a real authored market door: first-person interaction opens it, persistence is verified through save/reload, the player traverses the restored open threshold, closes it from outside, and confirms the closed collider blocks passage. Screenshots capture open, closed-blocked and God View states; God camera movement must not mutate door/discovery/player state.

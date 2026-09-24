@@ -165,7 +165,7 @@ Owner-follow chunk movement continues to use the existing conserved transfer rec
 
 ### Fine physics runtime state
 
-The first dedicated fine physics authority adds no persistence schema. Static colliders and semantic triggers are reconstructed from materialized buildings/WorldObjects and carry optional `chunkId` ownership; collapsing a fine chunk removes them with `physics.clearChunk(chunkId)`. Player/NPC/wildlife kinematic bodies are derived from the currently materialized authoritative entity positions rather than stored in a second body database.
+The dedicated fine physics authority keeps transient bodies/contact state out of persistence. Static walls, triggers and door colliders are reconstructed from materialized semantic entities and carry optional `chunkId` ownership; collapsing a fine chunk removes them with `physics.clearChunk(chunkId)`. Mutable door truth itself is optional `WorldObjectState.doorOpen` in the existing home/fine object JSON, so it survives restart/chunk sleep without persisting a second physics body database or trusting mesh transforms. Legacy objects without the field restore closed.
 
 Per-frame contact state, collision hits and kinematic displacement are transient. Wildlife controller speed/heading remain transient as before. Persisted entity position continues to be the authoritative rematerialization point, while unloaded chunks evolve through coarse simulation and therefore have no sleeping fine body that needs serialization.
 
