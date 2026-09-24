@@ -136,7 +136,16 @@ export class FinePhysicsAuthority {
       const dynamics:string[]=[];
       for(const other of input.dynamic||[]){
         if(other.id===input.id)continue;
-        if(circleIntersectsCircle(cx,cz,radius,other))dynamics.push(other.id);
+        if(!circleIntersectsCircle(cx,cz,radius,other))continue;
+        const currentHit=circleIntersectsCircle(x,z,radius,other);
+        if(currentHit){
+          const currentDistanceSq=(x-other.x)**2+(z-other.z)**2;
+          const candidateDistanceSq=(cx-other.x)**2+(cz-other.z)**2;
+          // Existing overlap may come from a restored/spawned legacy position.
+          // Never trap the body: movement that strictly increases separation is legal.
+          if(candidateDistanceSq>currentDistanceSq+1e-9)continue;
+        }
+        dynamics.push(other.id);
       }
       return {statics,dynamics};
     };
