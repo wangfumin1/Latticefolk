@@ -1,15 +1,27 @@
 import { test, expect, type Page } from '@playwright/test';
 interface R{cameraMode:string;discoveredChunks:number;materializedChunks:number;physicsBodies:number;terrainSurfaces:number;doors:number;openDoors:number;assetsReady:boolean;playerX:number;playerZ:number;}
 const runtime=(page:Page):Promise<R>=>page.evaluate(()=>{const e=document.querySelector<HTMLElement>('#worldStatus');if(!e)throw new Error('worldStatus missing');const d=e.dataset,n=(k:string)=>Number(d[k]??'NaN');return{cameraMode:d.cameraMode??'',discoveredChunks:n('discoveredChunks'),materializedChunks:n('materializedChunks'),physicsBodies:n('physicsBodies'),terrainSurfaces:n('terrainSurfaces'),doors:n('doors'),openDoors:n('openDoors'),assetsReady:d.assetsReady==='true',playerX:n('playerX'),playerZ:n('playerZ')};});
-async function move(p:Page,keys:string[],ms:number){for(const k of keys)await p.keyboard.down(k);await p.waitForTimeout(ms);for(const k of [...keys].reverse())await p.keyboard.up(k);await p.waitForTimeout(100);}
-async function axis(p:Page,a:'x'|'z',target:number,t=.25){for(let i=0;i<90;i++){const s=await runtime(p),v=a==='x'?s.playerX:s.playerZ,delta=target-v;if(Math.abs(delta)<=t)return;await move(p,[a==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW')],Math.min(140,Math.max(45,Math.abs(delta)/4.5*1000)));}throw new Error('movement target not reached');}
+async function move(p:Page,keys:string[],ms:number){for(const k of keys)await p.keyboard.down(k);await p.waitForTimeout(ms);for(const k of [...keys].reverse())await p.keyboard.up(k);await p.waitForTimeout(60);}
+async function axis(p:Page,a:'x'|'z',target:number,t=.25){
+ let stalled=0;
+ for(let i=0;i<24;i++){
+  const before=await runtime(p),v=a==='x'?before.playerX:before.playerZ,delta=target-v;
+  if(Math.abs(delta)<=t)return;
+  const key=a==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW');
+  await move(p,['ShiftLeft',key],Math.min(900,Math.max(90,Math.abs(delta)/7.2*1000)));
+  const after=await runtime(p),next=a==='x'?after.playerX:after.playerZ;
+  if(Math.abs(next-v)<.04)stalled++;else stalled=0;
+  if(stalled>=3)throw new Error(`movement blocked on ${a}: target=${target.toFixed(2)} current=${next.toFixed(2)} other=${(a==='x'?after.playerZ:after.playerX).toFixed(2)}`);
+ }
+ const last=await runtime(p);throw new Error(`movement target not reached on ${a}: target=${target.toFixed(2)} current=${(a==='x'?last.playerX:last.playerZ).toFixed(2)}`);
+}
 async function persisted(p:Page,id:string){return p.evaluate(async x=>{const r=await fetch('/api/world/state'),d=await r.json() as any,s=d.snapshot,all=[...(s?.homeObjects||[]),...(s?.fineChunks||[]).flatMap((c:any)=>c.objectStates||[])];return all.find((o:any)=>o.id===x)?.doorOpen;},id);}
 async function enter(p:Page){await p.locator('#startBtn').click();await expect(p.locator('#startOverlay')).toHaveClass(/hidden/);await expect.poll(async()=>p.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10000}).toBe('CANVAS');}
 test('authoritative door persists, traverses, blocks, and God View stays observer-only',async({page},info)=>{
  test.setTimeout(120000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');await expect(page.locator('#game canvas')).toBeVisible();
  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15000}).toBeGreaterThan(0);await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30000}).toBe(true);
  const h=await runtime(page);expect(h.doors).toBeGreaterThanOrEqual(12);expect(h.openDoors).toBe(0);await enter(page);
- await axis(page,'x',13.7);await axis(page,'z',-12.85);await axis(page,'x',8);await page.keyboard.press('KeyE');await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);await page.locator('button[data-action="open_door"]').click();
+ await axis(page,'x',10.5);await axis(page,'z',-12.85);await axis(page,'x',8);await page.keyboard.press('KeyE');await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);await page.locator('button[data-action="open_door"]').click();
  await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);await expect.poll(async()=>persisted(page,'building_杂货市场')).toBe(true);await page.screenshot({path:info.outputPath('door-open.png'),fullPage:true});
  await page.reload();await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30000}).toBe(true);await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);await enter(page);await axis(page,'x',8);await axis(page,'z',-12.85);await axis(page,'z',-15);expect((await runtime(page)).playerZ).toBeLessThan(-14.5);
  await axis(page,'z',-12.85);await page.keyboard.press('KeyE');await page.locator('button[data-action="close_door"]').click();await expect.poll(async()=>(await runtime(page)).openDoors).toBe(0);await expect.poll(async()=>persisted(page,'building_杂货市场')).toBe(false);
