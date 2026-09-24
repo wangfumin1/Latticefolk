@@ -14,6 +14,25 @@ test('axis-separated resolution slides along a wall instead of cancelling all mo
   assert.ok(moved.displacement.x<.4);assert.ok(moved.displacement.z>.7);assert.ok(moved.staticHits.includes('wall'));
 });
 
+test('authoritative door state blocks while closed and permits passage while open',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerDoor({id:'door:bakery',minX:-.5,maxX:.5,minZ:-.08,maxZ:.08,open:false,chunkId:'home'});
+  const closed=physics.moveKinematic({id:'player',position:{x:0,z:-1},displacement:{x:0,z:2},radius:.25});
+  assert.equal(closed.collided,true);assert.ok(closed.staticHits.includes('door:bakery'));assert.ok(closed.position.z<-.2);
+  assert.equal(physics.setDoorOpen('door:bakery',true),true);assert.equal(physics.doorState('door:bakery')?.open,true);
+  const opened=physics.moveKinematic({id:'player',position:{x:0,z:-1},displacement:{x:0,z:2},radius:.25});
+  assert.equal(opened.staticHits.includes('door:bakery'),false);assert.ok(opened.position.z>.9);
+});
+
+test('chunk teardown removes authoritative doors with the rest of fine physics state',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerDoor({id:'door:a',minX:-.5,maxX:.5,minZ:-.1,maxZ:.1,open:false,chunkId:'chunk_a'});
+  physics.registerDoor({id:'door:b',minX:3.5,maxX:4.5,minZ:-.1,maxZ:.1,open:false,chunkId:'chunk_b'});
+  physics.clearChunk('chunk_a');
+  assert.equal(physics.doorState('door:a'),undefined);assert.equal(physics.doorState('door:b')?.open,false);
+  assert.equal(physics.isBlocked(0,0,.2),false);assert.equal(physics.isBlocked(4,0,.2),true);
+});
+
 test('dynamic character circles block overlap while excluding the moving body itself',()=>{
   const physics=new FinePhysicsAuthority();
   const moved=physics.moveKinematic({id:'wolf',position:{x:0,z:0},displacement:{x:2,z:0},radius:.35,dynamic:[{id:'wolf',x:0,z:0,radius:.35},{id:'sheep',x:1.1,z:0,radius:.35}]});
