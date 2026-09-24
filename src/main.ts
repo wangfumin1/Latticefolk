@@ -2841,14 +2841,26 @@ class TownGame {
   closestNpc(agent:NpcRuntime){return [...this.npcs.values()].filter(x=>x!==agent).sort((a,b)=>dist(agent.state.position,a.state.position)-dist(agent.state.position,b.state.position))[0];}
   nearbyTags(p:Vec2){return [...this.objects.values()].filter(o=>o.mesh.visible&&dist(p,o.state.position)<6).flatMap(o=>o.state.tags).slice(0,12);}
 
+  triggeredDoorObject() {
+    if(this.cameraMode!=='firstPerson')return undefined;
+    return [...this.objects.values()]
+      .filter(o=>o.state.kind==='building'&&o.state.tags.includes('door')&&this.playerOverlapsObjectTrigger(o.state.id))
+      .sort((a,b)=>dist(this.playerPosition,a.state.position)-dist(this.playerPosition,b.state.position)||a.state.id.localeCompare(b.state.id))[0];
+  }
+
   interact() {
-    if(!this.hoverEntity)return;
-    if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id);if(n)this.playerTalk(n);}
-    else if(this.hoverEntity.type==='wildlife'){
-      const animal=this.wildlife.get(this.hoverEntity.id);
+    const target=this.hoverEntity;
+    if(!target){
+      const door=this.triggeredDoorObject();
+      if(door)this.playerUse(door);
+      return;
+    }
+    if(target.type==='npc'){const n=this.npcs.get(target.id);if(n)this.playerTalk(n);}
+    else if(target.type==='wildlife'){
+      const animal=this.wildlife.get(target.id);
       if(animal)this.playerUseWildlife(animal);
     }else {
-      const o=this.objects.get(this.hoverEntity.id);
+      const o=this.objects.get(target.id);
       if(o&&this.playerOverlapsObjectTrigger(o.state.id))this.playerUse(o);
     }
   }
@@ -3085,7 +3097,14 @@ class TownGame {
       const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):this.objects.get(this.hoverEntity.id)?.state.name;
       ui.prompt.textContent=i18n.t('prompt.god',{name:name||''});return;
     }
-    if(!this.hoverEntity){ui.prompt.textContent='';return;}
+    if(!this.hoverEntity){
+      const door=this.triggeredDoorObject();
+      if(door){
+        const count=(door.state.capabilities?.length||1)+1;
+        ui.prompt.textContent=i18n.t('prompt.object',{name:door.state.name,count});
+      }else ui.prompt.textContent='';
+      return;
+    }
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.talk',{name:n.state.name});}
     else if(this.hoverEntity.type==='wildlife'){const w=this.wildlife.get(this.hoverEntity.id)!;const key=isWildlifeDomesticationEligible(w.state.species)?'prompt.domesticated':'prompt.wildlife';ui.prompt.textContent=i18n.t(key,{name:this.wildlifeName(w.state.species)});}
     else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:o.state.name,count});}
