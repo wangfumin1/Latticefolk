@@ -370,27 +370,65 @@ class TownGame {
   addBuilding(name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
     const objectId=options?.id||`building_${name}`,profile=this.buildingInteractionProfile(name);
     const layout=buildingPhysicsLayout({id:objectId,x,z,w,d,rotationY,chunkId:options?.chunkId});
+    const enclosed=asset!=='marketBuilding';
     const root=new THREE.Group();root.userData={entityType:'object',entityId:objectId};
     const visual=new THREE.Group();visual.position.set(x,0,z);root.add(visual);
     const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9}),trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
-    for(const c of layout.walls){const m=new THREE.Mesh(new THREE.BoxGeometry(c.maxX-c.minX,3,c.maxZ-c.minZ),wallMat);m.position.set((c.minX+c.maxX)/2-x,1.5,(c.minZ+c.maxZ)/2-z);m.castShadow=true;m.receiveShadow=true;visual.add(m);}
+    if(enclosed){
+      for(const wallCollider of layout.walls){
+        const wall=new THREE.Mesh(new THREE.BoxGeometry(wallCollider.maxX-wallCollider.minX,3,wallCollider.maxZ-wallCollider.minZ),wallMat);
+        wall.position.set((wallCollider.minX+wallCollider.maxX)/2-x,1.5,(wallCollider.minZ+wallCollider.maxZ)/2-z);
+        wall.castShadow=true;wall.receiveShadow=true;visual.add(wall);
+      }
+    }
     const roof=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));roof.position.y=4;roof.rotation.y=Math.PI/4;roof.castShadow=true;visual.add(roof);
     const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));foundation.position.y=.12;foundation.receiveShadow=true;visual.add(foundation);
-    const doorVisual=new THREE.Group();doorVisual.position.set(layout.doorCenter.x,0,layout.doorCenter.z);doorVisual.rotation.y=layout.doorRotationY;doorVisual.userData.closedRotationY=layout.doorRotationY;
-    const panel=new THREE.Mesh(new THREE.BoxGeometry(layout.doorWidth,1.9,.12),trimMat);panel.position.y=.95;panel.castShadow=true;doorVisual.add(panel);root.add(doorVisual);
+
+    let doorVisual:THREE.Group|undefined;
+    if(enclosed){
+      const hingeOffset=new THREE.Vector3(-layout.doorWidth/2,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),layout.doorRotationY);
+      doorVisual=new THREE.Group();
+      doorVisual.position.set(layout.doorCenter.x+hingeOffset.x,0,layout.doorCenter.z+hingeOffset.z);
+      doorVisual.rotation.y=layout.doorRotationY;
+      doorVisual.userData.closedRotationY=layout.doorRotationY;
+      doorVisual.userData.openRotationDelta=(layout.entrance==='north'||layout.entrance==='east')?Math.PI/2:-Math.PI/2;
+      const panel=new THREE.Mesh(new THREE.BoxGeometry(layout.doorWidth,1.9,.12),trimMat);
+      panel.position.set(layout.doorWidth/2,.95,0);panel.castShadow=true;panel.receiveShadow=true;doorVisual.add(panel);root.add(doorVisual);
+    }
+
     this.scene.add(root);if(asset)this.attachVisualTarget({group:visual,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
-    const object:WorldObjectState={id:objectId,chunkId:options?.chunkId,kind:'building',name,position:{...layout.interactionPosition},tags:[...profile.tags,'door'],usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined,doorOpen:false};
-    this.objects.set(object.id,{state:object,mesh:root,doorVisual});for(const c of layout.walls)this.physics.registerStatic(c);this.physics.registerDoor({...layout.door,open:false});
-    this.physics.registerTrigger({id:`object-trigger:${object.id}`,minX:layout.interactionPosition.x-1.15,maxX:layout.interactionPosition.x+1.15,minZ:layout.interactionPosition.z-1.15,maxZ:layout.interactionPosition.z+1.15,chunkId:options?.chunkId,tag:'interaction'});
-    this.syncBuildingDoor(this.objects.get(object.id)!);if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(visual);return root;
+    const object:WorldObjectState={
+      id:objectId,chunkId:options?.chunkId,kind:'building',name,position:{...layout.interactionPosition},
+      tags:enclosed?[...profile.tags,'door']:profile.tags,usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined
+    };
+    if(enclosed)object.doorOpen=false;
+    this.objects.set(object.id,{state:object,mesh:root,doorVisual});
+    if(enclosed){
+      for(const wallCollider of layout.walls)this.physics.registerStatic(wallCollider);
+      this.physics.registerDoor({...layout.door,open:false});
+    }
+    this.physics.registerTrigger({
+      id:`object-trigger:${object.id}`,
+      minX:layout.interactionPosition.x-1.15,maxX:layout.interactionPosition.x+1.15,
+      minZ:layout.interactionPosition.z-1.15,maxZ:layout.interactionPosition.z+1.15,
+      chunkId:options?.chunkId,tag:'interaction'
+    });
+    if(enclosed)this.syncBuildingDoor(this.objects.get(object.id)!);
+    if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(visual);
+    return root;
   }
 
   syncBuildingDoor(o:RuntimeObject) {
-    if(o.state.kind!=='building')return;const open=Boolean(o.state.doorOpen);this.physics.setDoorOpen(`door:${o.state.id}`,open);
-    if(o.doorVisual){const closed=Number(o.doorVisual.userData.closedRotationY||0);o.doorVisual.rotation.y=closed+(open?Math.PI/2:0);o.doorVisual.userData.open=open;}
+    if(o.state.kind!=='building'||!o.state.tags.includes('door'))return;
+    const open=Boolean(o.state.doorOpen);this.physics.setDoorOpen(`door:${o.state.id}`,open);
+    if(o.doorVisual){
+      const closed=Number(o.doorVisual.userData.closedRotationY||0);
+      const delta=Number(o.doorVisual.userData.openRotationDelta||0);
+      o.doorVisual.rotation.y=closed+(open?delta:0);o.doorVisual.userData.open=open;
+    }
   }
   setBuildingDoorOpen(o:RuntimeObject,open:boolean) {
-    if(o.state.kind!=='building')return false;
+    if(o.state.kind!=='building'||!o.state.tags.includes('door'))return false;
     if(!this.physics.setDoorOpen(`door:${o.state.id}`,open,this.physicsDynamicColliders())){this.toast(i18n.t('door.blocked',{name:o.state.name}));return false;}
     o.state.doorOpen=open;this.syncBuildingDoor(o);this.toast(i18n.t(open?'door.opened':'door.closed',{name:o.state.name}));void this.saveWorldState();return true;
   }
@@ -2907,7 +2945,7 @@ class TownGame {
   playerUse(o:RuntimeObject) {
     if(this.cameraMode!=='firstPerson')return;
     let actions=[...(o.state.capabilities?.length?o.state.capabilities:this.defaultCapabilities(o.state))];
-    if(o.state.kind==='building'){actions=actions.filter(a=>a!=='open_door'&&a!=='close_door');actions=[o.state.doorOpen?'close_door':'open_door',...actions];}
+    if(o.state.kind==='building'&&o.state.tags.includes('door')){actions=actions.filter(a=>a!=='open_door'&&a!=='close_door');actions=[o.state.doorOpen?'close_door':'open_door',...actions];}
     if(actions.length===1){this.executePlayerInteraction(o,actions[0]);return;}this.openInteractionMenu(o,actions);
   }
 
