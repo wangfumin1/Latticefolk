@@ -337,6 +337,24 @@ God View preserves its out-of-world semantics. Entering God View clears player-f
 
 Living domestication state persists naturally in fine wildlife JSON and wildlife-transfer JSON. Durable lineage additionally stores nullable birth/death domestication snapshots. A later claim never rewrites birth history. Decision Providers cannot increment tame progress, consume grain, assign ownership, toggle breeding, issue owner commands, force inherited ownership, or bypass transfer conservation. See [Authoritative domestication](domestication.md) for the full state machine and persistence rules.
 
+## Fine physics authority v1
+
+Fine simulation now has one deterministic collision authority: `FinePhysicsAuthority` in `src/world/finePhysics.ts`. Navigation/controllers still produce desired motion, but they no longer apply position directly. Player input, NPC path following, and wildlife movement controllers submit a desired displacement plus a body radius; physics returns the only displacement that may be committed to authoritative fine position.
+
+Materialized static collision is represented as chunk-owned 2D AABBs. Buildings register their footprint, semantic solid WorldObjects register kind-specific bounds, and fine chunk teardown removes all colliders/triggers owned by that chunk. The previous runtime `blocked Set` has been removed, so A* path passability and physical movement query the same static geometry instead of maintaining two collision truths.
+
+Kinematic bodies are circles. The solver sub-steps long displacement to prevent tunnelling, resolves axes independently to permit deterministic wall sliding, and rejects overlap with currently materialized player/NPC/wildlife circles. Slight restored/spawned overlap may move only in a direction that increases separation. Dynamic bodies are derived from current entity runtime state rather than persisted separately.
+
+Targets such as wells, workstations, NPCs or prey often expose their center as the semantic navigation target while the center is physically occupied. If the final waypoint is blocked after entering the legal approach radius, the path is considered physically arrived; the higher-level authoritative action resolver still performs action-specific range/legality checks. Physics therefore determines contact/movement but never authorizes hunting, reproduction, crafting, trading or other gameplay outcomes.
+
+Semantic triggers use the same chunk lifecycle but never block movement. First-person WorldObject interaction now requires both the existing visual/raycast target and overlap with the object's physics interaction trigger. This is the first live trigger consumer and provides the base for later doors, hazards, interiors and water/contact volumes.
+
+God View keeps the hard observer invariant. The player dynamic collider exists only in first-person mode; God View camera movement adds no body, collider or trigger and cannot affect NPC/wildlife collision. Physics counts may be shown in world status only as read-only observability.
+
+Unloaded chunks run no fine collision/contact solver. Their static physics is cleared on fold-back and dynamic bodies disappear with fine runtime entities, while coarse simulation remains authoritative. Fine physics adds no persistence schema.
+
+This is the first physics phase, not a complete rigid-body engine. Terrain/ground height and slope limits, stateful doors, general rigid bodies, stacking, carts/vehicles and projectiles remain explicit next work. See [Physics](physics.md).
+
 ## Predator-pressure adaptation evidence
 
 Predator pressure is modeled as an observational ecological signal separate from actual predation mortality. For each prey species in a coarse chunk, deterministic simulation scans the shared predator/prey graph, reads current predator population density relative to effective carrying capacity, weights that density by the shared prey preference, and maps the aggregate to a bounded 0–100 pressure. The strongest current predator→prey pair and mean chunk pressure are exposed in world status.

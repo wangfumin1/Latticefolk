@@ -18,6 +18,7 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
+import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -133,7 +134,6 @@ interface FineChunkRuntime {
   initialWildlifeCounts:Partial<Record<WildlifeSpecies,number>>;
   initialWildlifeIds:Set<string>;
   fixedWildlifeWeights:Map<string,number>;
-  blockedKeys:string[];
   groups:THREE.Object3D[];
   initialMetrics:FineMetrics;
 }
@@ -182,7 +182,7 @@ class TownGame {
   clock = new THREE.Clock();
   sun = new THREE.DirectionalLight(0xffffff, 1.5);
   ambient = new THREE.HemisphereLight(0xbfe8ff, 0x557044, 1.25);
-  blocked = new Set<string>();
+  physics = new FinePhysicsAuthority();
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
@@ -375,12 +375,18 @@ class TownGame {
     };
     g.userData={entityType:'object',entityId:object.id};
     this.objects.set(object.id,{state:object,mesh:g});
+    this.physics.registerStatic({
+      id:`building:${object.id}`,
+      minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
+      chunkId:options?.chunkId
+    });
+    this.physics.registerTrigger({
+      id:`object-trigger:${object.id}`,
+      minX:interactionPosition.x-1.15,maxX:interactionPosition.x+1.15,
+      minZ:interactionPosition.z-1.15,maxZ:interactionPosition.z+1.15,
+      chunkId:options?.chunkId,tag:'interaction'
+    });
 
-    const minX = Math.floor(x-w/2), maxX=Math.ceil(x+w/2), minZ=Math.floor(z-d/2), maxZ=Math.ceil(z+d/2);
-    for(let gx=minX;gx<=maxX;gx++) for(let gz=minZ;gz<=maxZ;gz++){
-      const key=keyOf(gx,gz);this.blocked.add(key);
-      if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.blockedKeys.push(key);
-    }
     if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(g);
     return g;
   }
@@ -403,7 +409,8 @@ class TownGame {
     const g = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.BoxGeometry(.65,2,.65),new THREE.MeshStandardMaterial({color:0x725033})); trunk.position.y=1;
     const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2,2.2,2.2),new THREE.MeshStandardMaterial({color:0x4f8e4b})); crown.position.y=2.65; crown.castShadow=true;
-    g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g); this.blocked.add(keyOf(Math.round(x),Math.round(z)));
+    g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g);
+    this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
     this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
@@ -441,6 +448,7 @@ class TownGame {
     this.scene.add(g);
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
+    this.registerWorldObjectPhysics(state);
     if(assetOverride)this.attachVisualTarget({group:g,asset:assetOverride,height:assetHeight||2,rotationY});
     else if(state.kind==='well') this.attachVisualTarget({group:g,asset:'wellAsset',height:3.4,targetWidth:3.6,targetDepth:3.6});
     else if(state.kind==='tree') this.attachVisualTarget({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
@@ -450,6 +458,39 @@ class TownGame {
     return g;
   }
 
+
+  registerWorldObjectPhysics(state:WorldObjectState) {
+    if(state.usable||state.pickupable||(state.capabilities?.length??0)>0){
+      const triggerRadius=state.kind==='well'||state.kind==='food_stall'?1.45:1.15;
+      this.physics.registerTrigger({
+        id:`object-trigger:${state.id}`,
+        minX:state.position.x-triggerRadius,maxX:state.position.x+triggerRadius,
+        minZ:state.position.z-triggerRadius,maxZ:state.position.z+triggerRadius,
+        chunkId:state.chunkId,tag:'interaction'
+      });
+    }
+
+    const halfExtents:Partial<Record<WorldObjectState['kind'],[number,number]>>={
+      well:[.95,.95],
+      bench:[.90,.34],
+      bed:[.92,.46],
+      food_stall:[1.08,.54],
+      workstation:[.92,.44],
+      tree:[.34,.34],
+      crate:[.38,.38],
+      rock:[.44,.44],
+      cart:[1.05,.52]
+    };
+    const extent=halfExtents[state.kind];
+    if(!extent||state.pickupable)return;
+    const [halfX,halfZ]=extent;
+    this.physics.registerStatic({
+      id:`object:${state.id}`,
+      minX:state.position.x-halfX,maxX:state.position.x+halfX,
+      minZ:state.position.z-halfZ,maxZ:state.position.z+halfZ,
+      chunkId:state.chunkId
+    });
+  }
 
   defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
     switch(state.kind){
@@ -655,6 +696,7 @@ class TownGame {
     model.userData={entityType:'object',entityId:state.id};
     this.scene.add(model);
     this.objects.set(state.id,{state,mesh:model});
+    this.registerWorldObjectPhysics(state);
   }
 
   setNpcAnimation(agent:NpcRuntime,name:string) {
@@ -833,9 +875,13 @@ class TownGame {
       const speed=(this.keys.has('ShiftLeft')?7.2:4.5)*dt;
       const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);dir.y=0;dir.normalize();
       const right=new THREE.Vector3(-dir.z,0,dir.x);const move=dir.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
-      const old=this.camera.position.clone(),nx=old.x+move.x,nz=old.z+move.z;
-      if(!this.isBlockedWorld(nx,old.z))this.camera.position.x=nx;
-      if(!this.isBlockedWorld(this.camera.position.x,nz))this.camera.position.z=nz;
+      const resolved=this.physics.moveKinematic({
+        id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
+        displacement:{x:move.x,z:move.z},radius:.30,
+        dynamic:this.physicsDynamicColliders('player')
+      });
+      this.camera.position.x=resolved.position.x;
+      this.camera.position.z=resolved.position.z;
     }
     this.camera.position.y=1.7;
     this.playerPosition.x=this.camera.position.x;this.playerPosition.z=this.camera.position.z;
@@ -861,7 +907,6 @@ class TownGame {
     // Do not materialize a player avatar while observing from god mode.
   }
 
-  isBlockedWorld(x:number,z:number) { return this.blocked.has(keyOf(Math.round(x),Math.round(z))); }
 
   async initializePersistence() {
     try{
@@ -1017,7 +1062,7 @@ class TownGame {
     const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
     const runtime:FineChunkRuntime={
       chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},
-      initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),blockedKeys:[],groups:[],
+      initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),groups:[],
       initialMetrics:{food:0,wood:0,ecology:0,prosperity:0,shrub:0,fruit:0,crop:0}
     };
     this.materializedChunks.set(chunk.id,runtime);
@@ -1423,7 +1468,7 @@ class TownGame {
       this.objects.delete(id);
     }
 
-    for(const key of runtime.blockedKeys)this.blocked.delete(key);
+    this.physics.clearChunk(chunkId);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
     this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
@@ -1587,14 +1632,23 @@ class TownGame {
       return;
     }
 
-    const nextX=pos.x+step.dx,nextZ=pos.z+step.dz;
-    if(this.isBlockedWorld(nextX,nextZ)){
-      animal.controllerSpeed=0;
+    const resolved=this.physics.moveKinematic({
+      id:`wildlife:${animal.state.id}`,
+      position:{x:pos.x,z:pos.z},
+      displacement:{x:step.dx,z:step.dz},
+      radius:this.wildlifePhysicsRadius(animal.state),
+      dynamic:this.physicsDynamicColliders(`wildlife:${animal.state.id}`)
+    });
+    pos.x=resolved.position.x;pos.z=resolved.position.z;
+    if(resolved.collided&&animal.pathIndex===animal.path.length-1&&step.distance<=1.55){
+      animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;
       return;
     }
-    pos.x=nextX;pos.z=nextZ;
-    animal.controllerSpeed=step.speed;
-    const movementLoad=maxSpeed>0?clamp(step.speed/maxSpeed,.18,1):0;
+    const requestedDistance=Math.hypot(step.dx,step.dz);
+    const realizedDistance=Math.hypot(resolved.displacement.x,resolved.displacement.z);
+    const realizedRatio=requestedDistance>1e-6?clamp(realizedDistance/requestedDistance,0,1):0;
+    animal.controllerSpeed=step.speed*realizedRatio;
+    const movementLoad=maxSpeed>0?clamp(animal.controllerSpeed/maxSpeed,.18,1):0;
     animal.state.energy=clamp(
       animal.state.energy-dt*.018*movementLoad*functional.movementEnergyMultiplier*locomotion.energyMultiplier*movement.energyMultiplier*(fastAction?functional.fastActionEnergyMultiplier*movement.fastActionMultiplier*1.45:1),
       0,100
@@ -2437,7 +2491,20 @@ class TownGame {
     if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
-    const speed=1.65; pos.x+=dx/d*speed*dt;pos.z+=dz/d*speed*dt;agent.mesh.rotation.y=Math.atan2(dx,dz);
+    const speed=1.65;
+    const step=Math.min(d,speed*dt);
+    const resolved=this.physics.moveKinematic({
+      id:`npc:${agent.state.id}`,
+      position:{x:pos.x,z:pos.z},
+      displacement:{x:dx/d*step,z:dz/d*step},
+      radius:.32,
+      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+    });
+    pos.x=resolved.position.x;pos.z=resolved.position.z;
+    if(resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
+      agent.path=[];agent.pathIndex=0;
+    }
+    agent.mesh.rotation.y=Math.atan2(dx,dz);
   }
 
   async requestDecision(agent:NpcRuntime) {
@@ -2727,7 +2794,10 @@ class TownGame {
     else if(this.hoverEntity.type==='wildlife'){
       const animal=this.wildlife.get(this.hoverEntity.id);
       if(animal)this.playerUseWildlife(animal);
-    }else {const o=this.objects.get(this.hoverEntity.id);if(o)this.playerUse(o);}
+    }else {
+      const o=this.objects.get(this.hoverEntity.id);
+      if(o&&this.playerOverlapsObjectTrigger(o.state.id))this.playerUse(o);
+    }
   }
 
   playerUseWildlife(animal:WildlifeRuntime) {
@@ -2951,6 +3021,9 @@ class TownGame {
   updateRaycast() {
     const pointer=this.cameraMode==='god'?this.godPointer:new THREE.Vector2(0,0);
     this.hoverEntity=this.pickEntity(pointer,this.cameraMode==='god'?Infinity:3.2);
+    if(this.cameraMode==='firstPerson'&&this.hoverEntity?.type==='object'&&!this.playerOverlapsObjectTrigger(this.hoverEntity.id)){
+      this.hoverEntity=undefined;
+    }
     if(this.cameraMode==='god'){
       if(!this.hoverEntity){ui.prompt.textContent='';return;}
       const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):this.objects.get(this.hoverEntity.id)?.state.name;
@@ -2964,7 +3037,9 @@ class TownGame {
 
   updateUi() {
     const world=this.coarseWorld.status();
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    const physicsStats=this.physics.stats();
+    const activePhysicsBodies=this.npcs.size+this.wildlife.size+(this.cameraMode==='firstPerson'?1:0);
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
@@ -3215,6 +3290,35 @@ class TownGame {
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 
+  playerOverlapsObjectTrigger(objectId:string) {
+    return this.physics.overlappingTriggers(this.playerPosition,.30)
+      .some(trigger=>trigger.id===`object-trigger:${objectId}`);
+  }
+
+  wildlifePhysicsRadius(state:WildlifeState) {
+    return clamp(.20+state.traits.size*.10,.24,.48);
+  }
+
+  physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
+    const colliders:DynamicCollider[]=[];
+    if(this.cameraMode==='firstPerson'){
+      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,radius:.30});
+    }
+    for(const agent of this.npcs.values()){
+      if(agent.removed)continue;
+      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,radius:.32});
+    }
+    for(const animal of this.wildlife.values()){
+      if(animal.removed)continue;
+      colliders.push({
+        id:`wildlife:${animal.state.id}`,
+        x:animal.mesh.position.x,z:animal.mesh.position.z,
+        radius:this.wildlifePhysicsRadius(animal.state)
+      });
+    }
+    return excludeId?colliders.filter(collider=>collider.id!==excludeId):colliders;
+  }
+
   randomPassableNear(p:Vec2,radius:number,chunkId?:string):Vec2 {
     const chunk=chunkId?this.coarseWorld.chunks.get(chunkId):undefined;
     const half=this.coarseWorld.chunkSize/2-1;
@@ -3225,7 +3329,7 @@ class TownGame {
     for(let i=0;i<60;i++){
       const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,minX,maxX));
       const z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,minZ,maxZ));
-      if(!this.blocked.has(keyOf(x,z)))return{x,z};
+      if(!this.physics.isBlocked(x,z,.28))return{x,z};
     }
     return{x:p.x,z:p.z};
   }
@@ -3234,7 +3338,7 @@ class TownGame {
     const s={x:Math.round(start.x),z:Math.round(start.z)},g={x:Math.round(end.x),z:Math.round(end.z)};
     const margin=Math.max(24,Math.abs(g.x-s.x)+Math.abs(g.z-s.z)+12);
     const minX=Math.min(s.x,g.x)-margin,maxX=Math.max(s.x,g.x)+margin,minZ=Math.min(s.z,g.z)-margin,maxZ=Math.max(s.z,g.z)+margin;
-    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&(!this.blocked.has(keyOf(x,z))||(x===g.x&&z===g.z));
+    const passable=(x:number,z:number)=>x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ&&(!this.physics.isBlocked(x,z,.24)||(x===g.x&&z===g.z));
     const open=[s],came=new Map<string,string>(),cost=new Map<string,number>([[keyOf(s.x,s.z),0]]);const goalKey=keyOf(g.x,g.z);let found=false;
     while(open.length&&cost.size<9000){open.sort((a,b)=>(cost.get(keyOf(a.x,a.z))!+Math.abs(a.x-g.x)+Math.abs(a.z-g.z))-(cost.get(keyOf(b.x,b.z))!+Math.abs(b.x-g.x)+Math.abs(b.z-g.z)));const cur=open.shift()!;const ck=keyOf(cur.x,cur.z);if(ck===goalKey){found=true;break;}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,nz=cur.z+dz,nk=keyOf(nx,nz);if(!passable(nx,nz))continue;const nc=cost.get(ck)!+1;if(nc<(cost.get(nk)??Infinity)){cost.set(nk,nc);came.set(nk,ck);open.push({x:nx,z:nz});}}}
     if(!found)return[];const rev:Vec2[]=[];let k=goalKey;while(k!==keyOf(s.x,s.z)){const [x,z]=k.split(',').map(Number);rev.push({x,z});const prev=came.get(k);if(!prev)break;k=prev;}return rev.reverse();

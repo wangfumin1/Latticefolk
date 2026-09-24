@@ -162,3 +162,11 @@ Adding composed species such as lynx, bison, raccoon, sheep or warg follows the 
 Durable lineage adds nullable `domestication_at_birth_json` and `domestication_at_death_json` columns. Constructor migrations add both columns to older databases without rewriting historical rows. Birth state is recorded only when ownership/domestication was inherited at birth; claiming an older living animal never backfills its birth record. Death stores the terminal factual state. These snapshots are descriptive and are not currently treated as causal evolution covariates.
 
 Owner-follow chunk movement continues to use the existing conserved transfer record. The individual state, represented population weight and `owner_follow` migration provenance survive target materialization/restart. Fine controller momentum remains transient and is still reset after transfer. Existing older saves with no domestication fields normalize to unowned state for eligible species and remain valid. No new third-party asset is required because domestication is semantic/stateful rather than a new visual asset system.
+
+### Fine physics runtime state
+
+The first dedicated fine physics authority adds no persistence schema. Static colliders and semantic triggers are reconstructed from materialized buildings/WorldObjects and carry optional `chunkId` ownership; collapsing a fine chunk removes them with `physics.clearChunk(chunkId)`. Player/NPC/wildlife kinematic bodies are derived from the currently materialized authoritative entity positions rather than stored in a second body database.
+
+Per-frame contact state, collision hits and kinematic displacement are transient. Wildlife controller speed/heading remain transient as before. Persisted entity position continues to be the authoritative rematerialization point, while unloaded chunks evolve through coarse simulation and therefore have no sleeping fine body that needs serialization.
+
+God View creates no player physics body. This is a runtime semantic guarantee, not persisted state: after switching to God View, NPC/wildlife collision snapshots simply omit the player, consistent with player absence from perception and targeting.
