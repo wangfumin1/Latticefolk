@@ -44,16 +44,16 @@ async function enterPlayable(page:Page) {
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 }
 
-async function placeAtMarketDoor(page:Page) {
+async function placeAtBakeryDoor(page:Page) {
   const placed=await page.evaluate(()=>{
     const harness=(window as typeof window & {__LATTICEFOLK_E2E__?:{placePlayer:(x:number,z:number,yaw?:number)=>{x:number;z:number}}}).__LATTICEFOLK_E2E__;
     if(!harness)throw new Error('E2E harness unavailable');
-    return harness.placePlayer(8,-12.85,0);
+    return harness.placePlayer(-10,-12.35,0);
   });
-  expect(placed.x).toBe(8);
-  expect(placed.z).toBe(-12.85);
-  await expect.poll(async()=>Math.abs((await runtime(page)).playerX-8)).toBeLessThan(.08);
-  await expect.poll(async()=>Math.abs((await runtime(page)).playerZ+12.85)).toBeLessThan(.08);
+  expect(placed.x).toBe(-10);
+  expect(placed.z).toBe(-12.35);
+  await expect.poll(async()=>Math.abs((await runtime(page)).playerX+10)).toBeLessThan(.08);
+  await expect.poll(async()=>Math.abs((await runtime(page)).playerZ+12.35)).toBeLessThan(.08);
 }
 
 async function persistedDoorOpen(page:Page,id:string) {
@@ -77,7 +77,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30_000}).toBe(true);
 
   const home=await runtime(page);
-  expect(home.doors).toBeGreaterThanOrEqual(12);
+  expect(home.doors).toBeGreaterThanOrEqual(11);
   expect(home.openDoors).toBe(0);
   expect(home.materializedChunks).toBe(0);
 
@@ -88,43 +88,43 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   expect(spawnAfter.playerX-spawnBefore.playerX).toBeGreaterThan(.25);
 
   // Long-distance town traversal is setup, not the behavior under test. The DEV+?e2e=1
-  // harness only places the already-loaded authoritative player near the real market threshold.
+  // harness only places the already-loaded authoritative player near the real bakery threshold.
   // Door interaction and threshold traversal below still use the real pointer-lock/input path.
-  await placeAtMarketDoor(page);
+  await placeAtBakeryDoor(page);
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
   await page.locator('button[data-action="open_door"]').click();
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);
-  await expect.poll(async()=>persistedDoorOpen(page,'building_杂货市场')).toBe(true);
+  await expect.poll(async()=>persistedDoorOpen(page,'building_面包房')).toBe(true);
   await page.screenshot({path:testInfo.outputPath('door-open.png'),fullPage:true});
 
   await page.reload();
   await expect(page.locator('#game canvas')).toBeVisible();
   await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30_000}).toBe(true);
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);
-  expect(await persistedDoorOpen(page,'building_杂货市场')).toBe(true);
+  expect(await persistedDoorOpen(page,'building_面包房')).toBe(true);
   await enterPlayable(page);
-  await placeAtMarketDoor(page);
+  await placeAtBakeryDoor(page);
 
   await move(page,['KeyW'],850);
   const inside=await runtime(page);
-  expect(inside.playerZ).toBeLessThan(-14.45);
+  expect(inside.playerZ).toBeLessThan(-13.30);
 
   await move(page,['KeyS'],850);
   const outside=await runtime(page);
-  expect(outside.playerZ).toBeGreaterThan(-13.25);
+  expect(outside.playerZ).toBeGreaterThan(-12.70);
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
   await page.locator('button[data-action="close_door"]').click();
   await expect.poll(async()=>(await runtime(page)).openDoors).toBe(0);
-  await expect.poll(async()=>persistedDoorOpen(page,'building_杂货市场')).toBe(false);
+  await expect.poll(async()=>persistedDoorOpen(page,'building_面包房')).toBe(false);
 
-  await placeAtMarketDoor(page);
+  await placeAtBakeryDoor(page);
   const closedBefore=await runtime(page);
   await move(page,['KeyW'],850);
   const blocked=await runtime(page);
   expect(blocked.playerZ).toBeLessThan(closedBefore.playerZ-.15);
-  expect(blocked.playerZ).toBeGreaterThan(-13.8);
+  expect(blocked.playerZ).toBeGreaterThan(-13.12);
   await page.screenshot({path:testInfo.outputPath('door-closed-blocked.png'),fullPage:true});
 
   await page.keyboard.press('KeyG');
