@@ -57,6 +57,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Changed
 
+- Bounded the dense world-status HUD to a compact three-line viewport and moves it below the centered mode bar on narrower screens, preserving machine-readable runtime evidence without covering the playable view.
+
 - Building/market model scale is calibrated by footprint instead of height alone.
 - Jev prompts and dialogue candidate sets are trimmed to reduce input-token usage.
 - Dialogue retrieval isolates candidates by locale before model selection.

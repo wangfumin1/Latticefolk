@@ -56,9 +56,13 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.25);
   expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(1);
 
+  const worldStatusBox=await page.locator('#worldStatus').boundingBox();
+  expect(worldStatusBox).not.toBeNull();
+  expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
+
   await page.screenshot({path:testInfo.outputPath('first-person.png'),fullPage:true});
 
-  await page.locator('#modeBtn').click();
+  await page.keyboard.press('KeyG');
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');
   const godBefore=await runtime(page);
   expect(godBefore.physicsBodies).toBe(firstAfter.physicsBodies-1);
@@ -75,7 +79,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   await page.screenshot({path:testInfo.outputPath('god-view.png'),fullPage:true});
 
-  await page.locator('#modeBtn').click();
+  await page.keyboard.press('KeyG');
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('firstPerson');
   const firstRestored=await runtime(page);
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
