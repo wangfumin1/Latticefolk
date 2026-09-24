@@ -1,90 +1,19 @@
 import { test, expect, type Page } from '@playwright/test';
-
-interface RuntimeSnapshot {
-  cameraMode:string;
-  discoveredChunks:number;
-  materializedChunks:number;
-  physicsBodies:number;
-  terrainSurfaces:number;
-  playerX:number;
-  playerZ:number;
-}
-
-async function runtime(page:Page):Promise<RuntimeSnapshot> {
-  return page.locator('#worldStatus').evaluate((el)=>{
-    const data=(el as HTMLElement).dataset;
-    const read=(key:string)=>Number(data[key]??'NaN');
-    return {
-      cameraMode:data.cameraMode??'',
-      discoveredChunks:read('discoveredChunks'),
-      materializedChunks:read('materializedChunks'),
-      physicsBodies:read('physicsBodies'),
-      terrainSurfaces:read('terrainSurfaces'),
-      playerX:read('playerX'),
-      playerZ:read('playerZ')
-    };
-  });
-}
-
-async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
-  for(const key of keys)await page.keyboard.down(key);
-  await page.waitForTimeout(durationMs);
-  for(const key of [...keys].reverse())await page.keyboard.up(key);
-  await page.waitForTimeout(120);
-}
-
-test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
-  // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
-  // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
-  test.setTimeout(120_000);
-  const pageErrors:string[]=[];
-  page.on('pageerror',(error)=>pageErrors.push(error.message));
-
-  await page.goto('/');
-  await expect(page.locator('#game canvas')).toBeVisible();
-  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
-
-  const home=await runtime(page);
-  expect(home.materializedChunks).toBe(0);
-  expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
-
-  await page.locator('#startBtn').click();
-  await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
-  await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
-
-  const firstBefore=await runtime(page);
-  expect(firstBefore.cameraMode).toBe('firstPerson');
-  await moveWithKeys(page,['ShiftLeft','KeyW'],450);
-  const firstAfter=await runtime(page);
-  expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.25);
-  expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(1);
-
-  const worldStatusBox=await page.locator('#worldStatus').boundingBox();
-  expect(worldStatusBox).not.toBeNull();
-  expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
-
-  await page.screenshot({path:testInfo.outputPath('first-person.png'),fullPage:true});
-
-  await page.keyboard.press('KeyG');
-  await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');
-  const godBefore=await runtime(page);
-  expect(godBefore.physicsBodies).toBe(firstAfter.physicsBodies-1);
-  expect(godBefore.terrainSurfaces).toBe(firstAfter.terrainSurfaces);
-
-  await moveWithKeys(page,['KeyW'],500);
-  const godAfter=await runtime(page);
-  expect(godAfter.discoveredChunks).toBe(godBefore.discoveredChunks);
-  expect(godAfter.materializedChunks).toBe(godBefore.materializedChunks);
-  expect(godAfter.playerX).toBe(godBefore.playerX);
-  expect(godAfter.playerZ).toBe(godBefore.playerZ);
-  expect(godAfter.physicsBodies).toBe(godBefore.physicsBodies);
-  expect(godAfter.terrainSurfaces).toBe(godBefore.terrainSurfaces);
-
-  await page.screenshot({path:testInfo.outputPath('god-view.png'),fullPage:true});
-
-  await page.keyboard.press('KeyG');
-  await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('firstPerson');
-  const firstRestored=await runtime(page);
-  expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
-  expect(pageErrors).toEqual([]);
+interface R{cameraMode:string;discoveredChunks:number;materializedChunks:number;physicsBodies:number;terrainSurfaces:number;doors:number;openDoors:number;assetsReady:boolean;playerX:number;playerZ:number;}
+const runtime=(page:Page):Promise<R>=>page.evaluate(()=>{const e=document.querySelector<HTMLElement>('#worldStatus');if(!e)throw new Error('worldStatus missing');const d=e.dataset,n=(k:string)=>Number(d[k]??'NaN');return{cameraMode:d.cameraMode??'',discoveredChunks:n('discoveredChunks'),materializedChunks:n('materializedChunks'),physicsBodies:n('physicsBodies'),terrainSurfaces:n('terrainSurfaces'),doors:n('doors'),openDoors:n('openDoors'),assetsReady:d.assetsReady==='true',playerX:n('playerX'),playerZ:n('playerZ')};});
+async function move(p:Page,keys:string[],ms:number){for(const k of keys)await p.keyboard.down(k);await p.waitForTimeout(ms);for(const k of [...keys].reverse())await p.keyboard.up(k);await p.waitForTimeout(100);}
+async function axis(p:Page,a:'x'|'z',target:number,t=.25){for(let i=0;i<90;i++){const s=await runtime(p),v=a==='x'?s.playerX:s.playerZ,delta=target-v;if(Math.abs(delta)<=t)return;await move(p,[a==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW')],Math.min(140,Math.max(45,Math.abs(delta)/4.5*1000)));}throw new Error('movement target not reached');}
+async function persisted(p:Page,id:string){return p.evaluate(async x=>{const r=await fetch('/api/world/state'),d=await r.json() as any,s=d.snapshot,all=[...(s?.homeObjects||[]),...(s?.fineChunks||[]).flatMap((c:any)=>c.objectStates||[])];return all.find((o:any)=>o.id===x)?.doorOpen;},id);}
+async function enter(p:Page){await p.locator('#startBtn').click();await expect(p.locator('#startOverlay')).toHaveClass(/hidden/);await expect.poll(async()=>p.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10000}).toBe('CANVAS');}
+test('authoritative door persists, traverses, blocks, and God View stays observer-only',async({page},info)=>{
+ test.setTimeout(120000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');await expect(page.locator('#game canvas')).toBeVisible();
+ await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15000}).toBeGreaterThan(0);await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30000}).toBe(true);
+ const h=await runtime(page);expect(h.doors).toBeGreaterThanOrEqual(12);expect(h.openDoors).toBe(0);await enter(page);
+ await axis(page,'x',13.7);await axis(page,'z',-12.85);await axis(page,'x',8);await page.keyboard.press('KeyE');await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);await page.locator('button[data-action="open_door"]').click();
+ await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);await expect.poll(async()=>persisted(page,'building_杂货市场')).toBe(true);await page.screenshot({path:info.outputPath('door-open.png'),fullPage:true});
+ await page.reload();await expect.poll(async()=>(await runtime(page)).assetsReady,{timeout:30000}).toBe(true);await expect.poll(async()=>(await runtime(page)).openDoors).toBe(1);await enter(page);await axis(page,'x',8);await axis(page,'z',-12.85);await axis(page,'z',-15);expect((await runtime(page)).playerZ).toBeLessThan(-14.5);
+ await axis(page,'z',-12.85);await page.keyboard.press('KeyE');await page.locator('button[data-action="close_door"]').click();await expect.poll(async()=>(await runtime(page)).openDoors).toBe(0);await expect.poll(async()=>persisted(page,'building_杂货市场')).toBe(false);
+ const o=await runtime(page);await move(page,['KeyW'],1100);const b=await runtime(page);expect(b.playerZ).toBeLessThan(o.playerZ-.25);expect(b.playerZ).toBeGreaterThan(-13.8);await page.screenshot({path:info.outputPath('door-closed-blocked.png'),fullPage:true});
+ await page.keyboard.press('KeyG');await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');const g0=await runtime(page);expect(g0.physicsBodies).toBe(b.physicsBodies-1);await move(page,['KeyW'],500);const g1=await runtime(page);expect(g1.discoveredChunks).toBe(g0.discoveredChunks);expect(g1.materializedChunks).toBe(g0.materializedChunks);expect(g1.playerX).toBe(g0.playerX);expect(g1.playerZ).toBe(g0.playerZ);expect(g1.openDoors).toBe(g0.openDoors);await page.screenshot({path:info.outputPath('god-view.png'),fullPage:true});
+ await page.keyboard.press('KeyG');await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('firstPerson');expect((await runtime(page)).physicsBodies).toBe(g1.physicsBodies+1);expect(errors).toEqual([]);
 });

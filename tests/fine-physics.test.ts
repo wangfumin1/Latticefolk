@@ -20,6 +20,7 @@ test('authoritative door state blocks while closed and permits passage while ope
   const closed=physics.moveKinematic({id:'player',position:{x:0,z:-1},displacement:{x:0,z:2},radius:.25});
   assert.equal(closed.collided,true);assert.ok(closed.staticHits.includes('door:bakery'));assert.ok(closed.position.z<-.2);
   assert.equal(physics.setDoorOpen('door:bakery',true),true);assert.equal(physics.doorState('door:bakery')?.open,true);
+  assert.equal(physics.setDoorOpen('door:bakery',false,[{id:'player',x:0,z:0,radius:.3}]),false);assert.equal(physics.doorState('door:bakery')?.open,true);
   const opened=physics.moveKinematic({id:'player',position:{x:0,z:-1},displacement:{x:0,z:2},radius:.25});
   assert.equal(opened.staticHits.includes('door:bakery'),false);assert.ok(opened.position.z>.9);
 });

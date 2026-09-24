@@ -70,6 +70,8 @@ export type InteractionCapability =
   | 'load'
   | 'unload'
   | 'pickup'
+  | 'open_door'
+  | 'close_door'
   | 'visit';
 
 export type ItemKind = 'apple' | 'bread' | 'wood' | 'coin' | 'flower' | 'grain' | 'flour' | 'water' | 'stone' | 'plank' | 'tool';
@@ -132,6 +134,8 @@ export interface WorldObjectState {
   resourceCapacity?: number;
   respawnAt?: number;
   occupiedBy?: string;
+  /** Authoritative mutable state for semantic building doors; absent means closed for legacy saves. */
+  doorOpen?: boolean;
 }
 
 export interface NearbyNpc {

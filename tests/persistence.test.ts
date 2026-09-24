@@ -47,7 +47,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
         strongestPair:{fromSpecies:'fox',toSpecies:'rabbit',pressure:8}
       }
     }],
-    fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[],wildlifeStates:[{
+    fineChunks:[{chunkId:'chunk_2_-1',npcStates:[],objectStates:[{id:'chunk_2_-1_building_0',chunkId:'chunk_2_-1',kind:'building',name:'测试屋',position:{x:48,z:-18},tags:['building','door'],usable:true,pickupable:false,capabilities:['inspect','visit'],doorOpen:true}],wildlifeStates:[{
       id:'rabbit_1',chunkId:'chunk_2_-1',species:'rabbit',position:{x:48,z:-24},ageDays:120,health:82,hunger:31,thirst:27,energy:74,
       sex:'female',generation:1,traits:{speed:2.4,size:.55,fertility:.9,wariness:.8},
       phenotype:{morphology:{bodyLength:1.05,bodyHeight:.98,legLength:1.02,headScale:.99,tailScale:1},behavior:{forageDrive:1.08,migrationDrive:.96,riskTolerance:.94,recoveryDrive:1.04}},
@@ -107,6 +107,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(loaded.meta.day,4);
   assert.equal(loaded.coarseChunks[0]?.strategy,'trade_route');
   assert.equal(loaded.fineChunks[0]?.chunkId,'chunk_2_-1');
+  assert.equal(loaded.fineChunks[0]?.objectStates[0]?.doorOpen,true);
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.species,'rabbit');
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.phenotype?.morphology.bodyLength,1.05);
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.organismGenome?.family,'lagomorph');
