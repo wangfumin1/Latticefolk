@@ -13,3 +13,5 @@ Thumbs.db
 .vscode/
 data/*.sqlite
 data/*.sqlite-*
+test-results/
+playwright-report/

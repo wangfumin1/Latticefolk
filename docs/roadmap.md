@@ -11,7 +11,7 @@ Latticefolk is an early autonomous-world sandbox. Near-term work is focused on m
 - Persistent saves and deterministic world seeds.
 - Long-term NPC goals, schedules, households, ownership, memory, and relationship history.
 - Decision batching, event-driven re-decisions, spatial partitioning, simulation LOD, and performance budgets. **Initial coarse distant-chunk runtime and first-pass coarse↔fine materialization are implemented; durable persistence is next.**
-- Automated browser smoke tests and deterministic simulation tests.
+- ✅ Initial automated Chromium playable smoke gate with deterministic simulation tests, God View observer semantics, first-person movement, authoritative terrain runtime checks, and screenshot artifacts. Expand scenario coverage as gameplay systems grow.
 
 ## Dialogue and character voice
 
@@ -64,7 +64,7 @@ A bounded decision provider such as Jev chooses semantic intent, candidate fragm
 - ✅ Reusable wildlife movement/controller execution: movement archetypes now define gait, acceleration/deceleration, turn-rate and arrival-radius semantics; fine wildlife uses a deterministic pure controller step, refuses blocked displacement, and drops transient momentum when fine entities unload while coarse simulation remains authoritative at distance.
 - ✅ Authoritative domestication state: domesticated-capable individuals now have deterministic tame progress, durable ownership, `none/follow/stay/graze` commands, explicit same-owner breeding permission/inheritance, first-person resource-consuming taming, owner-anonymous provider context, God View follow suspension, conserved adjacent-chunk owner-follow transfer, and fine/transfer/lineage persistence. Species `form` remains immutable and separate from individual state.
 - ✅ Fine physics authority v1: removed the duplicate runtime blocked-cell collision truth; player/NPC/wildlife now use one deterministic kinematic authority with chunk-scoped static colliders, circular dynamic collision, anti-tunnelling substeps, wall sliding and semantic triggers. Navigation passability queries the same static physics geometry, first-person interactions validate trigger overlap, materialized chunk teardown clears physics state, and God View has no player body.
-- ⏭ Physics authority v2: add terrain/ground contact and bounded slopes, door/open-close collider state, then general rigid bodies for movable props/carts/stacking and projectile/contact queries. Keep unloaded chunks asleep under coarse simulation and all physical outcomes outside Decision Providers.
+- 🚧 Physics authority v2: terrain/ground contact, bounded slopes, authoritative home-town ground, runtime fine-chunk terrain registration, and chunk-sleep teardown are implemented in the current increment with playable-browser coverage. Next: authoritative door/open-close collider state, then general rigid bodies for movable props/carts/stacking and projectile/contact queries. Keep unloaded chunks asleep under coarse simulation and all physical outcomes outside Decision Providers.
 - Global/region decision layers above individual chunk policy, with slower cadences and larger strategic context.
 - Deterministic world seed + chunk persistence so unloaded areas retain history.
 - Streaming/render LOD so visual range and simulation range are independent.

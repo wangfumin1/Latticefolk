@@ -2,7 +2,7 @@
 
 Latticefolk keeps physical outcomes inside deterministic simulation. Decision Providers may choose intentions such as moving toward a target, fleeing, hunting, following an owner, or interacting with an object, but they do not choose whether a body passes through a wall, overlaps another body, enters a trigger, or reaches a physical destination.
 
-This document describes the first dedicated fine-physics authority. It intentionally replaces the previous ad-hoc blocked-cell movement checks without claiming that the full long-term rigid-body/terrain system is complete.
+This document describes the dedicated fine-physics authority and the first Physics v2 terrain increment. It replaces the previous ad-hoc blocked-cell movement checks and now owns materialized ground contact as well, without claiming that doors or general rigid bodies are complete.
 
 ## Authority boundary
 
@@ -14,12 +14,14 @@ The current fine physics layer owns:
 - axis-separated collision resolution so a character can slide along a wall rather than losing all movement;
 - dynamic character-vs-character collision using circular bodies;
 - non-blocking semantic trigger volumes;
-- chunk-scoped registration and cleanup of colliders/triggers;
+- chunk-scoped deterministic terrain surfaces and ground-contact queries;
+- bounded maximum slope and vertical ground-step legality during kinematic movement;
+- chunk-scoped registration and cleanup of colliders, triggers, and terrain;
 - the final physical displacement applied to fine characters.
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-The next physics phases still need explicit terrain/slope contact, doors, general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
+The next physics phases still need authoritative door open/close collider state, general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
 
 ## Runtime model
 
@@ -41,6 +43,13 @@ Static colliders are code/runtime-owned AABBs:
 Triggers use the same bounds but never block motion. The current gameplay integration registers interaction triggers for semantic WorldObjects and building interaction points. First-person object interaction requires both the existing visual/raycast target and an overlapping physics trigger, so an object cannot be used merely because its mesh is visible through a wall or from outside its interaction volume.
 
 Dynamic characters are not duplicated into a second persistent physics database. Every kinematic move receives a snapshot of currently materialized character circles. That keeps authoritative identity/state in the existing NPC/wildlife/player systems while physics owns contact resolution.
+
+## Terrain and ground contact
+
+`src/world/fineTerrain.ts` is the shared boundary for authoritative flat ground. The authored home town registers a persistent `terrain:home` footprint matching its rendered 72×72 ground, while `TownGame.materializeFineChunk()` registers each distant coarse chunk in the same `FinePhysicsAuthority` used by player, NPC, and wildlife movement; `clearChunk(chunkId)` removes only chunk-scoped terrain when that fine chunk sleeps. The current rendered world is flat, so the authoritative terrain descriptors are deliberately flat too. Future procedural elevation must drive rendering and this descriptor together rather than introducing a second height source.
+
+Ground contact is deterministic when surfaces overlap: the highest surface wins, with stable surface id as the tie-break. Kinematic movement rejects candidate ground whose angle exceeds `maxSlope` or whose per-substep height discontinuity exceeds `maxGroundStep`. The returned movement result includes read-only ground contact and terrain-hit evidence; Decision Providers cannot author either outcome.
+
 
 ## Kinematic movement
 
@@ -147,3 +156,8 @@ The next implementation step should extend the same authority rather than reintr
 5. richer sleeping/wakeup rules across fine/coarse boundaries.
 
 Decision Providers continue to supply only intentions. Physical contacts and their consequences remain deterministic.
+
+
+## Playable verification
+
+Gameplay and physics changes are gated by a real Chromium smoke test in addition to deterministic unit tests. The Playwright path starts the actual server and Vite client, verifies the authored home ground is registered in the physics authority, enters first person with pointer lock, performs real physics-resolved movement, switches to God View, verifies the player physics body disappears and observer-camera movement does not expand discovered chunks, and captures first-person/God View screenshots as CI artifacts. Distant chunk terrain registration/teardown remains covered by deterministic materialization tests so the browser gate does not spend most of its budget walking across the authored home area. A green typecheck/unit/build job alone is not treated as playable or visual verification.

@@ -19,6 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
+import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
 import type {
@@ -293,6 +294,7 @@ class TownGame {
   }
 
   setupWorld() {
+    registerHomeTerrain(this.physics,WORLD_SIZE);
     const ground = new THREE.Mesh(
       new THREE.BoxGeometry(WORLD_SIZE, .25, WORLD_SIZE),
       new THREE.MeshStandardMaterial({color:0x74a95d, roughness:1})
@@ -1067,6 +1069,7 @@ class TownGame {
     };
     this.materializedChunks.set(chunk.id,runtime);
     this.coarseWorld.setMaterialized(chunk.id,true);
+    registerFineTerrainForChunk(this.physics,chunk,this.coarseWorld.chunkSize);
 
     const cached=this.fineChunkCache.get(chunk.id);
     const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
@@ -3039,7 +3042,14 @@ class TownGame {
     const world=this.coarseWorld.status();
     const physicsStats=this.physics.stats();
     const activePhysicsBodies=this.npcs.size+this.wildlife.size+(this.cameraMode==='firstPerson'?1:0);
-    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    ui.world.dataset.cameraMode=this.cameraMode;
+    ui.world.dataset.discoveredChunks=String(world.chunks);
+    ui.world.dataset.materializedChunks=String(world.materializedChunks);
+    ui.world.dataset.physicsBodies=String(activePhysicsBodies);
+    ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
+    ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
+    ui.world.dataset.playerZ=this.playerPosition.z.toFixed(4);
+    ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;

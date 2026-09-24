@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
-    "start": "NODE_ENV=production tsx server/index.ts"
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "test:e2e": "playwright test"
   },
   "keywords": [
     "autonomous-agents",
@@ -43,6 +44,7 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.4",
-    "@types/better-sqlite3": "^7.6.13"
+    "@types/better-sqlite3": "^7.6.13",
+    "@playwright/test": "^1.63.0"
   }
 }
