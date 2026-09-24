@@ -92,6 +92,14 @@ Move from one fixed map to deterministic chunk generation inspired by voxel/sand
 - Jev or another decision provider may participate in mate choice, nesting, migration, care, risk-taking, social behavior, and other bounded behavioral decisions; genetics, inheritance, physiology, and population accounting remain deterministic simulation systems.
 - Long-running worlds should support measurable generational change rather than scripted cosmetic "evolution".
 
+## Cross-cutting playable quality gates
+
+- Real E2E playtesting is required for meaningful playable milestones, not only unit/integration tests: launch the real build and exercise first-person exploration, dynamic chunk discovery/streaming, coarse↔fine transitions, NPC/wildlife/WorldObject interaction, production/inventory consequences, God View switching/inspection, and save/reload persistence.
+- God View E2E coverage must explicitly verify the observer invariant: camera travel does not generate/explore chunks, player is absent from NPC perception/decision candidates, and stale player-targeting/dialogue responses cannot survive a mode switch.
+- Visual validation is part of acceptance for 3D/UI changes: inspect procedural organism/building scale, overlaps/clipping, roads/terrain placement, materials/lighting, camera readability, selection/path overlays, God View/evolution panels, localization overflow, missing geometry and obvious z-fighting.
+- Prefer stable screenshot/regression evidence where tooling supports it; otherwise record explicit manual/computer-driven visual checks. Fix discovered gameplay/visual regressions and re-run the affected E2E path before considering the milestone complete.
+- E2E tools may drive legal player inputs and observe state, but must not mutate authoritative simulation state to manufacture expected outcomes.
+
 ## Physics and world interaction
 
 - Replace ad-hoc collision checks with a dedicated physics layer.
