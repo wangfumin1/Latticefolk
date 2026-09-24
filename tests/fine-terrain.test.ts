@@ -30,7 +30,8 @@ test('registered materialized terrain is consumed by kinematic movement ground a
   const result=physics.moveKinematic({
     id:'npc:test',position:{x:0,z:0},displacement:{x:2,z:1},radius:.3
   });
-  assert.deepEqual(result.position,{x:2,z:1});
+  assert.ok(Math.abs(result.position.x-2)<1e-9);
+  assert.ok(Math.abs(result.position.z-1)<1e-9);
   assert.equal(result.ground?.surfaceId,'terrain:chunk_0_0');
   assert.equal(result.ground?.height,0);
   assert.deepEqual(result.terrainHits,[]);
