@@ -22,7 +22,7 @@ The current fine physics layer owns:
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-Door state is now wired into semantic buildings end-to-end. Decision/provider layers may request an open/close interaction, but deterministic simulation validates and mutates `WorldObjectState.doorOpen`, physics owns threshold blocking, and rendering follows that state. The next physics phases need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
+Door state is now wired into semantic buildings end-to-end. Decision/provider layers may request an open/close interaction, but deterministic simulation validates and mutates `WorldObjectState.doorOpen`, physics owns threshold blocking, and rendering follows that state. The next physics phases need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events. When an opened door panel has swung out of the centre ray, first-person interaction may fall back to that building only while the player physically overlaps its door interaction trigger and no more explicit raycast target exists; this keeps closing discoverable without weakening God View or collision authority.
 
 ## Runtime model
 

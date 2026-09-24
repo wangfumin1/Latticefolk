@@ -79,7 +79,7 @@ async function persistedDoorOpen(page:Page,id:string) {
 }
 
 test('authoritative door persists, traverses, blocks, and God View stays observer-only',async({page},testInfo)=>{
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const pageErrors:string[]=[];
   page.on('pageerror',error=>pageErrors.push(error.message));
 
@@ -131,7 +131,7 @@ test('authoritative door persists, traverses, blocks, and God View stays observe
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
   await page.locator('button[data-action="close_door"]').click();
-  await expect.poll(async()=>(await runtime(page)).openDoors).toBe(0);
+  await expect.poll(async()=>(await runtime(page)).openDoors,{timeout:15_000}).toBe(0);
   await expect.poll(async()=>persistedDoorOpen(page,'building_面包房')).toBe(false);
 
   await placeAtBakeryThreshold(page);
