@@ -1,3 +1,5 @@
+import { SpatialHashIndex, type SpatialBounds } from './spatialHash.js';
+
 export interface PhysicsPoint {
   x:number;
   z:number;
@@ -141,28 +143,34 @@ export class FinePhysicsAuthority {
   private doors=new Map<string,DoorCollider>();
   private triggers=new Map<string,PhysicsTrigger>();
   private terrain=new Map<string,TerrainSurface>();
+  private staticIndex=new SpatialHashIndex<StaticCollider>(8);
+  private doorIndex=new SpatialHashIndex<DoorCollider>(8);
+  private triggerIndex=new SpatialHashIndex<PhysicsTrigger>(8);
+  private terrainIndex=new SpatialHashIndex<TerrainSurface>(16);
 
   registerStatic(collider:StaticCollider){
     const normalized=this.normalize(collider);
     this.staticColliders.set(normalized.id,normalized);
+    this.staticIndex.upsert(normalized);
     return normalized;
   }
 
-  unregisterStatic(id:string){this.staticColliders.delete(id);}
+  unregisterStatic(id:string){this.staticColliders.delete(id);this.staticIndex.remove(id);}
 
   registerDoor(door:DoorCollider){
     const normalized={...this.normalize(door),open:Boolean(door.open)};
     this.doors.set(normalized.id,normalized);
+    this.doorIndex.upsert(normalized);
     return {...normalized};
   }
 
   setDoorOpen(id:string,open:boolean){
     const door=this.doors.get(id);if(!door)return false;
-    door.open=Boolean(open);return true;
+    door.open=Boolean(open);this.doorIndex.upsert(door);return true;
   }
 
   doorState(id:string){const door=this.doors.get(id);return door?{...door}:undefined;}
-  unregisterDoor(id:string){this.doors.delete(id);}
+  unregisterDoor(id:string){this.doors.delete(id);this.doorIndex.remove(id);}
 
   registerBlockedCell(id:string,x:number,z:number,chunkId?:string){
     return this.registerStatic({id,minX:x-.5,maxX:x+.5,minZ:z-.5,maxZ:z+.5,chunkId});
@@ -171,21 +179,23 @@ export class FinePhysicsAuthority {
   registerTrigger(trigger:PhysicsTrigger){
     const normalized={...this.normalize(trigger),tag:trigger.tag};
     this.triggers.set(normalized.id,normalized);
+    this.triggerIndex.upsert(normalized);
     return normalized;
   }
 
-  unregisterTrigger(id:string){this.triggers.delete(id);}
+  unregisterTrigger(id:string){this.triggers.delete(id);this.triggerIndex.remove(id);}
 
   registerTerrain(surface:TerrainSurface){
     const normalized={...this.normalize(surface),originX:Number.isFinite(surface.originX)?surface.originX:0,originZ:Number.isFinite(surface.originZ)?surface.originZ:0,originY:Number.isFinite(surface.originY)?surface.originY:0,slopeX:Number.isFinite(surface.slopeX)?surface.slopeX:0,slopeZ:Number.isFinite(surface.slopeZ)?surface.slopeZ:0};
     this.terrain.set(normalized.id,normalized);
+    this.terrainIndex.upsert(normalized);
     return normalized;
   }
 
-  unregisterTerrain(id:string){this.terrain.delete(id);}
+  unregisterTerrain(id:string){this.terrain.delete(id);this.terrainIndex.remove(id);}
 
   groundContactAt(x:number,z:number):TerrainContact|undefined {
-    const candidates=[...this.terrain.values()].filter(surface=>x>=surface.minX&&x<=surface.maxX&&z>=surface.minZ&&z<=surface.maxZ).sort((a,b)=>a.id.localeCompare(b.id));
+    const candidates=this.terrainIndex.query({minX:x,maxX:x,minZ:z,maxZ:z});
     if(!candidates.length)return undefined;
     let best:TerrainContact|undefined;
     for(const surface of candidates){
@@ -197,25 +207,31 @@ export class FinePhysicsAuthority {
   }
 
   clearChunk(chunkId:string){
-    for(const [id,collider] of this.staticColliders)if(collider.chunkId===chunkId)this.staticColliders.delete(id);
-    for(const [id,door] of this.doors)if(door.chunkId===chunkId)this.doors.delete(id);
-    for(const [id,trigger] of this.triggers)if(trigger.chunkId===chunkId)this.triggers.delete(id);
-    for(const [id,surface] of this.terrain)if(surface.chunkId===chunkId)this.terrain.delete(id);
+    this.removeChunkEntries(this.staticColliders,this.staticIndex,chunkId);
+    this.removeChunkEntries(this.doors,this.doorIndex,chunkId);
+    this.removeChunkEntries(this.triggers,this.triggerIndex,chunkId);
+    this.removeChunkEntries(this.terrain,this.terrainIndex,chunkId);
   }
 
-  clear(){this.staticColliders.clear();this.doors.clear();this.triggers.clear();this.terrain.clear();}
+  clear(){
+    this.staticColliders.clear();this.doors.clear();this.triggers.clear();this.terrain.clear();
+    this.staticIndex.clear();this.doorIndex.clear();this.triggerIndex.clear();this.terrainIndex.clear();
+  }
 
-  stats(){return {staticColliders:this.staticColliders.size,doors:this.doors.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size};}
+  stats(){return {
+    staticColliders:this.staticColliders.size,doors:this.doors.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size,
+    spatialCells:{static:this.staticIndex.cellCount,doors:this.doorIndex.cellCount,triggers:this.triggerIndex.cellCount,terrain:this.terrainIndex.cellCount}
+  };}
 
   isBlocked(x:number,z:number,radius=0){
-    const r=Math.max(0,radius);
-    for(const collider of this.blockingColliders())if(r>0?circleIntersectsAabb(x,z,r,collider):x>collider.minX&&x<collider.maxX&&z>collider.minZ&&z<collider.maxZ)return true;
+    const r=Math.max(0,radius),bounds=this.pointBounds(x,z,r);
+    for(const collider of this.blockingColliders(bounds))if(r>0?circleIntersectsAabb(x,z,r,collider):x>collider.minX&&x<collider.maxX&&z>collider.minZ&&z<collider.maxZ)return true;
     return false;
   }
 
   overlappingTriggers(position:PhysicsPoint,radius=0){
-    const hits:PhysicsTrigger[]=[];
-    for(const trigger of this.triggers.values())if(radius>0?circleIntersectsAabb(position.x,position.z,radius,trigger):position.x>=trigger.minX&&position.x<=trigger.maxX&&position.z>=trigger.minZ&&position.z<=trigger.maxZ)hits.push({...trigger});
+    const r=Math.max(0,radius),hits:PhysicsTrigger[]=[];
+    for(const trigger of this.triggerIndex.query(this.pointBounds(position.x,position.z,r)))if(r>0?circleIntersectsAabb(position.x,position.z,r,trigger):position.x>=trigger.minX&&position.x<=trigger.maxX&&position.z>=trigger.minZ&&position.z<=trigger.maxZ)hits.push({...trigger});
     return hits.sort((a,b)=>a.id.localeCompare(b.id));
   }
 
@@ -230,8 +246,9 @@ export class FinePhysicsAuthority {
         point:{x:input.start.x+dx*t,z:input.start.z+dz*t}
       });
     };
-    for(const collider of this.staticColliders.values())add(collider.id,'static',segmentAabbT(input.start,input.end,collider,radius));
-    for(const door of this.doors.values())if(!door.open)add(door.id,'door',segmentAabbT(input.start,input.end,door,radius));
+    const queryBounds={minX:Math.min(input.start.x,input.end.x)-radius,maxX:Math.max(input.start.x,input.end.x)+radius,minZ:Math.min(input.start.z,input.end.z)-radius,maxZ:Math.max(input.start.z,input.end.z)+radius};
+    for(const collider of this.staticIndex.query(queryBounds))add(collider.id,'static',segmentAabbT(input.start,input.end,collider,radius));
+    for(const door of this.doorIndex.query(queryBounds))if(!door.open)add(door.id,'door',segmentAabbT(input.start,input.end,door,radius));
     const seenDynamic=new Set<string>();
     for(const body of input.dynamic||[]){
       if(seenDynamic.has(body.id))continue;
@@ -256,7 +273,7 @@ export class FinePhysicsAuthority {
     const staticHits=new Set<string>(),dynamicHits=new Set<string>(),terrainHits=new Set<string>();
 
     const blockersAt=(cx:number,cz:number)=>{
-      const statics:string[]=[];for(const collider of this.blockingColliders())if(circleIntersectsAabb(cx,cz,radius,collider))statics.push(collider.id);
+      const statics:string[]=[];for(const collider of this.blockingColliders(this.pointBounds(cx,cz,radius)))if(circleIntersectsAabb(cx,cz,radius,collider))statics.push(collider.id);
       const dynamics:string[]=[];
       for(const other of input.dynamic||[]){
         if(other.id===input.id||!circleIntersectsCircle(cx,cz,radius,other))continue;
@@ -282,9 +299,19 @@ export class FinePhysicsAuthority {
     return {position:{x,z},displacement:{x:x-input.position.x,z:z-input.position.z},collided:staticHits.size>0||dynamicHits.size>0||terrainHits.size>0,staticHits:[...staticHits].sort(),dynamicHits:[...dynamicHits].sort(),terrainHits:[...terrainHits].sort(),ground:this.groundContactAt(x,z)};
   }
 
-  private *blockingColliders():Iterable<StaticCollider>{
-    yield* this.staticColliders.values();
-    for(const door of this.doors.values())if(!door.open)yield door;
+  private blockingColliders(bounds:SpatialBounds):StaticCollider[]{
+    return [
+      ...this.staticIndex.query(bounds),
+      ...this.doorIndex.query(bounds).filter(door=>!door.open)
+    ].sort((a,b)=>a.id.localeCompare(b.id));
+  }
+
+  private pointBounds(x:number,z:number,radius=0):SpatialBounds {
+    const r=Math.max(0,radius);return {minX:x-r,maxX:x+r,minZ:z-r,maxZ:z+r};
+  }
+
+  private removeChunkEntries<T extends StaticCollider>(store:Map<string,T>,index:SpatialHashIndex<T>,chunkId:string) {
+    for(const [id,value] of store)if(value.chunkId===chunkId){store.delete(id);index.remove(id);}
   }
 
   private normalize<T extends StaticCollider>(collider:T):T {
