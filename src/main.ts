@@ -21,6 +21,7 @@ import { stepWildlifeMovementController } from './world/wildlifeMovementControll
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
 import { normalizeWorldObjectRigidBody, resolveMovableBodyStep, worldObjectRigidBody } from './world/movablePhysics';
 import { resolveContactAttack } from './world/contactCombat';
+import { resolveContactAction } from './world/contactAction';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
@@ -347,9 +348,9 @@ class TownGame {
     this.addObject({id:'barrel_food',kind:'crate',name:'补给木桶',position:{x:12,z:-9},tags:['food','supply','market'],usable:false,pickupable:true,item:'apple'});
     this.addObject({id:'mine',kind:'workstation',name:'旧矿井',position:{x:29,z:25},tags:['work','resource','stone','mine'],usable:true,pickupable:false});
     this.addObject({id:'mill',kind:'workstation',name:'风车磨坊',position:{x:-27,z:20},tags:['work','farm','grain','mill'],usable:true,pickupable:false});
-    this.addObject({id:'tree_apple_1',kind:'tree',name:'苹果树',position:{x:-8,z:-5},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
-    this.addObject({id:'tree_apple_2',kind:'tree',name:'苹果树',position:{x:14,z:1.5},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
-    this.addObject({id:'tree_apple_3',kind:'tree',name:'苹果树',position:{x:-18,z:23},tags:['food','apple','nature'],usable:true,pickupable:true,item:'apple'});
+    this.addObject({id:'tree_apple_1',kind:'tree',name:'苹果树',position:{x:-8,z:-5},tags:['food','apple','nature'],usable:true,pickupable:false,item:'apple'});
+    this.addObject({id:'tree_apple_2',kind:'tree',name:'苹果树',position:{x:14,z:1.5},tags:['food','apple','nature'],usable:true,pickupable:false,item:'apple'});
+    this.addObject({id:'tree_apple_3',kind:'tree',name:'苹果树',position:{x:-18,z:23},tags:['food','apple','nature'],usable:true,pickupable:false,item:'apple'});
 
     for (const [x,z] of [
       [-32,6],[-31,12],[-30,-12],[-25,-29],[-14,30],[-7,-30],[14,30],[30,15],[31,4],
@@ -505,7 +506,7 @@ class TownGame {
       cart:[1.05,.52]
     };
     const extent=halfExtents[state.kind];
-    if(!extent||state.pickupable||worldObjectRigidBody(state))return;
+    if(!extent||(state.pickupable&&state.kind!=='tree')||worldObjectRigidBody(state))return;
     const [halfX,halfZ]=extent;
     this.physics.registerStatic({
       id:`object:${state.id}`,
@@ -3040,6 +3041,21 @@ class TownGame {
     return i18n.t(`interaction.${action}`);
   }
 
+  playerPhysicalToolContact(o:RuntimeObject) {
+    const result=resolveContactAction(this.physics,{
+      actorId:'player',
+      targetId:`object:${o.state.id}`,
+      start:{...this.playerPosition},
+      end:{...o.state.position},
+      maxRange:3.2,
+      sweepRadius:.06,
+      dynamic:this.physicsDynamicColliders('player')
+    });
+    if(result.status==='hit')return true;
+    this.toast(result.status==='blocked'?'工具动作被实体或障碍阻挡':'目标不在可触及范围');
+    return false;
+  }
+
   executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
     const s=o.state;
     const takeFirst=()=>{
@@ -3064,9 +3080,11 @@ class TownGame {
         this.playerInventory[kind]++;s.resourceAmount=Math.max(0,(s.resourceAmount??3)-1);this.toast(`获得：${this.itemName(kind)}`);this.event(`玩家从${s.name}采集了资源。`);break;
       }
       case 'chop':
+        if(!this.playerPhysicalToolContact(o))break;
         if((s.resourceAmount??3)<=0){this.toast('这棵树暂时没有可砍取的木料');break;}
         this.playerInventory.wood+=2;s.resourceAmount=Math.max(0,(s.resourceAmount??4)-1);this.toast('获得：木料 ×2');this.event(`玩家砍取了${s.name}的木料。`);break;
       case 'mine':
+        if(!this.playerPhysicalToolContact(o))break;
         if((s.resourceAmount??4)<=0){this.toast('这里暂时没有可采的石料');break;}
         this.playerInventory.stone+=2;s.resourceAmount=Math.max(0,(s.resourceAmount??6)-1);this.toast('获得：石料 ×2');this.event(`玩家在${s.name}采矿。`);break;
       case 'craft': {
