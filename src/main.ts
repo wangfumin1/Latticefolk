@@ -20,6 +20,7 @@ import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlife
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
 import { resolveMovableBodyStep } from './world/movablePhysics';
+import { resolveContactAttack } from './world/contactCombat';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
@@ -1974,17 +1975,28 @@ class TownGame {
         const preyTraits=other?.state.traits||preyLineage?.traitsAtDeath||preyLineage?.traitsAtBirth;
         if(preySpecies&&canWildlifePredate(s.species,preySpecies)){
           let hit=false,kill=false;
-          if(other&&!other.removed&&dist(s.position,other.state.position)<=2.3){
-            const damage=wildlifePredationDamage(s.species,other.state.species);
-            const relief=wildlifeHungerRelief(s.species,other.state.species);
-            other.state.health=clamp(other.state.health-damage,0,100);
-            s.hunger=clamp(s.hunger-relief,0,100);
-            s.energy=clamp(s.energy-wildlifeSpeciesProfile(s.species).huntEnergyCost*functional.fastActionEnergyMultiplier,0,100);
-            hit=damage>0;
-            kill=other.state.health<=0;
-            if(hit){
-              recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill,other.state.traits,s.traits);
-              this.lineageEpoch++;
+          if(other&&!other.removed){
+            const contact=resolveContactAttack(this.physics,{
+              attackerId:`wildlife:${s.id}`,
+              targetId:`wildlife:${other.state.id}`,
+              start:{x:animal.mesh.position.x,z:animal.mesh.position.z},
+              end:{x:other.mesh.position.x,z:other.mesh.position.z},
+              maxRange:2.3,
+              sweepRadius:.08,
+              dynamic:this.physicsDynamicColliders(`wildlife:${s.id}`)
+            });
+            if(contact.status==='hit'){
+              const damage=wildlifePredationDamage(s.species,other.state.species);
+              const relief=wildlifeHungerRelief(s.species,other.state.species);
+              other.state.health=clamp(other.state.health-damage,0,100);
+              s.hunger=clamp(s.hunger-relief,0,100);
+              s.energy=clamp(s.energy-wildlifeSpeciesProfile(s.species).huntEnergyCost*functional.fastActionEnergyMultiplier,0,100);
+              hit=damage>0;
+              kill=other.state.health<=0;
+              if(hit){
+                recordWildlifeAttackReceived(this.ensureWildlifeLineage(other.state),s.species,!kill,other.state.traits,s.traits);
+                this.lineageEpoch++;
+              }
             }
           }
           recordWildlifeHuntOutcome(this.ensureWildlifeLineage(s),preySpecies,hit,kill,s.traits,preyTraits);
