@@ -8,6 +8,7 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Reusable rigid-body archetype semantics for persisted WorldObjects: the existing licensed cart now uses canonical `rigidBodyArchetype: 'cart'` physics parameters while legacy `movable` / `physicsRadius` SQLite snapshots upgrade compatibly on load; no new visible model is introduced.
 - Fine wildlife predation now consumes the shared deterministic contact-query authority: `hunt` damage requires the intended prey to be the first physical contact within range, so static geometry, closed authoritative doors, and materialized bodies can block attacks while Decision Providers remain intention-only.
 - Deterministic fine-physics segment/contact queries for static geometry, closed authoritative doors, and materialized dynamic circles, including swept-radius tests, source exclusion, stable nearest-hit ordering, and zero-length overlap semantics; no projectile visual or new scene model is introduced.
 - First persisted movable-prop runtime: the existing licensed Quaternius cart is now a semantic WorldObject with authoritative position, shared fine-physics collision/pushing, NPC/wildlife avoidance, debounced SQLite persistence/restore, and real Chromium push→reload coverage; no new visible model or primitive fallback was introduced.
