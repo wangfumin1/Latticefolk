@@ -13,6 +13,7 @@ interface RuntimeSnapshot {
   cartZ:number;
   cartVisualChildren:number;
   movableDirty:boolean;
+  persistenceSavePending:boolean;
 }
 
 async function runtime(page:Page):Promise<RuntimeSnapshot> {
@@ -31,7 +32,8 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cartX:read('cartX'),
       cartZ:read('cartZ'),
       cartVisualChildren:read('cartVisualChildren'),
-      movableDirty:data.movableDirty==='true'
+      movableDirty:data.movableDirty==='true',
+      persistenceSavePending:data.persistenceSavePending==='true'
     };
   });
 }
@@ -74,13 +76,17 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(firstAfter.movableBodies).toBe(home.movableBodies);
 
   const pushedCartZ=firstAfter.cartZ;
+  await moveWithKeys(page,['KeyS'],300);
 
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
   expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
-  await expect.poll(async()=>!(await runtime(page)).movableDirty,{timeout:5_000}).toBe(true);
+  await expect.poll(async()=>{
+    const state=await runtime(page);
+    return !state.movableDirty&&!state.persistenceSavePending;
+  },{timeout:12_000}).toBe(true);
 
   await page.reload();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);

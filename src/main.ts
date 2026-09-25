@@ -251,6 +251,7 @@ class TownGame {
   fineChunkCache = new Map<string,FineChunkCache>();
   persistenceReady = false;
   persistenceSaveInFlight = false;
+  persistenceSaveQueued = false;
   lastPersistenceSaveAt = 0;
   wildlifeDecisionPending = false;
   nextWildlifeBatchAt = 0;
@@ -941,11 +942,7 @@ class TownGame {
     if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
     this.movableSaveTimer=window.setTimeout(()=>{
       this.movableSaveTimer=undefined;
-      if(!this.persistenceReady||this.persistenceSaveInFlight){
-        this.scheduleMovablePersistence();
-        return;
-      }
-      this.movableDirty=false;
+      this.persistenceSaveQueued=true;
       void this.saveWorldState();
     },700);
   }
@@ -1084,21 +1081,29 @@ class TownGame {
   }
 
   async saveWorldState() {
-    if(!this.persistenceReady||this.persistenceSaveInFlight)return;
-    this.persistenceSaveInFlight=true;
-    this.lastPersistenceSaveAt=now();
-    try{
-      this.flushWildlifeHabitatExposure();
-      const snapshot=this.buildWorldSnapshot();
-      const response=await fetch('/api/world/state',{
-        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
-      });
-      if(!response.ok)throw new Error(`HTTP ${response.status}`);
-    }catch(error){
-      this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
-    }finally{
-      this.persistenceSaveInFlight=false;
+    if(!this.persistenceReady)return;
+    if(this.persistenceSaveInFlight){
+      this.persistenceSaveQueued=true;
+      return;
     }
+    do{
+      this.persistenceSaveQueued=false;
+      this.persistenceSaveInFlight=true;
+      this.lastPersistenceSaveAt=now();
+      try{
+        this.flushWildlifeHabitatExposure();
+        const snapshot=this.buildWorldSnapshot();
+        const response=await fetch('/api/world/state',{
+          method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
+        });
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      }catch(error){
+        this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
+      }finally{
+        this.persistenceSaveInFlight=false;
+      }
+    }while(this.persistenceSaveQueued&&this.persistenceReady);
+    if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
   }
 
   flushWorldBeacon() {
@@ -3118,6 +3123,7 @@ class TownGame {
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
     ui.world.dataset.cartVisualChildren=String(townCart?.mesh.children.length??0);
     ui.world.dataset.movableDirty=String(this.movableDirty);
+    ui.world.dataset.persistenceSavePending=String(this.persistenceSaveInFlight||this.persistenceSaveQueued);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
