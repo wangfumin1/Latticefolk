@@ -74,13 +74,13 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(firstAfter.movableBodies).toBe(home.movableBodies);
 
   const pushedCartZ=firstAfter.cartZ;
-  await expect.poll(async()=>!(await runtime(page)).movableDirty,{timeout:5_000}).toBe(true);
 
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
   expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
+  await expect.poll(async()=>!(await runtime(page)).movableDirty,{timeout:5_000}).toBe(true);
 
   await page.reload();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);

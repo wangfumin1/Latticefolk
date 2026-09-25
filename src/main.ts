@@ -255,7 +255,7 @@ class TownGame {
   wildlifeDecisionPending = false;
   nextWildlifeBatchAt = 0;
   movableDirty = false;
-  lastMovablePushAt = 0;
+  movableSaveTimer?: number;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -338,7 +338,7 @@ class TownGame {
     this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
     this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
     this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:7,z:9},tags:['rest','sleep'],usable:true,pickupable:false});
-    this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:5.2},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,movable:true,physicsRadius:.62,storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2);
+    this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:4.7},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,movable:true,physicsRadius:1.05,storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2,2.0,2.0);
     this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-15,z:7},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
     this.addObject({id:'barrel_food',kind:'crate',name:'补给木桶',position:{x:12,z:-9},tags:['food','supply','market'],usable:false,pickupable:true,item:'apple'});
     this.addObject({id:'mine',kind:'workstation',name:'旧矿井',position:{x:29,z:25},tags:['work','resource','stone','mine'],usable:true,pickupable:false});
@@ -421,7 +421,7 @@ class TownGame {
     this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
 
-  addAssetObject(state:WorldObjectState,asset:string,assetHeight:number,rotationY=0) {
+  addAssetObject(state:WorldObjectState,asset:string,assetHeight:number,rotationY=0,targetWidth?:number,targetDepth?:number) {
     const g=new THREE.Group();
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'object',entityId:state.id};
@@ -429,7 +429,7 @@ class TownGame {
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
     this.registerWorldObjectPhysics(state);
-    this.attachVisualTarget({group:g,asset,height:assetHeight,rotationY});
+    this.attachVisualTarget({group:g,asset,height:assetHeight,rotationY,targetWidth,targetDepth});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
   }
@@ -933,8 +933,21 @@ class TownGame {
       chunkId:state.chunkId,tag:'interaction'
     });
     this.movableDirty=true;
-    this.lastMovablePushAt=now();
+    this.scheduleMovablePersistence();
     return true;
+  }
+
+  scheduleMovablePersistence() {
+    if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
+    this.movableSaveTimer=window.setTimeout(()=>{
+      this.movableSaveTimer=undefined;
+      if(!this.persistenceReady||this.persistenceSaveInFlight){
+        this.scheduleMovablePersistence();
+        return;
+      }
+      this.movableDirty=false;
+      void this.saveWorldState();
+    },700);
   }
 
   updateGodCamera(dt:number) {
@@ -1557,10 +1570,6 @@ class TownGame {
       else if(s.kind==='tree'&&s.tags.includes('apple'))rate=.0012*seasonFactor*weatherFactor;
       else if(s.kind==='water_patch')rate=this.weather==='rain'?.0045:.0005;
       if(rate>0)s.resourceAmount=Math.min(s.resourceCapacity,s.resourceAmount+rate*dt);
-    }
-    if(this.movableDirty&&now()-this.lastMovablePushAt>600&&!this.persistenceSaveInFlight){
-      this.movableDirty=false;
-      void this.saveWorldState();
     }
   }
 
