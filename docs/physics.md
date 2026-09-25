@@ -15,6 +15,7 @@ The current fine physics layer owns:
 - axis-separated collision resolution so a character can slide along a wall rather than losing all movement;
 - dynamic character-vs-character collision using circular bodies;
 - non-blocking semantic trigger volumes;
+- deterministic segment/swept-circle contact queries across static geometry, closed authoritative doors, and caller-supplied dynamic bodies;
 - chunk-scoped deterministic terrain surfaces and ground-contact queries;
 - bounded maximum slope and vertical ground-step legality during kinematic movement;
 - chunk-scoped registration and cleanup of colliders, doors, triggers, and terrain;
@@ -52,6 +53,12 @@ Dynamic characters are not duplicated into a second persistent physics database.
 `src/world/fineTerrain.ts` is the shared boundary for authoritative flat ground. The authored home town registers a persistent `terrain:home` footprint matching its rendered 72×72 ground, while `TownGame.materializeFineChunk()` registers each distant coarse chunk in the same `FinePhysicsAuthority` used by player, NPC, and wildlife movement; `clearChunk(chunkId)` removes only chunk-scoped terrain when that fine chunk sleeps. The current rendered world is flat, so the authoritative terrain descriptors are deliberately flat too. Future procedural elevation must drive rendering and this descriptor together rather than introducing a second height source.
 
 Ground contact is deterministic when surfaces overlap: the highest surface wins, with stable surface id as the tie-break. Kinematic movement rejects candidate ground whose angle exceeds `maxSlope` or whose per-substep height discontinuity exceeds `maxGroundStep`. The returned movement result includes read-only ground contact and terrain-hit evidence; Decision Providers cannot author either outcome.
+
+## Segment and contact queries
+
+`FinePhysicsAuthority.segmentContacts()` provides deterministic finite-segment queries for future projectile, tool-use and line/contact mechanics without creating a second collision truth. Queries test the same registered static geometry and closed authoritative door bounds used by movement plus the caller's current materialized dynamic-circle snapshot. An optional sweep radius turns the point segment into a swept circle, and `excludeIds` removes the source body/owner. Results contain normalized `t`, world-space contact point and travelled distance, sorted nearest-first with stable kind/id tie-breaking. `firstSegmentContact()` is the bounded nearest-hit convenience path.
+
+Triggers and terrain are intentionally not reported as blocking contact hits in this increment: triggers remain observational, while terrain contact stays under `groundContactAt()`/kinematic slope authority. This foundation does not apply damage, spawn projectiles or grant Decision Providers hit authority; later deterministic gameplay systems may consume the query and remain responsible for validated consequences.
 
 ## Kinematic movement
 
@@ -109,7 +116,7 @@ Future uses can include door thresholds, hazard volumes, building interiors, wat
 
 ## Tests
 
-`tests/fine-physics.test.ts` covers anti-tunnelling substeps, wall sliding, dynamic body collision, separation from legacy overlap, chunk-scoped cleanup, non-blocking trigger overlap, closed-door collision, open-door traversal, and door cleanup with chunk teardown.
+`tests/fine-physics.test.ts` covers anti-tunnelling substeps, wall sliding, dynamic body collision, separation from legacy overlap, chunk-scoped cleanup, non-blocking trigger overlap, closed-door collision, open-door traversal, door cleanup with chunk teardown, deterministic segment ordering, closed/open-door contact behavior, dynamic-body exclusion, swept-radius near misses, and zero-length overlap queries.
 
 The normal CI pipeline runs these tests together with typecheck, all existing simulation tests, the production build, and the real Chromium playable smoke gate.
 
@@ -119,7 +126,7 @@ The next implementation step should extend the same authority rather than reintr
 
 1. expand the first cart body into reusable rigid-body archetypes for additional licensed movable props;
 2. deterministic stacking / support constraints and wake/sleep rules;
-3. projectile/contact queries and deterministic hit consequences;
+3. wire projectile/tool mechanics onto the implemented segment/contact-query authority with deterministic hit consequences;
 4. fine/coarse sleeping and restored-body reconciliation;
 5. only when higher-value work requires it, align invisible entrance collider/trigger semantics to the visible doors already present in authored building assets; never add a second visible door.
 

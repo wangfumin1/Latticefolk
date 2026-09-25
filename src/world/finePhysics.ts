@@ -42,6 +42,28 @@ export interface DynamicCollider {
   radius:number;
 }
 
+export type PhysicsContactKind='static'|'door'|'dynamic';
+
+export interface SegmentContactQuery {
+  start:PhysicsPoint;
+  end:PhysicsPoint;
+  /** Sweep radius. Zero performs a point segment query. */
+  radius?:number;
+  /** Materialized dynamic circles supplied by the caller; authoritative identities remain outside the physics store. */
+  dynamic?:readonly DynamicCollider[];
+  /** Collider/body ids to omit, normally the source body or projectile owner. */
+  excludeIds?:readonly string[];
+}
+
+export interface SegmentContactHit {
+  id:string;
+  kind:PhysicsContactKind;
+  /** Normalized segment fraction in [0,1]. */
+  t:number;
+  distance:number;
+  point:PhysicsPoint;
+}
+
 export interface KinematicMoveInput {
   id:string;
   position:PhysicsPoint;
@@ -78,6 +100,36 @@ function circleIntersectsCircle(x:number,z:number,radius:number,other:DynamicCol
   const dx=x-other.x,dz=z-other.z;
   const minDistance=Math.max(0,radius)+Math.max(0,other.radius);
   return dx*dx+dz*dz<minDistance*minDistance-1e-12;
+}
+
+function segmentAabbT(start:PhysicsPoint,end:PhysicsPoint,collider:StaticCollider,radius=0){
+  const expand=Math.max(0,radius);
+  const minX=collider.minX-expand,maxX=collider.maxX+expand,minZ=collider.minZ-expand,maxZ=collider.maxZ+expand;
+  const dx=end.x-start.x,dz=end.z-start.z;
+  let tMin=0,tMax=1;
+  const axis=(origin:number,delta:number,min:number,max:number)=>{
+    if(Math.abs(delta)<=1e-12)return origin>=min-1e-12&&origin<=max+1e-12;
+    let a=(min-origin)/delta,b=(max-origin)/delta;
+    if(a>b)[a,b]=[b,a];
+    tMin=Math.max(tMin,a);tMax=Math.min(tMax,b);
+    return tMin<=tMax+1e-12;
+  };
+  if(!axis(start.x,dx,minX,maxX)||!axis(start.z,dz,minZ,maxZ))return undefined;
+  return clamp(tMin,0,1);
+}
+
+function segmentCircleT(start:PhysicsPoint,end:PhysicsPoint,other:DynamicCollider,radius=0){
+  const combined=Math.max(0,radius)+Math.max(0,other.radius);
+  const sx=start.x-other.x,sz=start.z-other.z,dx=end.x-start.x,dz=end.z-start.z;
+  const c=sx*sx+sz*sz-combined*combined;
+  if(c<=1e-12)return 0;
+  const a=dx*dx+dz*dz;
+  if(a<=1e-12)return undefined;
+  const b=2*(sx*dx+sz*dz),disc=b*b-4*a*c;
+  if(disc<-1e-12)return undefined;
+  const root=Math.sqrt(Math.max(0,disc));
+  const t=(-b-root)/(2*a);
+  return t>=-1e-12&&t<=1+1e-12?clamp(t,0,1):undefined;
 }
 
 /**
@@ -165,6 +217,33 @@ export class FinePhysicsAuthority {
     const hits:PhysicsTrigger[]=[];
     for(const trigger of this.triggers.values())if(radius>0?circleIntersectsAabb(position.x,position.z,radius,trigger):position.x>=trigger.minX&&position.x<=trigger.maxX&&position.z>=trigger.minZ&&position.z<=trigger.maxZ)hits.push({...trigger});
     return hits.sort((a,b)=>a.id.localeCompare(b.id));
+  }
+
+  segmentContacts(input:SegmentContactQuery):SegmentContactHit[] {
+    const radius=Math.max(0,input.radius??0),excluded=new Set(input.excludeIds||[]);
+    const dx=input.end.x-input.start.x,dz=input.end.z-input.start.z,length=Math.hypot(dx,dz);
+    const hits:SegmentContactHit[]=[];
+    const add=(id:string,kind:PhysicsContactKind,t:number|undefined)=>{
+      if(t===undefined||excluded.has(id))return;
+      hits.push({
+        id,kind,t,distance:length*t,
+        point:{x:input.start.x+dx*t,z:input.start.z+dz*t}
+      });
+    };
+    for(const collider of this.staticColliders.values())add(collider.id,'static',segmentAabbT(input.start,input.end,collider,radius));
+    for(const door of this.doors.values())if(!door.open)add(door.id,'door',segmentAabbT(input.start,input.end,door,radius));
+    const seenDynamic=new Set<string>();
+    for(const body of input.dynamic||[]){
+      if(seenDynamic.has(body.id))continue;
+      seenDynamic.add(body.id);
+      add(body.id,'dynamic',segmentCircleT(input.start,input.end,body,radius));
+    }
+    const kindOrder:Record<PhysicsContactKind,number>={static:0,door:1,dynamic:2};
+    return hits.sort((a,b)=>a.t-b.t||kindOrder[a.kind]-kindOrder[b.kind]||a.id.localeCompare(b.id));
+  }
+
+  firstSegmentContact(input:SegmentContactQuery){
+    return this.segmentContacts(input)[0];
   }
 
   moveKinematic(input:KinematicMoveInput):KinematicMoveResult {
