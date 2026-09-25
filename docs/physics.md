@@ -23,7 +23,7 @@ The current fine physics layer owns:
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-Door state remains an invisible authority primitive; authored building assets already contain their visible doors/entrances, so no extra visible door mesh is introduced. The current movable-prop increment promotes the existing licensed town cart from static decoration to a simulation-owned movable WorldObject. The next physics phases still need broader rigid-body archetypes, stacking, projectiles/contact queries, and richer sleeping/wakeup rules.
+Door state remains an invisible authority primitive; authored building assets already contain their visible doors/entrances, so no extra visible door mesh is introduced. The movable-prop runtime now resolves simulation-owned WorldObjects through a centralized rigid-body archetype registry. The existing licensed town cart is the first instantiated `cart` archetype; radius and solver substep semantics live in that registry rather than per-instance runtime branches. The next physics phases still need stacking/support, additional licensed movable archetypes, richer projectile/tool consequences, and sleeping/wakeup rules.
 
 ## Runtime model
 
@@ -90,7 +90,7 @@ For the final waypoint, a collision inside the legal approach radius therefore c
 
 Buildings currently register their real footprint as static physics geometry and register a separate interaction trigger near the semantic interaction point. The door authority primitive is intentionally not wired into these authored buildings until wall/threshold decomposition and persistent semantic door state can be introduced as one complete gameplay increment; this avoids creating a visual doorway that disagrees with collision truth.
 
-The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, and non-pickupable crate. The town cart is no longer registered as fixed static geometry: it carries persisted `movable` / `physicsRadius` semantics, participates in the same dynamic-circle collision snapshot as characters, and is pushed only by a physics-resolved first-person contact. Its visible transform follows `WorldObjectState.position`; the mesh is never authoritative. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise.
+The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, and non-pickupable crate. The town cart is no longer registered as fixed static geometry: it persists `rigidBodyArchetype: 'cart'`, resolves radius/substep behavior from the shared registry, participates in the same dynamic-circle snapshot as characters, and is pushed only by a physics-resolved first-person contact. Old SQLite snapshots containing `movable` / `physicsRadius` are accepted and upgraded in memory to the canonical archetype field before the next normal snapshot save. Its visible transform follows `WorldObjectState.position`; the mesh is never authoritative. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise.
 
 ## Chunk lifecycle and sleeping
 
@@ -126,7 +126,7 @@ The normal CI pipeline runs these tests together with typecheck, all existing si
 
 The next implementation step should extend the same authority rather than reintroducing local collision branches:
 
-1. expand the first cart body into reusable rigid-body archetypes for additional licensed movable props;
+1. extend the implemented rigid-body archetype registry to additional licensed movable props when suitable assets are introduced;
 2. deterministic stacking / support constraints and wake/sleep rules;
 3. extend the now-runtime-used contact authority from fine wildlife attacks into projectile/tool mechanics with deterministic hit consequences;
 4. fine/coarse sleeping and restored-body reconciliation;
