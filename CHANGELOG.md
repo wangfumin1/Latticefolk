@@ -8,6 +8,7 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- First-person chop/mine resource consequences are now gated by the shared deterministic contact authority; walls and materialized bodies can physically interpose before inventory or resource state mutates. Harvestable tree bodies remain solid physical targets, and Chromium E2E now walks to a licensed apple tree and executes a real chop interaction.
 - Coarse chunk policy decisions now use deterministic pressure/surprise/staleness scheduling: bounded batches prioritize changed or stressed non-materialized chunks, stable chunks back off adaptively, and provider failures retry on a bounded floor instead of fixed 10-second polling.
 - Licensed asset-backed scene entities now enforce a strict no-primitive-fallback policy: placeholder meshes are cleared before async loading, failed assets stay visually absent with explicit runtime diagnostics, and Chromium E2E requires all registered licensed visuals in the exercised scene to resolve successfully.
 - Reusable rigid-body archetype semantics for persisted WorldObjects: the existing licensed cart now uses canonical `rigidBodyArchetype: 'cart'` physics parameters while legacy `movable` / `physicsRadius` SQLite snapshots upgrade compatibly on load; no new visible model is introduced.
