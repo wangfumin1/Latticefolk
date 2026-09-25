@@ -19,6 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
+import { resolveMovableBodyStep } from './world/movablePhysics';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
@@ -253,6 +254,8 @@ class TownGame {
   lastPersistenceSaveAt = 0;
   wildlifeDecisionPending = false;
   nextWildlifeBatchAt = 0;
+  movableDirty = false;
+  lastMovablePushAt = 0;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -335,6 +338,7 @@ class TownGame {
     this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
     this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
     this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:7,z:9},tags:['rest','sleep'],usable:true,pickupable:false});
+    this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:5.2},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,movable:true,physicsRadius:.62,storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2);
     this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-15,z:7},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
     this.addObject({id:'barrel_food',kind:'crate',name:'补给木桶',position:{x:12,z:-9},tags:['food','supply','market'],usable:false,pickupable:true,item:'apple'});
     this.addObject({id:'mine',kind:'workstation',name:'旧矿井',position:{x:29,z:25},tags:['work','resource','stone','mine'],usable:true,pickupable:false});
@@ -417,6 +421,19 @@ class TownGame {
     this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
 
+  addAssetObject(state:WorldObjectState,asset:string,assetHeight:number,rotationY=0) {
+    const g=new THREE.Group();
+    g.position.set(state.position.x,0,state.position.z);
+    g.userData={entityType:'object',entityId:state.id};
+    this.scene.add(g);
+    state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
+    this.objects.set(state.id,{state,mesh:g});
+    this.registerWorldObjectPhysics(state);
+    this.attachVisualTarget({group:g,asset,height:assetHeight,rotationY});
+    if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
+    return g;
+  }
+
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
     const g = new THREE.Group();
     let mesh: THREE.Mesh;
@@ -484,7 +501,7 @@ class TownGame {
       cart:[1.05,.52]
     };
     const extent=halfExtents[state.kind];
-    if(!extent||state.pickupable)return;
+    if(!extent||state.pickupable||state.movable)return;
     const [halfX,halfZ]=extent;
     this.physics.registerStatic({
       id:`object:${state.id}`,
@@ -638,7 +655,6 @@ class TownGame {
     this.spawnAssetDecoration('rock',-30,-8,.65,2.2);
     this.spawnAssetDecoration('flowers',-4,-7,.85,.4);
     this.spawnAssetDecoration('flowers',5,4,.8,2.3);
-    this.spawnAssetDecoration('cart',10,-10.5,1.35,Math.PI/2);
     this.spawnAssetDecoration('axe',-20.8,6.5,.9,-.4);
     this.spawnAssetDecoration('shovel',-22.8,-10.7,.9,.5);
     this.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);
@@ -877,17 +893,48 @@ class TownGame {
       const speed=(this.keys.has('ShiftLeft')?7.2:4.5)*dt;
       const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);dir.y=0;dir.normalize();
       const right=new THREE.Vector3(-dir.z,0,dir.x);const move=dir.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
-      const resolved=this.physics.moveKinematic({
+      const moveInput=()=>({
         id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
         displacement:{x:move.x,z:move.z},radius:.30,
         dynamic:this.physicsDynamicColliders('player')
       });
+      let resolved=this.physics.moveKinematic(moveInput());
+      const movableHit=resolved.dynamicHits.find(id=>id.startsWith('object:'));
+      if(movableHit&&this.tryPushMovableObject(movableHit.slice('object:'.length),{x:move.x,z:move.z})){
+        resolved=this.physics.moveKinematic(moveInput());
+      }
       this.camera.position.x=resolved.position.x;
       this.camera.position.z=resolved.position.z;
     }
     this.camera.position.y=1.7;
     this.playerPosition.x=this.camera.position.x;this.playerPosition.z=this.camera.position.z;
     this.firstPersonRotation.copy(this.camera.rotation);
+  }
+
+  tryPushMovableObject(objectId:string,displacement:Vec2) {
+    const runtime=this.objects.get(objectId);
+    if(!runtime?.state.movable||!runtime.mesh.visible)return false;
+    const state=runtime.state;
+    const colliderId=`object:${state.id}`;
+    const result=resolveMovableBodyStep(this.physics,{
+      id:colliderId,
+      position:state.position,
+      radius:state.physicsRadius??.55
+    },displacement,this.physicsDynamicColliders(colliderId).filter(collider=>collider.id!=='player'));
+    if(Math.hypot(result.displacement.x,result.displacement.z)<1e-5)return false;
+    state.position={x:result.position.x,z:result.position.z};
+    runtime.mesh.position.x=state.position.x;
+    runtime.mesh.position.z=state.position.z;
+    const triggerRadius=state.kind==='well'||state.kind==='food_stall'?1.45:1.15;
+    this.physics.registerTrigger({
+      id:`object-trigger:${state.id}`,
+      minX:state.position.x-triggerRadius,maxX:state.position.x+triggerRadius,
+      minZ:state.position.z-triggerRadius,maxZ:state.position.z+triggerRadius,
+      chunkId:state.chunkId,tag:'interaction'
+    });
+    this.movableDirty=true;
+    this.lastMovablePushAt=now();
+    return true;
   }
 
   updateGodCamera(dt:number) {
@@ -1016,6 +1063,8 @@ class TownGame {
       if(!runtime)continue;
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
+      runtime.mesh.position.x=runtime.state.position.x;
+      runtime.mesh.position.z=runtime.state.position.z;
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
     }
@@ -1508,6 +1557,10 @@ class TownGame {
       else if(s.kind==='tree'&&s.tags.includes('apple'))rate=.0012*seasonFactor*weatherFactor;
       else if(s.kind==='water_patch')rate=this.weather==='rain'?.0045:.0005;
       if(rate>0)s.resourceAmount=Math.min(s.resourceCapacity,s.resourceAmount+rate*dt);
+    }
+    if(this.movableDirty&&now()-this.lastMovablePushAt>600&&!this.persistenceSaveInFlight){
+      this.movableDirty=false;
+      void this.saveWorldState();
     }
   }
 
@@ -3041,7 +3094,9 @@ class TownGame {
   updateUi() {
     const world=this.coarseWorld.status();
     const physicsStats=this.physics.stats();
-    const activePhysicsBodies=this.npcs.size+this.wildlife.size+(this.cameraMode==='firstPerson'?1:0);
+    const movableBodies=[...this.objects.values()].filter(object=>object.state.movable&&object.mesh.visible);
+    const activePhysicsBodies=this.npcs.size+this.wildlife.size+movableBodies.length+(this.cameraMode==='firstPerson'?1:0);
+    const townCart=this.objects.get('cart_town');
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3049,6 +3104,11 @@ class TownGame {
     ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
     ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
     ui.world.dataset.playerZ=this.playerPosition.z.toFixed(4);
+    ui.world.dataset.movableBodies=String(movableBodies.length);
+    ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
+    ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
+    ui.world.dataset.cartVisualChildren=String(townCart?.mesh.children.length??0);
+    ui.world.dataset.movableDirty=String(this.movableDirty);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
@@ -3324,6 +3384,14 @@ class TownGame {
         id:`wildlife:${animal.state.id}`,
         x:animal.mesh.position.x,z:animal.mesh.position.z,
         radius:this.wildlifePhysicsRadius(animal.state)
+      });
+    }
+    for(const object of this.objects.values()){
+      if(!object.state.movable||!object.mesh.visible)continue;
+      colliders.push({
+        id:`object:${object.state.id}`,
+        x:object.state.position.x,z:object.state.position.z,
+        radius:object.state.physicsRadius??.55
       });
     }
     return excludeId?colliders.filter(collider=>collider.id!==excludeId):colliders;

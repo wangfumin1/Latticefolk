@@ -125,6 +125,10 @@ export interface WorldObjectState {
   tags: string[];
   usable: boolean;
   pickupable: boolean;
+  /** Deterministic fine-physics movable body; rendering follows authoritative position. */
+  movable?: boolean;
+  /** Circular fine-physics radius for movable props. */
+  physicsRadius?: number;
   item?: ItemKind;
   capabilities?: InteractionCapability[];
   storage?: InventoryItem[];

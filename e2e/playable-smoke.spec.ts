@@ -8,6 +8,11 @@ interface RuntimeSnapshot {
   terrainSurfaces:number;
   playerX:number;
   playerZ:number;
+  movableBodies:number;
+  cartX:number;
+  cartZ:number;
+  cartVisualChildren:number;
+  movableDirty:boolean;
 }
 
 async function runtime(page:Page):Promise<RuntimeSnapshot> {
@@ -21,7 +26,12 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       physicsBodies:read('physicsBodies'),
       terrainSurfaces:read('terrainSurfaces'),
       playerX:read('playerX'),
-      playerZ:read('playerZ')
+      playerZ:read('playerZ'),
+      movableBodies:read('movableBodies'),
+      cartX:read('cartX'),
+      cartZ:read('cartZ'),
+      cartVisualChildren:read('cartVisualChildren'),
+      movableDirty:data.movableDirty==='true'
     };
   });
 }
@@ -43,8 +53,10 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>(await runtime(page)).cartVisualChildren,{timeout:15_000}).toBeGreaterThan(0);
 
   const home=await runtime(page);
+  expect(home.movableBodies).toBeGreaterThanOrEqual(1);
   expect(home.materializedChunks).toBe(0);
   expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
 
@@ -54,16 +66,28 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
-  await moveWithKeys(page,['ShiftLeft','KeyW'],450);
+  await moveWithKeys(page,['ShiftLeft','KeyW'],650);
   const firstAfter=await runtime(page);
   expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.25);
   expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(1);
+  expect(firstAfter.cartZ).toBeLessThan(firstBefore.cartZ-.08);
+  expect(firstAfter.movableBodies).toBe(home.movableBodies);
+
+  const pushedCartZ=firstAfter.cartZ;
+  await expect.poll(async()=>!(await runtime(page)).movableDirty,{timeout:5_000}).toBe(true);
 
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
   expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
 
-  await page.screenshot({path:testInfo.outputPath('first-person.png'),fullPage:true});
+  await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
+
+  await page.reload();
+  await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>(await runtime(page)).cartVisualChildren,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>Math.abs((await runtime(page)).cartZ-pushedCartZ),{timeout:8_000}).toBeLessThan(.08);
+  await page.locator('#startBtn').click();
+  await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
   await page.keyboard.press('KeyG');
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');
