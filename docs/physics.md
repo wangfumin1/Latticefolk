@@ -2,7 +2,7 @@
 
 Latticefolk keeps physical outcomes inside deterministic simulation. Decision Providers may choose intentions such as moving toward a target, fleeing, hunting, following an owner, or interacting with an object, but they do not choose whether a body passes through a wall, overlaps another body, enters a trigger, or reaches a physical destination.
 
-This document describes the dedicated fine-physics authority and Physics v2 terrain/door foundations. It replaces the previous ad-hoc blocked-cell movement checks, owns materialized ground contact, and now provides simulation-owned door collider state. General rigid bodies are not complete.
+This document describes the dedicated fine-physics authority and Physics v2 terrain/door foundations plus the first movable-prop runtime. It replaces the previous ad-hoc blocked-cell movement checks, owns materialized ground contact, provides simulation-owned door collider state, and now routes the licensed town cart through the same deterministic collision authority. General rigid bodies and stacking are not yet complete.
 
 ## Authority boundary
 
@@ -22,7 +22,7 @@ The current fine physics layer owns:
 
 It does **not** own AI intent, navigation goals, health, damage, inventory, reproduction, population accounting, domestication state, or provider decisions.
 
-Door state is an authority primitive in this increment, not yet a claim that authored building entrances are interactive. Runtime building decomposition, semantic open/close interaction and persistence must be wired together before doors become player-visible gameplay. The next physics phases also need general rigid bodies, pushable/stackable objects, carts/vehicles, projectiles, and richer collision/contact events.
+Door state remains an invisible authority primitive; authored building assets already contain their visible doors/entrances, so no extra visible door mesh is introduced. The current movable-prop increment promotes the existing licensed town cart from static decoration to a simulation-owned movable WorldObject. The next physics phases still need broader rigid-body archetypes, stacking, projectiles/contact queries, and richer sleeping/wakeup rules.
 
 ## Runtime model
 
@@ -81,7 +81,7 @@ For the final waypoint, a collision inside the legal approach radius therefore c
 
 Buildings currently register their real footprint as static physics geometry and register a separate interaction trigger near the semantic interaction point. The door authority primitive is intentionally not wired into these authored buildings until wall/threshold decomposition and persistent semantic door state can be introduced as one complete gameplay increment; this avoids creating a visual doorway that disagrees with collision truth.
 
-The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, cart, and non-pickupable crate. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise. Pickupable objects receive interaction triggers but are not treated as fixed static geometry.
+The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, and non-pickupable crate. The town cart is no longer registered as fixed static geometry: it carries persisted `movable` / `physicsRadius` semantics, participates in the same dynamic-circle collision snapshot as characters, and is pushed only by a physics-resolved first-person contact. Its visible transform follows `WorldObjectState.position`; the mesh is never authoritative. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise.
 
 ## Chunk lifecycle and sleeping
 
@@ -91,7 +91,7 @@ A collider, door, trigger, or terrain surface may carry a `chunkId`. When that c
 
 This is the current unloaded-chunk sleeping boundary: no per-frame velocity/contact solver runs for distant chunks. Their authoritative evolution remains in the coarse deterministic simulation.
 
-Transient wildlife movement speed was already non-persistent. The door primitive itself adds no persistence schema; persistent gameplay door state will be added when semantic runtime doors are wired.
+Transient wildlife movement speed remains non-persistent. Movable prop position is already part of persisted `WorldObjectState`, so cart motion reuses the existing SQLite snapshot/restore path without a parallel physics database. A short post-push settle timer requests a save; if another world save is already in flight, the request is coalesced rather than dropped and a fresh snapshot is written immediately afterward. This also fixes a general lost-save race for other callers that request persistence during an active save. A transient movable-save failure keeps the cart dirty and schedules a capped exponential retry (1.5s up to 15s); only a confirmed successful snapshot can clear the movable dirty flag. The playable Chromium gate injects one HTTP 503 before allowing the retry through, then verifies SQLite state and reload restoration.
 
 ## God View invariant
 
@@ -117,11 +117,11 @@ The normal CI pipeline runs these tests together with typecheck, all existing si
 
 The next implementation step should extend the same authority rather than reintroducing local collision branches:
 
-1. wire authored/modular building wall geometry around explicit door thresholds;
-2. persist semantic door state and connect validated open/close interaction to `FinePhysicsAuthority`;
-3. general rigid bodies for movable props, carts and stacking;
-4. projectile/contact queries;
-5. richer sleeping/wakeup rules across fine/coarse boundaries.
+1. expand the first cart body into reusable rigid-body archetypes for additional licensed movable props;
+2. deterministic stacking / support constraints and wake/sleep rules;
+3. projectile/contact queries and deterministic hit consequences;
+4. fine/coarse sleeping and restored-body reconciliation;
+5. only when higher-value work requires it, align invisible entrance collider/trigger semantics to the visible doors already present in authored building assets; never add a second visible door.
 
 Decision Providers continue to supply only intentions. Physical contacts and their consequences remain deterministic.
 
@@ -129,4 +129,4 @@ Decision Providers continue to supply only intentions. Physical contacts and the
 
 Gameplay and physics changes are gated by a real Chromium smoke test in addition to deterministic unit tests. The Playwright path starts the actual server and Vite client, verifies the authored home ground is registered in the physics authority, enters first person with pointer lock, performs real physics-resolved movement, switches to God View, verifies the player physics body disappears and observer-camera movement does not expand discovered chunks, and captures first-person/God View screenshots as CI artifacts. Distant chunk terrain registration/teardown remains covered by deterministic materialization tests so the browser gate does not spend most of its budget walking across the authored home area. A green typecheck/unit/build job alone is not treated as playable or visual verification.
 
-The door-authority primitive currently has deterministic unit coverage but no player-visible runtime door to exercise. Browser evidence therefore verifies that the unchanged playable runtime and God View invariants remain healthy; a later runtime-door increment must add a real closed→open traversal scenario and visual evidence before merge.
+The playable gate also drives the player into the existing licensed `Cart.gltf`, verifies that contact moves the authoritative cart position, waits for the debounced SQLite save, reloads the real application, and verifies the moved cart position restores. The first-person screenshot is captured after the push so the CI artifact contains the actual licensed cart in its moved state. Door visual work is intentionally not part of this gate: buildings already contain their own visible doors.
