@@ -8,6 +8,7 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Licensed asset-backed scene entities now enforce a strict no-primitive-fallback policy: placeholder meshes are cleared before async loading, failed assets stay visually absent with explicit runtime diagnostics, and Chromium E2E requires all registered licensed visuals in the exercised scene to resolve successfully.
 - Reusable rigid-body archetype semantics for persisted WorldObjects: the existing licensed cart now uses canonical `rigidBodyArchetype: 'cart'` physics parameters while legacy `movable` / `physicsRadius` SQLite snapshots upgrade compatibly on load; no new visible model is introduced.
 - Fine wildlife predation now consumes the shared deterministic contact-query authority: `hunt` damage requires the intended prey to be the first physical contact within range, so static geometry, closed authoritative doors, and materialized bodies can block attacks while Decision Providers remain intention-only.
 - Deterministic fine-physics segment/contact queries for static geometry, closed authoritative doors, and materialized dynamic circles, including swept-radius tests, source exclusion, stable nearest-hit ordering, and zero-length overlap semantics; no projectile visual or new scene model is introduced.
