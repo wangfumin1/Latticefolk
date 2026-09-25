@@ -60,6 +60,8 @@ Ground contact is deterministic when surfaces overlap: the highest surface wins,
 
 Triggers and terrain are intentionally not reported as blocking contact hits in this increment: triggers remain observational, while terrain contact stays under `groundContactAt()`/kinematic slope authority. This foundation does not apply damage, spawn projectiles or grant Decision Providers hit authority; later deterministic gameplay systems may consume the query and remain responsible for validated consequences.
 
+The first runtime consequence consumer is fine wildlife predation. A provider may select the bounded `hunt` intention, but damage is applied only when `resolveContactAttack()` confirms the intended prey is the first contact within the fixed attack range. Static geometry, closed authoritative doors, movable bodies, the first-person player, NPCs, or other wildlife can therefore physically interpose. The resolver itself never mutates health or ecology state; deterministic wildlife simulation remains the owner of damage, hunger relief, kill/removal, and lineage outcome recording.
+
 ## Kinematic movement
 
 A caller submits current position, desired displacement, body radius, and current materialized dynamic colliders. The authority subdivides long displacement into bounded substeps, resolves X and Z independently, rejects penetration into static/dynamic/closed-door bodies, and returns the actual displacement. The caller applies only that returned displacement.
@@ -126,7 +128,7 @@ The next implementation step should extend the same authority rather than reintr
 
 1. expand the first cart body into reusable rigid-body archetypes for additional licensed movable props;
 2. deterministic stacking / support constraints and wake/sleep rules;
-3. wire projectile/tool mechanics onto the implemented segment/contact-query authority with deterministic hit consequences;
+3. extend the now-runtime-used contact authority from fine wildlife attacks into projectile/tool mechanics with deterministic hit consequences;
 4. fine/coarse sleeping and restored-body reconciliation;
 5. only when higher-value work requires it, align invisible entrance collider/trigger semantics to the visible doors already present in authored building assets; never add a second visible door.
 
