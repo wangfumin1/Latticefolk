@@ -242,6 +242,7 @@ class TownGame {
   visualTargets: VisualTarget[] = [];
   assetRoot = '/assets/quaternius';
   assetsReady = false;
+  assetLoadFailures:string[] = [];
   coarseWorld!: CoarseWorldRuntime;
   interactionOpen = false;
   interactionObjectId?: string;
@@ -421,7 +422,7 @@ class TownGame {
     g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g);
     this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
-    this.visualTargets.push({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
+    this.attachVisualTarget({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
 
   addAssetObject(state:WorldObjectState,asset:string,assetHeight:number,rotationY=0,targetWidth?:number,targetDepth?:number) {
@@ -593,7 +594,7 @@ class TownGame {
       const mesh=this.makeBlockPerson(role); mesh.position.set(x,0,z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
       const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1',haru:'male2',mei:'female2',toma:'male1',aki:'female1'};
       // Cube World characters already face the local +Z direction used by moveNpc.
-      this.visualTargets.push({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
+      this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
       this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
@@ -640,7 +641,8 @@ class TownGame {
       mineAsset:'ultimate-fantasy-rts/Mine.gltf',
       wellAsset:'medieval-village/Well.fbx'
     };
-    const loaded = await Promise.allSettled(Object.entries(defs).map(async ([key,file])=>{
+    const assetEntries=Object.entries(defs);
+    const loaded = await Promise.allSettled(assetEntries.map(async ([key,file])=>{
       if(file.toLowerCase().endsWith('.fbx')){
         const scene=await this.fbxLoader.loadAsync(`${this.assetRoot}/${file}`);
         this.assets.set(key,{scene,animations:scene.animations||[]});
@@ -649,7 +651,7 @@ class TownGame {
         this.assets.set(key,{scene:gltf.scene,animations:gltf.animations});
       }
     }));
-    const failures=loaded.filter(x=>x.status==='rejected').length;
+    this.assetLoadFailures=loaded.flatMap((result,index)=>result.status==='rejected'?[assetEntries[index]![0]]:[]);
     for(const target of this.visualTargets)this.applyVisualTarget(target);
     this.spawnAssetDecoration('bush',-16,1,1.0,.2);
     this.spawnAssetDecoration('bush',16,-2,1.0,1.7);
@@ -663,12 +665,15 @@ class TownGame {
     this.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);
     this.spawnAssetDecoration('barrel',10,-8.8,1.15,0);
     this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
-    this.assetsReady=failures===0;
-    this.log(`视觉素材：Quaternius 已加载 ${Object.keys(defs).length-failures}/${Object.keys(defs).length}（Cube World + Ultimate Fantasy RTS）`);
-    if(failures)this.log(`有 ${failures} 个素材加载失败，已保留程序化 fallback。`);
+    this.assetsReady=this.assetLoadFailures.length===0;
+    this.log(`视觉素材：Quaternius 已加载 ${assetEntries.length-this.assetLoadFailures.length}/${assetEntries.length}（Cube World + Ultimate Fantasy RTS + Medieval Village）`);
+    if(this.assetLoadFailures.length)this.log(`素材加载失败：${this.assetLoadFailures.join(', ')}；对应对象保持不可见（禁止程序化 fallback）。`);
   }
 
   attachVisualTarget(target:VisualTarget) {
+    // Asset-backed entities must never expose assistant-authored primitive geometry as a visible loading/error fallback.
+    // The semantic group and authoritative physics remain alive while the licensed visual is pending or unavailable.
+    target.group.clear();
     this.visualTargets.push(target);
     if(this.assets.has(target.asset))this.applyVisualTarget(target);
   }
@@ -3152,6 +3157,9 @@ class TownGame {
     ui.world.dataset.cartVisualChildren=String(townCart?.mesh.children.length??0);
     ui.world.dataset.movableDirty=String(this.movableDirty);
     ui.world.dataset.persistenceSavePending=String(this.persistenceSaveInFlight||this.persistenceSaveQueued);
+    ui.world.dataset.assetFailures=String(this.assetLoadFailures.length);
+    ui.world.dataset.licensedVisualTargets=String(this.visualTargets.length);
+    ui.world.dataset.licensedVisualsResolved=String(this.visualTargets.filter(target=>target.group.children.length>0).length);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;

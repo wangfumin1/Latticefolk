@@ -28,6 +28,13 @@ A decision provider is not authoritative over the world. It cannot teleport an N
 
 This boundary makes remote decision models replaceable and allows the game to continue when a provider is unavailable.
 
+
+## Licensed visual asset boundary
+
+Player-visible scene models that have a sourced third-party asset binding never expose assistant-authored primitive geometry as a loading or error fallback. Registering a licensed visual target immediately clears any construction-time placeholder from its Three.js group; the semantic entity, collision/trigger authority, and persistence state continue to exist while the asset loads. On success the licensed model is attached to that same group. On failure the visual stays absent and the failed asset key is surfaced to runtime/E2E observability rather than substituting a Box/Cylinder/Cone/Plane mesh.
+
+The Chromium playable gate requires every registered licensed visual target in the exercised home scene to resolve with zero asset-load failures. This policy currently covers asset-backed town buildings, NPC characters, trees, the well, crate/barrel/mine props, and the licensed movable cart. Legacy semantic objects that still lack a suitable licensed asset remain separate visual debt and must be replaced with sourced assets when that area is touched; this policy does not legitimize their primitive visuals.
+
 ## NPC decision cycle
 
 1. Build an NPC-centric world snapshot.

@@ -14,6 +14,9 @@ interface RuntimeSnapshot {
   cartVisualChildren:number;
   movableDirty:boolean;
   persistenceSavePending:boolean;
+  assetFailures:number;
+  licensedVisualTargets:number;
+  licensedVisualsResolved:number;
 }
 
 async function runtime(page:Page):Promise<RuntimeSnapshot> {
@@ -33,7 +36,10 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cartZ:read('cartZ'),
       cartVisualChildren:read('cartVisualChildren'),
       movableDirty:data.movableDirty==='true',
-      persistenceSavePending:data.persistenceSavePending==='true'
+      persistenceSavePending:data.persistenceSavePending==='true',
+      assetFailures:read('assetFailures'),
+      licensedVisualTargets:read('licensedVisualTargets'),
+      licensedVisualsResolved:read('licensedVisualsResolved')
     };
   });
 }
@@ -66,6 +72,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect(page.locator('#game canvas')).toBeVisible();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
   await expect.poll(async()=>(await runtime(page)).cartVisualChildren,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:15_000}).toBe(0);
+  await expect.poll(async()=>{const state=await runtime(page);return state.licensedVisualTargets>0&&state.licensedVisualsResolved===state.licensedVisualTargets;},{timeout:15_000}).toBe(true);
 
   const home=await runtime(page);
   expect(home.movableBodies).toBeGreaterThanOrEqual(1);
@@ -121,6 +129,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await page.reload();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
   await expect.poll(async()=>(await runtime(page)).cartVisualChildren,{timeout:15_000}).toBeGreaterThan(0);
+  await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:15_000}).toBe(0);
+  await expect.poll(async()=>{const state=await runtime(page);return state.licensedVisualTargets>0&&state.licensedVisualsResolved===state.licensedVisualTargets;},{timeout:15_000}).toBe(true);
   await expect.poll(async()=>Math.abs((await runtime(page)).cartZ-pushedCartZ),{timeout:8_000}).toBeLessThan(.08);
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
