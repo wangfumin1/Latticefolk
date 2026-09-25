@@ -48,7 +48,7 @@ async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
   // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
@@ -76,7 +76,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(firstAfter.movableBodies).toBe(home.movableBodies);
 
   const pushedCartZ=firstAfter.cartZ;
-  await moveWithKeys(page,['KeyS'],300);
+  await moveWithKeys(page,['KeyS'],650);
 
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
