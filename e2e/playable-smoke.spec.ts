@@ -77,12 +77,19 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
   let injectedSaveFailure=false;
+  let releaseSaveRetry=()=>{};
+  const saveRetryGate=new Promise<void>(resolve=>{releaseSaveRetry=resolve;});
   await page.route('**/api/world/state',async route=>{
-    if(route.request().method()==='POST'&&!injectedSaveFailure){
+    if(route.request().method()!=='POST'){
+      await route.continue();
+      return;
+    }
+    if(!injectedSaveFailure){
       injectedSaveFailure=true;
       await route.fulfill({status:503,contentType:'application/json',body:'{"error":"e2e-injected-save-failure"}'});
       return;
     }
+    await saveRetryGate;
     await route.continue();
   });
 
@@ -99,8 +106,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await moveWithKeys(page,['KeyS'],650);
 
   await expect.poll(()=>injectedSaveFailure,{timeout:8_000}).toBe(true);
-  await expect.poll(async()=>(await runtime(page)).persistenceSavePending,{timeout:8_000}).toBe(false);
-  expect((await runtime(page)).movableDirty).toBe(true);
+  await expect.poll(async()=>(await runtime(page)).movableDirty,{timeout:8_000}).toBe(true);
+  releaseSaveRetry();
 
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
