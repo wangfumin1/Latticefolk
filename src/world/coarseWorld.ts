@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
+import { captureChunkDecisionSignal, nextChunkDecisionDelay, rankChunkDecisionCandidates, type ChunkDecisionSignal } from './decisionScheduling';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -77,6 +78,7 @@ export class CoarseWorldRuntime {
   private worldPending=false;
   private activeCenterCx=Number.NaN;
   private activeCenterCz=Number.NaN;
+  private decisionBaselines=new Map<string,ChunkDecisionSignal>();
 
   constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
     this.root.name='coarse-world';
@@ -260,17 +262,21 @@ export class CoarseWorldRuntime {
   }
 
   update(ctx:UpdateContext) {
+    let decisionStateChanged=false;
     this.simulationAccumulator+=ctx.dt;
     if(this.simulationAccumulator>=1){
       const steps=Math.floor(this.simulationAccumulator);
       this.simulationAccumulator-=steps;
       for(const chunk of this.chunks.values())if(!this.materialized.has(chunk.id))this.simulate(chunk,steps,ctx.weather,ctx.day);
+      decisionStateChanged=true;
     }
     this.flowAccumulator+=ctx.dt;
     if(this.flowAccumulator>=5){
       this.flowAccumulator%=5;
       this.runConservedFlows(ctx);
+      decisionStateChanged=true;
     }
+    if(decisionStateChanged)this.wakeChunkDecisionDeadline();
     const tick=performance.now();
     if(!this.pending&&tick>=this.nextDecisionAt)void this.requestBatch(ctx);
     if(!this.regionPending&&tick>=this.nextRegionDecisionAt)void this.requestRegions(ctx);
@@ -439,38 +445,51 @@ export class CoarseWorldRuntime {
     }
   }
 
-  private pressure(chunk:CoarseChunkState) {
-    const scarcity=(100-chunk.food)+(100-chunk.water);
-    const instability=chunk.danger+(100-chunk.ecology)*.7;
-    const stale=chunk.lastDecisionAt===0?180:Math.min(180,(Date.now()-chunk.lastDecisionAt)/1000);
-    return scarcity*.55+instability*.5+stale;
+  private scheduledChunkDecisions(limit=8) {
+    return rankChunkDecisionCandidates(this.chunks.values(),this.decisionBaselines,Date.now(),this.materialized,limit);
+  }
+
+  private wakeChunkDecisionDeadline() {
+    if(this.pending)return;
+    const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1));
+    const wakeAt=performance.now()+delay;
+    if(wakeAt<this.nextDecisionAt)this.nextDecisionAt=wakeAt;
   }
 
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
-    const priority=(chunk:CoarseChunkState)=>(chunk.decisionVersion===0?10_000:0)+this.pressure(chunk);
-    const chunks=[...this.chunks.values()].filter(chunk=>!this.materialized.has(chunk.id)).sort((a,b)=>priority(b)-priority(a)).slice(0,8);
+    const chunks=this.scheduledChunkDecisions(8).map(candidate=>candidate.chunk);
+    if(!chunks.length){
+      this.pending=false;
+      this.nextDecisionAt=performance.now()+30_000;
+      return;
+    }
+    let completed=false;
     const body:ChunkDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,chunks};
     try{
       const r=await fetch('/api/world/chunks/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       const result=await r.json() as ChunkDecisionResponse;
       if(!r.ok)throw new Error('chunk decision failed');
+      const decidedAt=Date.now();
       for(const decision of result.decisions){
         const chunk=this.chunks.get(decision.chunkId);if(!chunk)continue;
         chunk.strategy=decision.strategy;
         chunk.migrationPolicy=decision.migrationPolicy;
         chunk.ecologyPolicy=decision.ecologyPolicy;
-        chunk.lastDecisionAt=Date.now();
+        chunk.lastDecisionAt=decidedAt;
         chunk.decisionVersion++;
+        this.decisionBaselines.set(chunk.id,captureChunkDecisionSignal(chunk,decidedAt));
       }
       this.lastSource=result.source;
       this.lastBatchSize=result.decisions.length;
+      completed=result.decisions.length>0;
     }catch{
       this.lastSource='offline';
       this.lastBatchSize=0;
     }finally{
       this.pending=false;
-      this.nextDecisionAt=performance.now()+10_000;
+      const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1)):15_000;
+      this.nextDecisionAt=performance.now()+delay;
     }
   }
 
@@ -487,6 +506,7 @@ export class CoarseWorldRuntime {
     if(value)this.materialized.add(chunkId);else this.materialized.delete(chunkId);
     const marker=this.markers.get(chunkId);
     if(marker)marker.visible=!value;
+    if(!value)this.wakeChunkDecisionDeadline();
   }
 
   applyFineSummary(chunkId:string,patch:Partial<Pick<CoarseChunkState,'food'|'wood'|'water'|'ecology'|'danger'|'prosperity'>>) {
@@ -496,6 +516,7 @@ export class CoarseWorldRuntime {
       const value=patch[key];
       if(typeof value==='number')chunk[key]=clamp(value);
     }
+    this.wakeChunkDecisionDeadline();
   }
 
   private describeFlow(flow:WorldFlowRecord) {

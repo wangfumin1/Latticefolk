@@ -59,6 +59,8 @@ Latticefolk now has two live simulation levels:
 
 Distant chunks are not AI-free placeholders. The active decision provider receives bounded chunk batches through `/api/world/chunks/decide`. A Jev provider decomposes each chunk into parallel strategy, migration, and ecology choices in one request. The deterministic world simulation then converts those policies into bounded numeric consequences.
 
+Chunk decision scheduling is simulation-driven rather than a fixed provider polling loop. After each successful bounded decision, the runtime captures a transient baseline of population, resources, ecology, danger, and prosperity. Deterministic local scheduling combines scarcity/instability pressure, decision staleness, and normalized state surprise to rank non-materialized chunks. New or restored chunks are refreshed promptly, large state changes shorten the next provider wake-up, calm chunks back off to a longer cadence, and provider failures use an explicit retry floor. These scheduling signals decide only when and which bounded policy questions are asked; they never mutate authoritative world state and remain subject to the shared provider budget controller.
+
 This preserves the same authority boundary used for NPCs: a model selects policy; simulation code owns state mutation.
 
 The next required step is **round-trip LOD**: when a distant chunk becomes local, aggregate state must materialize into concrete inhabitants/resources/buildings; when it becomes distant, those entities must collapse back into aggregate state without losing persistent consequences.
