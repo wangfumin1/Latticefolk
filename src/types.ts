@@ -116,6 +116,8 @@ export interface NpcState {
   lastDialogue?: string;
 }
 
+export type RigidBodyArchetypeId = 'cart';
+
 export interface WorldObjectState {
   id: string;
   chunkId?: string;
@@ -125,9 +127,11 @@ export interface WorldObjectState {
   tags: string[];
   usable: boolean;
   pickupable: boolean;
-  /** Deterministic fine-physics movable body; rendering follows authoritative position. */
+  /** Canonical deterministic rigid-body semantics. Rendering follows authoritative position. */
+  rigidBodyArchetype?: RigidBodyArchetypeId;
+  /** @deprecated Legacy persisted flag; upgraded to rigidBodyArchetype on load. */
   movable?: boolean;
-  /** Circular fine-physics radius for movable props. */
+  /** @deprecated Legacy persisted radius; used only while upgrading old movable snapshots. */
   physicsRadius?: number;
   item?: ItemKind;
   capabilities?: InteractionCapability[];
