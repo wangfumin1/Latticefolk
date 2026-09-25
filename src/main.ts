@@ -19,7 +19,7 @@ import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlif
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
 import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
-import { resolveMovableBodyStep } from './world/movablePhysics';
+import { normalizeWorldObjectRigidBody, resolveMovableBodyStep, worldObjectRigidBody } from './world/movablePhysics';
 import { resolveContactAttack } from './world/contactCombat';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
@@ -341,7 +341,7 @@ class TownGame {
     this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
     this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
     this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:7,z:9},tags:['rest','sleep'],usable:true,pickupable:false});
-    this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:4.7},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,movable:true,physicsRadius:1.05,storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2,2.0,2.0);
+    this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:4.7},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,rigidBodyArchetype:'cart',storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2,2.0,2.0);
     this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-15,z:7},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
     this.addObject({id:'barrel_food',kind:'crate',name:'补给木桶',position:{x:12,z:-9},tags:['food','supply','market'],usable:false,pickupable:true,item:'apple'});
     this.addObject({id:'mine',kind:'workstation',name:'旧矿井',position:{x:29,z:25},tags:['work','resource','stone','mine'],usable:true,pickupable:false});
@@ -504,7 +504,7 @@ class TownGame {
       cart:[1.05,.52]
     };
     const extent=halfExtents[state.kind];
-    if(!extent||state.pickupable||state.movable)return;
+    if(!extent||state.pickupable||worldObjectRigidBody(state))return;
     const [halfX,halfZ]=extent;
     this.physics.registerStatic({
       id:`object:${state.id}`,
@@ -916,13 +916,15 @@ class TownGame {
 
   tryPushMovableObject(objectId:string,displacement:Vec2) {
     const runtime=this.objects.get(objectId);
-    if(!runtime?.state.movable||!runtime.mesh.visible)return false;
+    if(!runtime?.mesh.visible)return false;
     const state=runtime.state;
+    const archetype=worldObjectRigidBody(state);
+    if(!archetype)return false;
     const colliderId=`object:${state.id}`;
     const result=resolveMovableBodyStep(this.physics,{
       id:colliderId,
       position:state.position,
-      radius:state.physicsRadius??.55
+      archetype
     },displacement,this.physicsDynamicColliders(colliderId).filter(collider=>collider.id!=='player'));
     if(Math.hypot(result.displacement.x,result.displacement.z)<1e-5)return false;
     state.position={x:result.position.x,z:result.position.z};
@@ -1076,9 +1078,10 @@ class TownGame {
       if(!runtime)continue;
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
+      normalizeWorldObjectRigidBody(runtime.state);
       runtime.mesh.position.x=runtime.state.position.x;
       runtime.mesh.position.z=runtime.state.position.z;
-      if(runtime.state.movable)this.registerWorldObjectPhysics(runtime.state);
+      if(worldObjectRigidBody(runtime.state))this.registerWorldObjectPhysics(runtime.state);
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
     }
@@ -3133,7 +3136,7 @@ class TownGame {
   updateUi() {
     const world=this.coarseWorld.status();
     const physicsStats=this.physics.stats();
-    const movableBodies=[...this.objects.values()].filter(object=>object.state.movable&&object.mesh.visible);
+    const movableBodies=[...this.objects.values()].filter(object=>worldObjectRigidBody(object.state)&&object.mesh.visible);
     const activePhysicsBodies=this.npcs.size+this.wildlife.size+movableBodies.length+(this.cameraMode==='firstPerson'?1:0);
     const townCart=this.objects.get('cart_town');
     ui.world.dataset.cameraMode=this.cameraMode;
@@ -3427,11 +3430,13 @@ class TownGame {
       });
     }
     for(const object of this.objects.values()){
-      if(!object.state.movable||!object.mesh.visible)continue;
+      if(!object.mesh.visible)continue;
+      const archetype=worldObjectRigidBody(object.state);
+      if(!archetype)continue;
       colliders.push({
         id:`object:${object.state.id}`,
         x:object.state.position.x,z:object.state.position.z,
-        radius:object.state.physicsRadius??.55
+        radius:archetype.radius
       });
     }
     return excludeId?colliders.filter(collider=>collider.id!==excludeId):colliders;
