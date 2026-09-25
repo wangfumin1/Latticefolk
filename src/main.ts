@@ -257,6 +257,7 @@ class TownGame {
   nextWildlifeBatchAt = 0;
   movableDirty = false;
   movableSaveTimer?: number;
+  movableSaveRetryMs = 1500;
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -934,17 +935,18 @@ class TownGame {
       chunkId:state.chunkId,tag:'interaction'
     });
     this.movableDirty=true;
+    this.movableSaveRetryMs=1500;
     this.scheduleMovablePersistence();
     return true;
   }
 
-  scheduleMovablePersistence() {
+  scheduleMovablePersistence(delayMs=700) {
     if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
     this.movableSaveTimer=window.setTimeout(()=>{
       this.movableSaveTimer=undefined;
       this.persistenceSaveQueued=true;
       void this.saveWorldState();
-    },700);
+    },Math.max(250,delayMs));
   }
 
   updateGodCamera(dt:number) {
@@ -1087,10 +1089,12 @@ class TownGame {
       this.persistenceSaveQueued=true;
       return;
     }
+    let lastSaveSucceeded=false;
     do{
       this.persistenceSaveQueued=false;
       this.persistenceSaveInFlight=true;
       this.lastPersistenceSaveAt=now();
+      lastSaveSucceeded=false;
       try{
         this.flushWildlifeHabitatExposure();
         const snapshot=this.buildWorldSnapshot();
@@ -1098,13 +1102,21 @@ class TownGame {
           method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
         });
         if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        lastSaveSucceeded=true;
       }catch(error){
         this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
       }finally{
         this.persistenceSaveInFlight=false;
       }
     }while(this.persistenceSaveQueued&&this.persistenceReady);
-    if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
+    if(lastSaveSucceeded){
+      this.movableSaveRetryMs=1500;
+      if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
+    }else if(this.movableDirty&&this.movableSaveTimer===undefined){
+      const retryMs=this.movableSaveRetryMs;
+      this.movableSaveRetryMs=Math.min(15000,retryMs*2);
+      this.scheduleMovablePersistence(retryMs);
+    }
   }
 
   flushWorldBeacon() {

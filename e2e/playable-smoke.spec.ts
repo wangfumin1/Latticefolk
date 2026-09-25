@@ -76,6 +76,16 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
+  let injectedSaveFailure=false;
+  await page.route('**/api/world/state',async route=>{
+    if(route.request().method()==='POST'&&!injectedSaveFailure){
+      injectedSaveFailure=true;
+      await route.fulfill({status:503,contentType:'application/json',body:'{"error":"e2e-injected-save-failure"}'});
+      return;
+    }
+    await route.continue();
+  });
+
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
   await moveWithKeys(page,['ShiftLeft','KeyW'],650);
@@ -88,13 +98,19 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const pushedCartZ=firstAfter.cartZ;
   await moveWithKeys(page,['KeyS'],650);
 
+  await expect.poll(()=>injectedSaveFailure,{timeout:8_000}).toBe(true);
+  await expect.poll(async()=>(await runtime(page)).persistenceSavePending,{timeout:8_000}).toBe(false);
+  expect((await runtime(page)).movableDirty).toBe(true);
+
   const worldStatusBox=await page.locator('#worldStatus').boundingBox();
   expect(worldStatusBox).not.toBeNull();
   expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
   await expect.poll(async()=>Math.abs((await persistedCartZ(page))-pushedCartZ),{timeout:45_000}).toBeLessThan(.08);
+  await expect.poll(async()=>(await runtime(page)).movableDirty,{timeout:8_000}).toBe(false);
 
+  await page.unroute('**/api/world/state');
   await page.reload();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
   await expect.poll(async()=>(await runtime(page)).cartVisualChildren,{timeout:15_000}).toBeGreaterThan(0);

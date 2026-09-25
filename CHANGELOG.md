@@ -9,6 +9,7 @@ The project is currently pre-1.0 and evolving rapidly.
 ### Added
 
 - First persisted movable-prop runtime: the existing licensed Quaternius cart is now a semantic WorldObject with authoritative position, shared fine-physics collision/pushing, NPC/wildlife avoidance, debounced SQLite persistence/restore, and real Chromium push→reload coverage; no new visible model or primitive fallback was introduced.
+- Movable persistence is transient-failure safe: failed saves retain dirty state, retry with capped backoff, and Chromium E2E injects an HTTP 503 before verifying eventual SQLite persistence and reload restoration.
 - Unified capability-based interactions for buildings, props, resources, storage, and the new CC0 well asset.
 - Expanded NPC action set with harvesting, crafting, trade, gifts, deliveries, water collection, patrols, visits, sleep, and exploration.
 - Jev token/cost budget controller with God-mode runtime controls, presets, caching, confidence gating, and call-class accounting.

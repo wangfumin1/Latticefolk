@@ -91,7 +91,7 @@ A collider, door, trigger, or terrain surface may carry a `chunkId`. When that c
 
 This is the current unloaded-chunk sleeping boundary: no per-frame velocity/contact solver runs for distant chunks. Their authoritative evolution remains in the coarse deterministic simulation.
 
-Transient wildlife movement speed remains non-persistent. Movable prop position is already part of persisted `WorldObjectState`, so cart motion reuses the existing SQLite snapshot/restore path without a parallel physics database. A short post-push settle timer requests a save; if another world save is already in flight, the request is coalesced rather than dropped and a fresh snapshot is written immediately afterward. This also fixes a general lost-save race for other callers that request persistence during an active save.
+Transient wildlife movement speed remains non-persistent. Movable prop position is already part of persisted `WorldObjectState`, so cart motion reuses the existing SQLite snapshot/restore path without a parallel physics database. A short post-push settle timer requests a save; if another world save is already in flight, the request is coalesced rather than dropped and a fresh snapshot is written immediately afterward. This also fixes a general lost-save race for other callers that request persistence during an active save. A transient movable-save failure keeps the cart dirty and schedules a capped exponential retry (1.5s up to 15s); only a confirmed successful snapshot can clear the movable dirty flag. The playable Chromium gate injects one HTTP 503 before allowing the retry through, then verifies SQLite state and reload restoration.
 
 ## God View invariant
 
