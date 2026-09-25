@@ -45,6 +45,16 @@ async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
   await page.waitForTimeout(120);
 }
 
+async function persistedCartZ(page:Page):Promise<number> {
+  return page.evaluate(async()=>{
+    const response=await fetch('/api/world/state',{cache:'no-store'});
+    if(!response.ok)return Number.NaN;
+    const data=await response.json() as {snapshot?:{homeObjects?:Array<{id?:string;position?:{z?:number}}>}|null};
+    const cart=data.snapshot?.homeObjects?.find(object=>object.id==='cart_town');
+    return Number(cart?.position?.z??Number.NaN);
+  });
+}
+
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
   // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
@@ -83,10 +93,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
-  await expect.poll(async()=>{
-    const state=await runtime(page);
-    return !state.movableDirty&&!state.persistenceSavePending;
-  },{timeout:12_000}).toBe(true);
+  await expect.poll(async()=>Math.abs((await persistedCartZ(page))-pushedCartZ),{timeout:45_000}).toBeLessThan(.08);
 
   await page.reload();
   await expect.poll(async()=>(await runtime(page)).terrainSurfaces,{timeout:15_000}).toBeGreaterThan(0);
