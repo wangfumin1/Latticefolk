@@ -1075,6 +1075,7 @@ class TownGame {
       runtime.state.chunkId=undefined;
       runtime.mesh.position.x=runtime.state.position.x;
       runtime.mesh.position.z=runtime.state.position.z;
+      if(runtime.state.movable)this.registerWorldObjectPhysics(runtime.state);
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
     }
