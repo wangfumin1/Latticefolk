@@ -348,7 +348,7 @@ Living domestication state persists naturally in fine wildlife JSON and wildlife
 
 ## Fine physics authority v1
 
-Fine simulation now has one deterministic collision authority: `FinePhysicsAuthority` in `src/world/finePhysics.ts`. Navigation/controllers still produce desired motion, but they no longer apply position directly. Player input, NPC path following, and wildlife movement controllers submit a desired displacement plus a body radius; physics returns the only displacement that may be committed to authoritative fine position.
+Fine simulation now has one deterministic collision authority: `FinePhysicsAuthority` in `src/world/finePhysics.ts`. Navigation/controllers still produce desired motion, but they no longer apply position directly. Player input, NPC path following, and wildlife movement controllers submit a desired displacement plus a body radius; physics returns the only displacement that may be committed to authoritative fine position. Static colliders, authoritative doors, triggers, and terrain are indexed by a deterministic spatial hash so local movement/contact/ground queries inspect bounded candidates before applying the unchanged exact geometry tests; the index is only an acceleration structure and does not own simulation state.
 
 Materialized static collision is represented as chunk-owned 2D AABBs. Buildings register their footprint, semantic solid WorldObjects register kind-specific bounds, and fine chunk teardown removes all colliders/triggers owned by that chunk. The previous runtime `blocked Set` has been removed, so A* path passability and physical movement query the same static geometry instead of maintaining two collision truths.
 
