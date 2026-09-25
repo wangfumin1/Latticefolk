@@ -83,3 +83,54 @@ test('ground step limit blocks discontinuous ledges even when both surfaces are 
   const moved=physics.moveKinematic({id:'npc',position:{x:-.4,z:0},displacement:{x:1,z:0},radius:.2,maxGroundStep:.3});
   assert.ok(moved.terrainHits.includes('high'));assert.ok(moved.position.x<=0);
 });
+
+
+test('segment contacts report deterministic nearest blocking geometry and stable ties',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerStatic({id:'wall_b',minX:2,maxX:2.5,minZ:-1,maxZ:1});
+  physics.registerStatic({id:'wall_a',minX:2,maxX:2.5,minZ:-1,maxZ:1});
+  physics.registerStatic({id:'wall_far',minX:4,maxX:4.5,minZ:-1,maxZ:1});
+  const hits=physics.segmentContacts({start:{x:0,z:0},end:{x:6,z:0}});
+  assert.deepEqual(hits.map(hit=>hit.id),['wall_a','wall_b','wall_far']);
+  assert.ok(Math.abs(hits[0].t-1/3)<1e-9);
+  assert.deepEqual(hits[0].point,{x:2,z:0});
+  assert.equal(physics.firstSegmentContact({start:{x:0,z:0},end:{x:6,z:0}})?.id,'wall_a');
+});
+
+test('segment contacts respect authoritative door state without any render dependency',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerDoor({id:'door:existing-asset-entrance',minX:2,maxX:2.2,minZ:-.5,maxZ:.5,open:false});
+  assert.equal(physics.firstSegmentContact({start:{x:0,z:0},end:{x:4,z:0}})?.kind,'door');
+  physics.setDoorOpen('door:existing-asset-entrance',true);
+  assert.equal(physics.firstSegmentContact({start:{x:0,z:0},end:{x:4,z:0}}),undefined);
+});
+
+test('segment contacts include caller-supplied dynamic circles and can exclude the source body',()=>{
+  const physics=new FinePhysicsAuthority();
+  const dynamic=[{id:'projectile-owner',x:.2,z:0,radius:.35},{id:'wildlife:wolf',x:3,z:0,radius:.4}];
+  const hit=physics.firstSegmentContact({start:{x:0,z:0},end:{x:5,z:0},radius:.1,dynamic,excludeIds:['projectile-owner']});
+  assert.equal(hit?.id,'wildlife:wolf');
+  assert.equal(hit?.kind,'dynamic');
+  assert.ok(Math.abs((hit?.distance??0)-2.5)<1e-9);
+});
+
+test('segment sweep radius catches a near-miss that a point query does not',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerStatic({id:'near-wall',minX:2,maxX:3,minZ:.3,maxZ:.8});
+  assert.equal(physics.firstSegmentContact({start:{x:0,z:0},end:{x:4,z:0}}),undefined);
+  const swept=physics.firstSegmentContact({start:{x:0,z:0},end:{x:4,z:0},radius:.35});
+  assert.equal(swept?.id,'near-wall');
+  assert.ok((swept?.t??1)<.5);
+});
+
+test('zero-length segment reports overlap at t zero and deduplicates repeated dynamic ids',()=>{
+  const physics=new FinePhysicsAuthority();
+  const hits=physics.segmentContacts({
+    start:{x:1,z:1},end:{x:1,z:1},
+    dynamic:[{id:'npc:a',x:1,z:1,radius:.3},{id:'npc:a',x:1,z:1,radius:.3}]
+  });
+  assert.equal(hits.length,1);
+  assert.equal(hits[0]?.id,'npc:a');
+  assert.equal(hits[0]?.t,0);
+  assert.equal(hits[0]?.distance,0);
+});
