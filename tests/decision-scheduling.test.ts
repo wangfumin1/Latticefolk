@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import type { CoarseChunkState } from '../src/types.js';
+import { CoarseWorldRuntime } from '../src/world/coarseWorld.js';
 import {
   boundedDecisionIdWindow,
   captureChunkDecisionSignal,
@@ -88,4 +90,20 @@ test('bounded decision scan preserves full-world behavior below the cap',()=>{
   assert.deepEqual(window.ids,ids);
   assert.equal(window.nextCursor,0);
   assert.equal(window.scanned,3);
+});
+
+
+test('deadline probes do not consume the discovered-world decision cursor',()=>{
+  const runtime=new CoarseWorldRuntime(new THREE.Scene(),'decision-scan-probe-test');
+  for(let i=20;i<320;i++)runtime.ensureChunk(i,20);
+  const internal=runtime as unknown as {
+    decisionScanCursor:number;
+    scheduledChunkDecisions(limit?:number):{candidates:unknown[];nextCursor:number};
+  };
+  const first=internal.scheduledChunkDecisions(1);
+  assert.equal(internal.decisionScanCursor,0);
+  assert.equal(first.nextCursor,256);
+  const second=internal.scheduledChunkDecisions(1);
+  assert.equal(internal.decisionScanCursor,0);
+  assert.equal(second.nextCursor,first.nextCursor);
 });
