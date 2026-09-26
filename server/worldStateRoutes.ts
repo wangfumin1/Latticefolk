@@ -1,17 +1,30 @@
 import type { Express } from 'express';
-import { WorldPersistence } from './worldPersistence.js';
+import { WorldPersistence, WorldPersistenceConflictError } from './worldPersistence.js';
 import { validateWorldPersistenceSnapshot, WorldSnapshotValidationError } from './worldSnapshotValidation.js';
 
 export function registerWorldStateRoutes(app:Express,worldStore:WorldPersistence) {
   app.get('/api/world/state', (_req, res) => {
-    res.json({ snapshot:worldStore.load(), stats:worldStore.stats() });
+    res.json({ snapshot:worldStore.load(), revision:worldStore.revision(), stats:worldStore.stats() });
   });
 
   app.post('/api/world/state', (req, res) => {
     try {
-      const snapshot=validateWorldPersistenceSnapshot(req.body);
-      res.json(worldStore.save(snapshot));
+      const body=req.body as {snapshot?:unknown;expectedRevision?:unknown}|undefined;
+      if(!body||!Number.isSafeInteger(body.expectedRevision)||Number(body.expectedRevision)<0){
+        res.status(400).json({error:'World persistence write requires a non-negative integer expectedRevision'});
+        return;
+      }
+      const snapshot=validateWorldPersistenceSnapshot(body.snapshot);
+      res.json(worldStore.save(snapshot,Number(body.expectedRevision)));
     } catch(error) {
+      if(error instanceof WorldPersistenceConflictError){
+        res.status(409).json({
+          error:'World persistence revision conflict',
+          expectedRevision:error.expectedRevision,
+          currentRevision:error.currentRevision
+        });
+        return;
+      }
       if(error instanceof WorldSnapshotValidationError){
         res.status(400).json({error:'Invalid world persistence payload',details:error.issues});
         return;
