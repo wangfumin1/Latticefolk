@@ -147,9 +147,14 @@ export class FinePhysicsAuthority {
   private doorIndex=new SpatialHashIndex<DoorCollider>(8);
   private triggerIndex=new SpatialHashIndex<PhysicsTrigger>(8);
   private terrainIndex=new SpatialHashIndex<TerrainSurface>(16);
+  private sleepingStatic=new Map<string,StaticCollider>();
+  private sleepingDoors=new Map<string,DoorCollider>();
+  private sleepingTriggers=new Map<string,PhysicsTrigger>();
+  private sleepingTerrain=new Map<string,TerrainSurface>();
 
   registerStatic(collider:StaticCollider){
     const normalized=this.normalize(collider);
+    this.sleepingStatic.delete(normalized.id);
     this.staticColliders.set(normalized.id,normalized);
     this.staticIndex.upsert(normalized);
     return normalized;
@@ -159,6 +164,7 @@ export class FinePhysicsAuthority {
 
   registerDoor(door:DoorCollider){
     const normalized={...this.normalize(door),open:Boolean(door.open)};
+    this.sleepingDoors.delete(normalized.id);
     this.doors.set(normalized.id,normalized);
     this.doorIndex.upsert(normalized);
     return {...normalized};
@@ -178,6 +184,7 @@ export class FinePhysicsAuthority {
 
   registerTrigger(trigger:PhysicsTrigger){
     const normalized={...this.normalize(trigger),tag:trigger.tag};
+    this.sleepingTriggers.delete(normalized.id);
     this.triggers.set(normalized.id,normalized);
     this.triggerIndex.upsert(normalized);
     return normalized;
@@ -187,6 +194,7 @@ export class FinePhysicsAuthority {
 
   registerTerrain(surface:TerrainSurface){
     const normalized={...this.normalize(surface),originX:Number.isFinite(surface.originX)?surface.originX:0,originZ:Number.isFinite(surface.originZ)?surface.originZ:0,originY:Number.isFinite(surface.originY)?surface.originY:0,slopeX:Number.isFinite(surface.slopeX)?surface.slopeX:0,slopeZ:Number.isFinite(surface.slopeZ)?surface.slopeZ:0};
+    this.sleepingTerrain.delete(normalized.id);
     this.terrain.set(normalized.id,normalized);
     this.terrainIndex.upsert(normalized);
     return normalized;
@@ -206,21 +214,31 @@ export class FinePhysicsAuthority {
     return best;
   }
 
+  sleepChunk(chunkId:string){
+    this.sleepChunkEntries(this.staticColliders,this.staticIndex,this.sleepingStatic,chunkId);
+    this.sleepChunkEntries(this.doors,this.doorIndex,this.sleepingDoors,chunkId);
+    this.sleepChunkEntries(this.triggers,this.triggerIndex,this.sleepingTriggers,chunkId);
+    this.sleepChunkEntries(this.terrain,this.terrainIndex,this.sleepingTerrain,chunkId);
+  }
+
   clearChunk(chunkId:string){
     this.removeChunkEntries(this.staticColliders,this.staticIndex,chunkId);
     this.removeChunkEntries(this.doors,this.doorIndex,chunkId);
     this.removeChunkEntries(this.triggers,this.triggerIndex,chunkId);
     this.removeChunkEntries(this.terrain,this.terrainIndex,chunkId);
+    this.removeSleepingChunkEntries(this.sleepingStatic,chunkId);this.removeSleepingChunkEntries(this.sleepingDoors,chunkId);this.removeSleepingChunkEntries(this.sleepingTriggers,chunkId);this.removeSleepingChunkEntries(this.sleepingTerrain,chunkId);
   }
 
   clear(){
     this.staticColliders.clear();this.doors.clear();this.triggers.clear();this.terrain.clear();
     this.staticIndex.clear();this.doorIndex.clear();this.triggerIndex.clear();this.terrainIndex.clear();
+    this.sleepingStatic.clear();this.sleepingDoors.clear();this.sleepingTriggers.clear();this.sleepingTerrain.clear();
   }
 
   stats(){return {
     staticColliders:this.staticColliders.size,doors:this.doors.size,triggers:this.triggers.size,terrainSurfaces:this.terrain.size,
-    spatialCells:{static:this.staticIndex.cellCount,doors:this.doorIndex.cellCount,triggers:this.triggerIndex.cellCount,terrain:this.terrainIndex.cellCount}
+    spatialCells:{static:this.staticIndex.cellCount,doors:this.doorIndex.cellCount,triggers:this.triggerIndex.cellCount,terrain:this.terrainIndex.cellCount},
+    sleeping:{static:this.sleepingStatic.size,doors:this.sleepingDoors.size,triggers:this.sleepingTriggers.size,terrain:this.sleepingTerrain.size}
   };}
 
   isBlocked(x:number,z:number,radius=0){
@@ -308,6 +326,14 @@ export class FinePhysicsAuthority {
 
   private pointBounds(x:number,z:number,radius=0):SpatialBounds {
     const r=Math.max(0,radius);return {minX:x-r,maxX:x+r,minZ:z-r,maxZ:z+r};
+  }
+
+  private sleepChunkEntries<T extends StaticCollider>(store:Map<string,T>,index:SpatialHashIndex<T>,sleeping:Map<string,T>,chunkId:string) {
+    for(const [id,value] of store)if(value.chunkId===chunkId){sleeping.set(id,{...value});store.delete(id);index.remove(id);}
+  }
+
+  private removeSleepingChunkEntries<T extends StaticCollider>(sleeping:Map<string,T>,chunkId:string) {
+    for(const [id,value] of sleeping)if(value.chunkId===chunkId)sleeping.delete(id);
   }
 
   private removeChunkEntries<T extends StaticCollider>(store:Map<string,T>,index:SpatialHashIndex<T>,chunkId:string) {

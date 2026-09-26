@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Materialized chunk collapse now explicitly sleeps static/door/trigger/terrain physics outside active spatial indexes; rematerialization replaces dormant entries from current semantic state, with lifecycle stats and regression coverage.
+
 - First-person chop/mine resource consequences are now gated by the shared deterministic contact authority; walls and materialized bodies can physically interpose before inventory or resource state mutates. Harvestable tree bodies remain solid physical targets, and Chromium E2E now walks to a licensed apple tree and executes a real chop interaction.
 
 - Fine physics now maintains deterministic spatial-hash candidate indexes for static colliders, doors, triggers, and terrain; movement, overlap, ground, and segment-contact queries avoid whole-map scans while preserving exact authoritative geometry and stable results.

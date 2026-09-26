@@ -163,3 +163,41 @@ test('physics spatial indexes stay synchronized across mutation and chunk teardo
   const cleared=physics.stats();
   assert.deepEqual(cleared.spatialCells,{static:0,doors:0,triggers:0,terrain:0});
 });
+
+
+test('sleeping a chunk removes it from active physics and re-registration wakes current state',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerStatic({id:'wall:a',minX:0,maxX:1,minZ:0,maxZ:1,chunkId:'chunk_a'});
+  physics.registerDoor({id:'door:a',minX:2,maxX:2.2,minZ:0,maxZ:1,open:false,chunkId:'chunk_a'});
+  physics.registerTrigger({id:'trigger:a',minX:3,maxX:4,minZ:0,maxZ:1,chunkId:'chunk_a',tag:'work'});
+  physics.registerTerrain({id:'terrain:a',minX:0,maxX:4,minZ:0,maxZ:4,chunkId:'chunk_a',originX:0,originZ:0,originY:2,slopeX:0,slopeZ:0});
+
+  physics.sleepChunk('chunk_a');
+  assert.equal(physics.isBlocked(.5,.5,.1),false);
+  assert.equal(physics.doorState('door:a'),undefined);
+  assert.deepEqual(physics.overlappingTriggers({x:3.5,z:.5}),[]);
+  assert.equal(physics.groundContactAt(1,1),undefined);
+  assert.deepEqual(physics.stats().spatialCells,{static:0,doors:0,triggers:0,terrain:0});
+  assert.deepEqual(physics.stats().sleeping,{static:1,doors:1,triggers:1,terrain:1});
+
+  physics.registerStatic({id:'wall:a',minX:10,maxX:11,minZ:0,maxZ:1,chunkId:'chunk_a'});
+  physics.registerDoor({id:'door:a',minX:12,maxX:12.2,minZ:0,maxZ:1,open:true,chunkId:'chunk_a'});
+  physics.registerTrigger({id:'trigger:a',minX:13,maxX:14,minZ:0,maxZ:1,chunkId:'chunk_a',tag:'market'});
+  physics.registerTerrain({id:'terrain:a',minX:10,maxX:14,minZ:0,maxZ:4,chunkId:'chunk_a',originX:10,originZ:0,originY:3,slopeX:0,slopeZ:0});
+
+  assert.equal(physics.isBlocked(.5,.5,.1),false);
+  assert.equal(physics.isBlocked(10.5,.5,.1),true);
+  assert.equal(physics.doorState('door:a')?.open,true);
+  assert.equal(physics.overlappingTriggers({x:13.5,z:.5})[0]?.tag,'market');
+  assert.equal(physics.groundContactAt(11,1)?.height,3);
+  assert.deepEqual(physics.stats().sleeping,{static:0,doors:0,triggers:0,terrain:0});
+});
+
+test('clearChunk also discards dormant physics snapshots',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerBlockedCell('wall:a',0,0,'chunk_a');
+  physics.sleepChunk('chunk_a');
+  assert.equal(physics.stats().sleeping.static,1);
+  physics.clearChunk('chunk_a');
+  assert.equal(physics.stats().sleeping.static,0);
+});

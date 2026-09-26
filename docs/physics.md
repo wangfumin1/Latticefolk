@@ -147,3 +147,10 @@ Gameplay and physics changes are gated by a real Chromium smoke test in addition
 The playable gate also drives the player into the existing licensed `Cart.gltf`, verifies that contact moves the authoritative cart position, waits for the debounced SQLite save, reloads the real application, and verifies the moved cart position restores. The first-person screenshot is captured after the push so the CI artifact contains the actual licensed cart in its moved state. Door visual work is intentionally not part of this gate: buildings already contain their own visible doors.
 
 For tool-contact gameplay, the same Chromium path then walks the first-person player to an existing licensed apple-tree visual using real keyboard movement, acquires it through the center-screen 3D raycast plus authoritative interaction trigger, selects the tree's `chop` action, and asserts the deterministic wood consequence before saving a dedicated screenshot. Harvestable fruit does not make the tree body itself pickupable/non-solid; tree collision remains authoritative, including for legacy object state that may still carry the older pickupable flag.
+
+
+## Chunk sleeping and wake-up
+
+Fine-physics geometry for an unloaded materialized chunk is now explicitly dormant rather than remaining in active collision/spatial indexes. `sleepChunk(chunkId)` removes that chunk's static colliders, invisible authoritative door colliders, semantic triggers, and terrain surfaces from active broad-phase queries while retaining a bounded in-memory dormant snapshot. Coarse simulation and persisted semantic world state remain authoritative while the chunk is away.
+
+Rematerialization re-registers physics from current semantic/fine state. Registration of an existing dormant id atomically replaces its sleeping snapshot, so stale geometry cannot override current state. `clearChunk` is still the destructive lifecycle operation and removes both active and dormant entries. Dynamic NPC/wildlife/player bodies are not stored in the physics authority, so God View still creates no player body and distant fine entities do not survive as hidden dynamic colliders.

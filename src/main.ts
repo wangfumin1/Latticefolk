@@ -1561,7 +1561,7 @@ class TownGame {
       this.objects.delete(id);
     }
 
-    this.physics.clearChunk(chunkId);
+    this.physics.sleepChunk(chunkId);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
     this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
