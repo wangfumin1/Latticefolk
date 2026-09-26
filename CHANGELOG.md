@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- World snapshot writes now pass a shared deterministic validator at both the HTTP and SQLite storage boundaries, rejecting malformed/nonfinite/duplicate or cross-reference-invalid persistence facts before any transaction while retaining additive version-1 legacy compatibility.
+
 - Coarse-world neighbor planning now reuses a persistent coordinate index maintained across chunk discovery/restore, removing duplicate full-world coordinate-map rebuilds from conserved flows and wildlife migration while preserving deterministic outputs and conservation semantics.
 
 - Discovered-world chunk policy scheduling now uses a bounded rotating candidate window (256 chunks per wake), preserving pressure/surprise ranking inside each window while preventing decision wakes from scanning an ever-growing persistent world; the stable rotation guarantees eventual coverage without materializing distant chunks.

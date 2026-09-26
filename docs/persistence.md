@@ -41,6 +41,14 @@ The browser loads `GET /api/world/state` on startup. If no save exists, determin
 
 While playing, the browser posts a complete state snapshot roughly every 15 seconds. During page unload, it also attempts a final `sendBeacon` write.
 
+### Authoritative write validation
+
+Every world snapshot is validated by the same deterministic boundary before SQLite mutation. The HTTP route validates unknown JSON and `WorldPersistence.save()` validates again so internal callers cannot bypass the invariant. Required meta/home/coarse/fine structures, supported enums, finite/bounded simulation values, identity/coordinate uniqueness, fine-chunk membership, lineage consistency, transit source/destination identity and bounded collection sizes are checked before a transaction begins. Invalid data is rejected with field paths; it is never repaired by coercing `NaN`, unsupported enum values, duplicate identities or malformed references into storage.
+
+Additive legacy fields remain optional: older version-1 snapshots may omit fine wildlife, lineage, transit, phenotype/genome/domestication additions and may still carry the legacy movable-cart fields. Validation is a write-integrity boundary, not a migration rewrite.
+
+This validation does **not** solve stale-writer concurrency or omission semantics. Revision/CAS protection and preserving discovered history against stale/partial complete snapshots remain tracked separately in #51.
+
 `DELETE /api/world/state` clears the save. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
 
 ## Coarse/fine interaction
