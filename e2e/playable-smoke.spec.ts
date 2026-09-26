@@ -181,9 +181,13 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await moveUntil(page,['ShiftLeft','KeyS'],state=>state.playerZ>9.0,10_000);
   await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-14.0,18_000);
   await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-2.3,20_000);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>-8.7,14_000);
+  // Align the first-person center ray with the tree trunk at x=-8 using normal strafe
+  // speed. Sprinting across this final short leg can stop inside the interaction trigger
+  // while leaving the narrow trunk off-center, which is not a valid visual acquisition.
+  await moveUntil(page,['KeyD'],state=>state.playerX>-8.2,14_000);
   const treeApproach=await runtime(page);
-  expect(treeApproach.playerX).toBeGreaterThan(-8.7);
+  expect(treeApproach.playerX).toBeGreaterThan(-8.2);
+  expect(treeApproach.playerX).toBeLessThan(-7.7);
   expect(treeApproach.playerZ).toBeLessThan(-2.3);
   await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
   await page.keyboard.press('KeyE');
