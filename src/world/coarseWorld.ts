@@ -325,10 +325,8 @@ export class CoarseWorldRuntime {
     if(chunk.ecologyPolicy==='protect')chunk.ecology=clamp(chunk.ecology+.55*scale);
     if(chunk.ecologyPolicy==='harvest'){chunk.ecology=clamp(chunk.ecology-.5*scale);chunk.food=clamp(chunk.food+.45*scale);}
 
-    const viable=chunk.food>32&&chunk.water>28&&chunk.danger<68;
-    if(chunk.migrationPolicy==='attract'&&viable)chunk.population=Math.min(120,chunk.population+.045*scale);
-    if(chunk.migrationPolicy==='release')chunk.population=Math.max(0,chunk.population-.035*scale);
-    if(chunk.migrationPolicy==='evacuate')chunk.population=Math.max(0,chunk.population-.11*scale);
+    // Migration policies influence paired flows only; they never mint or delete residents.
+    // Demographic births/deaths require their own deterministic rules and provenance.
 
     const growthThreshold=world.growth==='frontier' ? .60 : world.growth==='compact' ? .78 : world.growth==='conserve' ? .9 : .7;
     if(chunk.strategy==='grow_settlement'&&chunk.population>12&&chunk.prosperity>58&&chunk.settlementLevel<3&&this.hash(chunk.cx,chunk.cz,chunk.decisionVersion+100)>growthThreshold){
