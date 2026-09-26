@@ -181,7 +181,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // Waypoints use observed world coordinates rather than assuming wall-clock time maps to distance.
   await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-3.5,10_000);
   await moveUntil(page,['ShiftLeft','KeyS'],state=>state.playerZ>9.0,10_000);
-  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-14.0,18_000);
+  // Clearing x=-12 is sufficient to leave the north-house footprint and enter the
+  // western bypass. Do not force the player farther west into unrelated town geometry.
+  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-12.0,18_000);
   await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-2.3,20_000);
   // Align the first-person center ray with the tree trunk at x=-8 using normal strafe
   // speed. Sprinting across this final short leg can stop inside the interaction trigger
