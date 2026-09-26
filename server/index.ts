@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
 import { WorldPersistence } from './worldPersistence.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WildlifeDecisionBatchRequest, WorldPersistenceSnapshot } from '../src/types.js';
+import { createWorldStateSaveHandler } from './worldStateSaveHandler.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WildlifeDecisionBatchRequest } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -71,18 +72,7 @@ app.get('/api/world/interactions', (_req, res) => {
   res.json({ network:worldStore.interactionNetwork(), persistence:worldStore.stats() });
 });
 
-app.post('/api/world/state', (req, res) => {
-  try {
-    const body=req.body as WorldPersistenceSnapshot;
-    if(!body || body.version!==1 || !body.meta || !Array.isArray(body.coarseChunks) || !Array.isArray(body.fineChunks)){
-      res.status(400).json({error:'Invalid world persistence payload'});
-      return;
-    }
-    res.json(worldStore.save(body));
-  } catch(error) {
-    res.status(400).json({error:error instanceof Error?error.message:String(error)});
-  }
-});
+app.post('/api/world/state', createWorldStateSaveHandler(worldStore));
 
 app.delete('/api/world/state', (_req, res) => {
   const runtimeAdminAllowed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_RUNTIME_ADMIN === 'true';

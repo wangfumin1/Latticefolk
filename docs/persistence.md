@@ -43,6 +43,12 @@ While playing, the browser posts a complete state snapshot roughly every 15 seco
 
 `DELETE /api/world/state` clears the save. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
 
+### Snapshot validation boundary
+
+Every version-1 snapshot is validated as unknown input before the storage transaction begins. The HTTP save handler and `WorldPersistence.save` share the same deterministic validator, so direct server-side callers cannot bypass structural, enum, finite-number, identity/coordinate uniqueness, transfer consistency, or bounded-count checks. Rejected payloads return field paths such as `$.meta.playerInventory.coin` and leave all logical SQLite tables unchanged.
+
+Validation deliberately preserves supported additive/legacy fields: fine chunks may omit the later `wildlifeStates` array, lineage rows may omit later optional evidence/provenance fields, and legacy movable-object fields remain accepted while runtime upgrades them. Unknown additive object fields are not stripped or coerced. Validation is an input-integrity boundary; stale-writer/conflict control and omission semantics are tracked separately and are not implied by a valid payload.
+
 ## Coarse/fine interaction
 
 A materialized distant chunk is stored as detailed resident/object state while its coarse aggregate remains the regional baseline. On re-entry after restart, the deterministic chunk plan supplies geometry/layout identity and the persisted detailed state overlays inventories, relationships, storage, resource depletion, and other mutable fields.

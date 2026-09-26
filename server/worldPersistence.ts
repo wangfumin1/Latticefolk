@@ -7,6 +7,7 @@ import type {
 } from '../src/types.js';
 import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence } from '../src/world/evolution.js';
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
+import { validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
 
 type Row = Record<string, unknown>;
 
@@ -144,7 +145,8 @@ export class WorldPersistence {
     }
   }
 
-  save(snapshot:WorldPersistenceSnapshot) {
+  save(snapshot:unknown) {
+    const data=validateWorldPersistenceSnapshot(snapshot);
     const savedAt = Date.now();
     const upsertMeta=this.db.prepare(`
       INSERT INTO world_meta(slot,version,meta_json,saved_at) VALUES('default',?,?,?)
@@ -253,7 +255,7 @@ export class WorldPersistence {
       }
     });
 
-    tx(snapshot);
+    tx(data);
     return { ok:true, savedAt };
   }
 
