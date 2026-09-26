@@ -93,3 +93,22 @@ export function nextChunkDecisionDelay(candidates:readonly ChunkDecisionCandidat
   if(top.urgency>=125)return 15_000;
   return 30_000;
 }
+
+
+export interface BoundedDecisionIdWindow {
+  ids:string[];
+  nextCursor:number;
+  scanned:number;
+  total:number;
+}
+
+/** Select a bounded rotating window from the caller-owned stable discovered-world id list. */
+export function boundedDecisionIdWindow(ids:readonly string[],cursor:number,maxScan=256):BoundedDecisionIdWindow {
+  const total=ids.length;
+  if(total===0||maxScan<=0)return {ids:[],nextCursor:0,scanned:0,total};
+  const count=Math.min(total,Math.max(0,Math.floor(maxScan)));
+  const start=((Math.floor(cursor)%total)+total)%total;
+  const selected:string[]=[];
+  for(let offset=0;offset<count;offset++)selected.push(ids[(start+offset)%total]!);
+  return {ids:selected,nextCursor:count===total?0:(start+count)%total,scanned:count,total};
+}
