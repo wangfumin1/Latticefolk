@@ -453,22 +453,26 @@ export class CoarseWorldRuntime {
 
   private scheduledChunkDecisions(limit=8) {
     const window=boundedDecisionIdWindow(this.decisionScanIds,this.decisionScanCursor,this.maxDecisionScanPerWake);
-    this.decisionScanCursor=window.nextCursor;
     const chunks:CoarseChunkState[]=[];
     for(const id of window.ids){const chunk=this.chunks.get(id);if(chunk)chunks.push(chunk);}
-    return rankChunkDecisionCandidates(chunks,this.decisionBaselines,Date.now(),this.materialized,limit);
+    return {
+      candidates:rankChunkDecisionCandidates(chunks,this.decisionBaselines,Date.now(),this.materialized,limit),
+      nextCursor:window.nextCursor
+    };
   }
 
   private wakeChunkDecisionDeadline() {
     if(this.pending)return;
-    const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1));
+    const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates);
     const wakeAt=performance.now()+delay;
     if(wakeAt<this.nextDecisionAt)this.nextDecisionAt=wakeAt;
   }
 
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
-    const chunks=this.scheduledChunkDecisions(8).map(candidate=>candidate.chunk);
+    const scheduled=this.scheduledChunkDecisions(8);
+    this.decisionScanCursor=scheduled.nextCursor;
+    const chunks=scheduled.candidates.map(candidate=>candidate.chunk);
     if(!chunks.length){
       this.pending=false;
       this.nextDecisionAt=performance.now()+30_000;
@@ -498,7 +502,7 @@ export class CoarseWorldRuntime {
       this.lastBatchSize=0;
     }finally{
       this.pending=false;
-      const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1)):15_000;
+      const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates):15_000;
       this.nextDecisionAt=performance.now()+delay;
     }
   }
