@@ -175,33 +175,24 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const firstRestored=await runtime(page);
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
 
-  // Real first-person tool interaction. The persisted cart rests at z≈2 against the central
-  // well, so the centerline is intentionally impassable. Route around authoritative geometry:
-  // west of cart/well -> south cross-town lane -> east of the apple tree -> north-side approach.
-  // Waypoints use observed world coordinates rather than assuming wall-clock time maps to distance.
-  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-3.5,10_000);
-  await moveUntil(page,['ShiftLeft','KeyS'],state=>state.playerZ>9.0,10_000);
-  // Clearing x=-12 is sufficient to leave the north-house footprint and enter the
-  // western bypass. Do not force the player farther west into unrelated town geometry.
-  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-12.0,18_000);
-  // Reach the north side of the tree while still outside its interaction trigger.
-  // Align laterally in free space first; trying to strafe after entering the trigger would
-  // correctly run into the tree's authoritative solid collider.
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-3.0,20_000);
-  await moveUntil(page,['KeyD'],state=>state.playerX>-8.2,14_000);
-  const aligned=await runtime(page);
-  expect(aligned.playerX).toBeGreaterThan(-8.2);
-  expect(aligned.playerX).toBeLessThan(-7.7);
-  expect(aligned.playerZ).toBeGreaterThan(-3.85);
+  // Real first-person tool interaction. Use the east apple tree at (14, 1.5):
+  // from the restored player position the east side is an open authoritative-physics route,
+  // avoiding the central cart/well and the NPC-heavy north-house bypass.
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,18_000);
+  await moveUntil(page,['KeyD'],state=>state.playerX>13.7,8_000);
+  const eastAligned=await runtime(page);
+  expect(eastAligned.playerX).toBeGreaterThan(13.7);
+  expect(eastAligned.playerX).toBeLessThan(14.5);
 
-  // Walk straight into interaction reach. Physics must stop the player before trunk
-  // penetration while the center ray and semantic trigger both acquire the same tree.
-  await moveUntil(page,['KeyW'],state=>state.playerZ<-4.1,8_000);
+  // Approach from north of tree_apple_2. Its interaction trigger reaches z=2.65 while
+  // authoritative tree collision prevents the 0.30-radius player from penetrating the trunk.
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<3.0,12_000);
+  await moveUntil(page,['KeyW'],state=>state.playerZ<2.55,8_000);
   const treeApproach=await runtime(page);
-  expect(treeApproach.playerX).toBeGreaterThan(-8.2);
-  expect(treeApproach.playerX).toBeLessThan(-7.7);
-  expect(treeApproach.playerZ).toBeLessThan(-4.1);
-  expect(treeApproach.playerZ).toBeGreaterThan(-4.7);
+  expect(treeApproach.playerX).toBeGreaterThan(13.7);
+  expect(treeApproach.playerX).toBeLessThan(14.5);
+  expect(treeApproach.playerZ).toBeLessThan(2.65);
+  expect(treeApproach.playerZ).toBeGreaterThan(2.05);
   await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
