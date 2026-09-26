@@ -20,8 +20,10 @@ interface RuntimeSnapshot {
 }
 
 async function runtime(page:Page):Promise<RuntimeSnapshot> {
-  return page.locator('#worldStatus').evaluate((el)=>{
-    const data=(el as HTMLElement).dataset;
+  return page.evaluate(()=>{
+    const el=document.querySelector<HTMLElement>('#worldStatus');
+    if(!el)throw new Error('worldStatus runtime observability node is missing');
+    const data=el.dataset;
     const read=(key:string)=>Number(data[key]??'NaN');
     return {
       cameraMode:data.cameraMode??'',
