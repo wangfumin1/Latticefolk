@@ -16,6 +16,13 @@ const parse = <T>(value: unknown, fallback:T):T => {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
 
+export class WorldPersistenceConflictError extends Error {
+  constructor(readonly expectedRevision:number,readonly currentRevision:number){
+    super(`World persistence revision conflict: expected ${expectedRevision}, current ${currentRevision}`);
+    this.name='WorldPersistenceConflictError';
+  }
+}
+
 export class WorldPersistence {
   private db: Database.Database;
 
@@ -26,6 +33,13 @@ export class WorldPersistence {
     this.db.pragma('synchronous = NORMAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS world_control (
+        slot TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL
+      );
+
+      INSERT OR IGNORE INTO world_control(slot,revision) VALUES('default',0);
+
       CREATE TABLE IF NOT EXISTS world_meta (
         slot TEXT PRIMARY KEY,
         version INTEGER NOT NULL,
@@ -145,7 +159,15 @@ export class WorldPersistence {
     }
   }
 
-  save(snapshot:WorldPersistenceSnapshot) {
+  revision() {
+    const row=this.db.prepare('SELECT revision FROM world_control WHERE slot = ?').get('default') as {revision:number}|undefined;
+    const revision=Number(row?.revision??0);
+    if(!Number.isSafeInteger(revision)||revision<0)throw new Error('Invalid persisted world revision');
+    return revision;
+  }
+
+  save(snapshot:WorldPersistenceSnapshot,expectedRevision:number) {
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw new RangeError('expectedRevision must be a non-negative safe integer');
     const validated=validateWorldPersistenceSnapshot(snapshot);
     const savedAt = Date.now();
     const upsertMeta=this.db.prepare(`
@@ -204,8 +226,14 @@ export class WorldPersistence {
       ON CONFLICT(entity_id) DO UPDATE SET transfer_json=excluded.transfer_json,updated_at=excluded.updated_at
     `);
     const deleteTransfer=this.db.prepare('DELETE FROM wildlife_transfers WHERE entity_id = ?');
+    const setRevision=this.db.prepare("UPDATE world_control SET revision = ? WHERE slot = 'default'");
 
     const tx=this.db.transaction((data:WorldPersistenceSnapshot)=>{
+      const currentRevision=this.revision();
+      if(currentRevision!==expectedRevision)throw new WorldPersistenceConflictError(expectedRevision,currentRevision);
+      const nextRevision=currentRevision+1;
+      if(!Number.isSafeInteger(nextRevision))throw new Error('World persistence revision exhausted');
+
       upsertMeta.run(data.version,JSON.stringify(data.meta),savedAt);
 
       // Snapshot row omission is not a deletion signal. Discovered coarse/fine
@@ -249,10 +277,13 @@ export class WorldPersistence {
           upsertTransfer.run(transfer.entityId,JSON.stringify(transfer),savedAt);
         }
       }
+
+      setRevision.run(nextRevision);
+      return nextRevision;
     });
 
-    tx(validated);
-    return { ok:true, savedAt };
+    const revision=tx.immediate(validated);
+    return { ok:true, savedAt, revision };
   }
 
   load():WorldPersistenceSnapshot|null {
@@ -364,20 +395,25 @@ export class WorldPersistence {
     const fine=(this.db.prepare('SELECT COUNT(*) AS n FROM fine_chunks').get() as {n:number}).n;
     const lineage=(this.db.prepare('SELECT COUNT(*) AS n FROM wildlife_lineage').get() as {n:number}).n;
     const transfers=(this.db.prepare('SELECT COUNT(*) AS n FROM wildlife_transfers').get() as {n:number}).n;
-    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,coarseChunks:coarse,fineChunks:fine,lineageRecords:lineage,pendingWildlifeTransfers:transfers };
+    return { configured:true,file:path.basename(this.file),hasSave:Boolean(saved),savedAt:saved?.saved_at||null,revision:this.revision(),coarseChunks:coarse,fineChunks:fine,lineageRecords:lineage,pendingWildlifeTransfers:transfers };
   }
 
   clear() {
+    const setRevision=this.db.prepare("UPDATE world_control SET revision = ? WHERE slot = 'default'");
     const tx=this.db.transaction(()=>{
+      const nextRevision=this.revision()+1;
+      if(!Number.isSafeInteger(nextRevision))throw new Error('World persistence revision exhausted');
       this.db.prepare('DELETE FROM world_meta').run();
       this.db.prepare('DELETE FROM coarse_chunks').run();
       this.db.prepare('DELETE FROM fine_chunks').run();
       this.db.prepare('DELETE FROM home_state').run();
       this.db.prepare('DELETE FROM wildlife_lineage').run();
       this.db.prepare('DELETE FROM wildlife_transfers').run();
+      setRevision.run(nextRevision);
+      return nextRevision;
     });
-    tx();
-    return {ok:true};
+    const revision=tx.immediate();
+    return {ok:true,revision};
   }
 
   close(){ this.db.close(); }
