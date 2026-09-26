@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Persistence saves now preserve discovered coarse/fine history when rows are omitted by a partial writer; omitted `wildlifeTransfers` preserves pending transit while an explicit array retains queue-completion semantics. Stale-writer revision/CAS remains tracked separately in #51.
+
 - World snapshot writes now pass a shared deterministic validator at both the HTTP and SQLite storage boundaries, rejecting malformed/nonfinite/duplicate or cross-reference-invalid persistence facts before any transaction while retaining additive version-1 legacy compatibility.
 
 - Coarse-world neighbor planning now reuses a persistent coordinate index maintained across chunk discovery/restore, removing duplicate full-world coordinate-map rebuilds from conserved flows and wildlife migration while preserving deterministic outputs and conservation semantics.
