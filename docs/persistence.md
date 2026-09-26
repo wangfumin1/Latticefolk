@@ -47,7 +47,15 @@ Every world snapshot is validated by the same deterministic boundary before SQLi
 
 Additive legacy fields remain optional: older version-1 snapshots may omit fine wildlife, lineage, transit, phenotype/genome/domestication additions and may still carry the legacy movable-cart fields. Validation is a write-integrity boundary, not a migration rewrite.
 
-This validation does **not** solve stale-writer concurrency or omission semantics. Revision/CAS protection and preserving discovered history against stale/partial complete snapshots remain tracked separately in #51.
+This validation does **not** solve stale-writer concurrency. Revision/CAS protection for delayed browser saves and final beacons remains tracked separately in #51.
+
+### Merge-preserving partial snapshot semantics
+
+Normal saves treat missing coarse or fine rows as omitted by that writer, not as deletion requests. Existing discovered coarse history and visited fine-chunk state remain durable unless an explicit world reset is performed. Supplied rows continue to upsert normally.
+
+The optional `wildlifeTransfers` field has distinct queue semantics: omission preserves the pending queue for legacy or partial writers, while a supplied array synchronizes the queue, so an explicit empty array means those pending transfers have completed.
+
+This omission contract does not solve stale-writer concurrency. A delayed older writer can still overwrite rows it explicitly supplies until revision/CAS protection is completed in #51.
 
 `DELETE /api/world/state` clears the save. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
 
