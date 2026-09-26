@@ -123,6 +123,33 @@ test('validator accepts current snapshots and additive legacy omissions',()=>{
   assert.equal(validateWorldPersistenceSnapshot(legacy),legacy);
 });
 
+test('additive legacy version-1 omissions still persist and load without reset',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-validation-legacy-'));
+  const file=path.join(dir,'world.sqlite');
+  const store=new WorldPersistence(file);
+  try{
+    const legacy=structuredClone(validSnapshot()) as any;
+    delete legacy.wildlifeLineage;
+    delete legacy.wildlifeTransfers;
+    delete legacy.fineChunks[0].wildlifeStates;
+    delete legacy.homeObjects[0].rigidBodyArchetype;
+    legacy.homeObjects[0].movable=true;
+    legacy.homeObjects[0].physicsRadius=.8;
+    store.save(legacy);
+    const loaded=store.load();
+    assert.ok(loaded);
+    assert.equal(loaded.version,1);
+    assert.equal(loaded.fineChunks[0]?.wildlifeStates?.length,0);
+    assert.deepEqual(loaded.wildlifeLineage,[]);
+    assert.deepEqual(loaded.wildlifeTransfers,[]);
+    assert.equal(loaded.homeObjects[0]?.movable,true);
+    assert.equal(loaded.homeObjects[0]?.physicsRadius,.8);
+  }finally{
+    store.close();
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
+
 test('validator reports actionable failures across authoritative snapshot domains',()=>{
   for(const [name,mutate] of invalidCases()){
     const candidate=structuredClone(validSnapshot()) as any;
