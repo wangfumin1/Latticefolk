@@ -1,7 +1,7 @@
 import type {
-import { CoarseChunkSpatialIndex, type CoarseChunkCoordinateLookup } from './coarseSpatialIndex';
   ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeCompetitionPair, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
 } from '../types';
+import { CoarseChunkSpatialIndex, type CoarseChunkCoordinateLookup } from './coarseSpatialIndex';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_PREDATORS, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies, wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
 export interface WildlifeMigration {
