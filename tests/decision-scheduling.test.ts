@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import type { CoarseChunkState } from '../src/types.js';
+import { CoarseWorldRuntime } from '../src/world/coarseWorld.js';
 import {
+  boundedDecisionIdWindow,
   captureChunkDecisionSignal,
   chunkDecisionPressure,
   chunkDecisionSurprise,
@@ -65,4 +68,42 @@ test('adaptive delay wakes quickly for surprise and backs off for calm state',()
   const old=captureChunkDecisionSignal(chunk('old',{food:90,water:90,ecology:90,danger:5,lastDecisionAt:now}),now);
   const urgent=rankChunkDecisionCandidates([surprised],new Map([[surprised.id,old]]),now,new Set(),1);
   assert.equal(nextChunkDecisionDelay(urgent),4_000);
+});
+
+
+test('bounded decision scan rotates through discovered ids without starvation',()=>{
+  const ids=Array.from({length:10},(_,i)=>`chunk_${i}`);
+  const first=boundedDecisionIdWindow(ids,0,4);
+  assert.deepEqual(first.ids,['chunk_0','chunk_1','chunk_2','chunk_3']);
+  assert.equal(first.nextCursor,4);
+  const second=boundedDecisionIdWindow(ids,first.nextCursor,4);
+  const third=boundedDecisionIdWindow(ids,second.nextCursor,4);
+  assert.deepEqual(second.ids,['chunk_4','chunk_5','chunk_6','chunk_7']);
+  assert.deepEqual(third.ids,['chunk_8','chunk_9','chunk_0','chunk_1']);
+  assert.equal(third.nextCursor,2);
+  assert.equal(third.total,10);
+});
+
+test('bounded decision scan preserves full-world behavior below the cap',()=>{
+  const ids=['chunk_b','chunk_a','chunk_c'];
+  const window=boundedDecisionIdWindow(ids,2,256);
+  assert.deepEqual(window.ids,ids);
+  assert.equal(window.nextCursor,0);
+  assert.equal(window.scanned,3);
+});
+
+
+test('deadline probes do not consume the discovered-world decision cursor',()=>{
+  const runtime=new CoarseWorldRuntime(new THREE.Scene(),'decision-scan-probe-test');
+  for(let i=20;i<320;i++)runtime.ensureChunk(i,20);
+  const internal=runtime as unknown as {
+    decisionScanCursor:number;
+    scheduledChunkDecisions(limit?:number):{candidates:unknown[];nextCursor:number};
+  };
+  const first=internal.scheduledChunkDecisions(1);
+  assert.equal(internal.decisionScanCursor,0);
+  assert.equal(first.nextCursor,256);
+  const second=internal.scheduledChunkDecisions(1);
+  assert.equal(internal.decisionScanCursor,0);
+  assert.equal(second.nextCursor,first.nextCursor);
 });

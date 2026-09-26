@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from './flows';
 import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
-import { captureChunkDecisionSignal, nextChunkDecisionDelay, rankChunkDecisionCandidates, type ChunkDecisionSignal } from './decisionScheduling';
+import { boundedDecisionIdWindow, captureChunkDecisionSignal, nextChunkDecisionDelay, rankChunkDecisionCandidates, type ChunkDecisionSignal } from './decisionScheduling';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -79,6 +79,9 @@ export class CoarseWorldRuntime {
   private activeCenterCx=Number.NaN;
   private activeCenterCz=Number.NaN;
   private decisionBaselines=new Map<string,ChunkDecisionSignal>();
+  private decisionScanIds:string[]=[];
+  private decisionScanCursor=0;
+  private readonly maxDecisionScanPerWake=256;
 
   constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
     this.root.name='coarse-world';
@@ -138,6 +141,7 @@ export class CoarseWorldRuntime {
     if(!chunk){
       chunk=this.createChunkState(cx,cz);
       this.chunks.set(id,chunk);
+      this.decisionScanIds.push(id);
     }
     return chunk;
   }
@@ -170,7 +174,9 @@ export class CoarseWorldRuntime {
   restoreKnownChunks(saved:CoarseChunkState[]) {
     for(const state of saved){
       if(!state||typeof state.id!=='string')continue;
-      const restored=structuredClone(state);ensureWildlifePopulations(restored);this.chunks.set(state.id,restored);
+      const restored=structuredClone(state);ensureWildlifePopulations(restored);
+      if(!this.chunks.has(state.id))this.decisionScanIds.push(state.id);
+      this.chunks.set(state.id,restored);
     }
     for(const id of this.activeChunkIds){
       const chunk=this.chunks.get(id);
@@ -446,19 +452,27 @@ export class CoarseWorldRuntime {
   }
 
   private scheduledChunkDecisions(limit=8) {
-    return rankChunkDecisionCandidates(this.chunks.values(),this.decisionBaselines,Date.now(),this.materialized,limit);
+    const window=boundedDecisionIdWindow(this.decisionScanIds,this.decisionScanCursor,this.maxDecisionScanPerWake);
+    const chunks:CoarseChunkState[]=[];
+    for(const id of window.ids){const chunk=this.chunks.get(id);if(chunk)chunks.push(chunk);}
+    return {
+      candidates:rankChunkDecisionCandidates(chunks,this.decisionBaselines,Date.now(),this.materialized,limit),
+      nextCursor:window.nextCursor
+    };
   }
 
   private wakeChunkDecisionDeadline() {
     if(this.pending)return;
-    const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1));
+    const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates);
     const wakeAt=performance.now()+delay;
     if(wakeAt<this.nextDecisionAt)this.nextDecisionAt=wakeAt;
   }
 
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
-    const chunks=this.scheduledChunkDecisions(8).map(candidate=>candidate.chunk);
+    const scheduled=this.scheduledChunkDecisions(8);
+    this.decisionScanCursor=scheduled.nextCursor;
+    const chunks=scheduled.candidates.map(candidate=>candidate.chunk);
     if(!chunks.length){
       this.pending=false;
       this.nextDecisionAt=performance.now()+30_000;
@@ -488,7 +502,7 @@ export class CoarseWorldRuntime {
       this.lastBatchSize=0;
     }finally{
       this.pending=false;
-      const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1)):15_000;
+      const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates):15_000;
       this.nextDecisionAt=performance.now()+delay;
     }
   }
