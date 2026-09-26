@@ -96,7 +96,7 @@ function invalidCases(){
     ['duplicate coarse coordinate',(s:any)=>{s.coarseChunks[1].cx=s.coarseChunks[0].cx;s.coarseChunks[1].cz=s.coarseChunks[0].cz;}],
     ['unsupported coarse enum',(s:any)=>{s.coarseChunks[0].strategy='teleport';}],
     ['out-of-range coarse resource',(s:any)=>{s.coarseChunks[0].food=101;}],
-    ['orphan fine chunk',(s:any)=>{s.fineChunks[0].chunkId='chunk_9_9';}],
+    ['fine entity chunk mismatch',(s:any)=>{s.fineChunks[0].npcStates[0].chunkId='chunk_9_9';}],
     ['invalid NPC role',(s:any)=>{s.fineChunks[0].npcStates[0].role='wizard';}],
     ['invalid object kind',(s:any)=>{s.homeObjects[0].kind='portal';}],
     ['invalid wildlife species',(s:any)=>{s.fineChunks[0].wildlifeStates[0].species='dragon';}],
