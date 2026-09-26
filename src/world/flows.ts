@@ -1,4 +1,5 @@
 import type { CoarseChunkState } from '../types';
+import { CoarseChunkSpatialIndex, type CoarseChunkCoordinateLookup } from './coarseSpatialIndex';
 
 export type WorldFlowKind = 'migration' | 'food_trade' | 'wood_trade' | 'water_trade' | 'ecology_spread';
 
@@ -58,9 +59,13 @@ function resourceFlow(
   };
 }
 
-export function planConservedFlows(chunks:Iterable<CoarseChunkState>,ctx:FlowContext):WorldFlowRecord[] {
-  const list=[...chunks];
-  const byCoord=new Map(list.map(chunk=>[`${chunk.cx},${chunk.cz}`,chunk]));
+export function planConservedFlows(
+  chunks:Iterable<CoarseChunkState>,
+  ctx:FlowContext,
+  spatialIndex?:CoarseChunkCoordinateLookup
+):WorldFlowRecord[] {
+  const list=spatialIndex?chunks:[...chunks];
+  const neighborLookup=spatialIndex??new CoarseChunkSpatialIndex(list);
   const materialized=ctx.materialized??new Set<string>();
   const flows:WorldFlowRecord[]=[];
 
@@ -105,8 +110,8 @@ export function planConservedFlows(chunks:Iterable<CoarseChunkState>,ctx:FlowCon
   // Only visit east/south edges. This is O(n) in known chunks instead of O(n²).
   for(const a of list){
     if(materialized.has(a.id))continue;
-    const east=byCoord.get(`${a.cx+1},${a.cz}`);
-    const south=byCoord.get(`${a.cx},${a.cz+1}`);
+    const east=neighborLookup.get(a.cx+1,a.cz);
+    const south=neighborLookup.get(a.cx,a.cz+1);
     if(east)processPair(a,east);
     if(south)processPair(a,south);
   }
