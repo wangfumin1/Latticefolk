@@ -180,7 +180,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // This keeps all NPC/wildlife dynamic collision enabled while avoiding the observed
   // z=6.325 traffic line rather than disabling or bypassing authoritative physics.
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,10_000);
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<3.2,10_000);
+  // Stop one polling interval early under software WebGL so the player remains north
+  // of the tree while lateral alignment happens; the observed stop is around z=4.0.
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.5,10_000);
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
   await moveUntil(page,['KeyD'],state=>state.playerX>13.7,8_000);
   const eastAligned=await runtime(page);
