@@ -202,20 +202,14 @@ export class WorldPersistence {
       ON CONFLICT(entity_id) DO UPDATE SET transfer_json=excluded.transfer_json,updated_at=excluded.updated_at
     `);
     const deleteTransfer=this.db.prepare('DELETE FROM wildlife_transfers WHERE entity_id = ?');
-    const deleteChunk=this.db.prepare('DELETE FROM coarse_chunks WHERE id = ?');
-    const deleteFine=this.db.prepare('DELETE FROM fine_chunks WHERE chunk_id = ?');
 
     const tx=this.db.transaction((data:WorldPersistenceSnapshot)=>{
       upsertMeta.run(data.version,JSON.stringify(data.meta),savedAt);
 
-      const chunkIds=new Set(data.coarseChunks.map(x=>x.id));
-      const existingChunks=this.db.prepare('SELECT id FROM coarse_chunks').all() as Array<{id:string}>;
-      for(const row of existingChunks) if(!chunkIds.has(row.id)) deleteChunk.run(row.id);
+      // Missing coarse/fine rows are omitted by this writer, not deletion requests.
+      // Explicit reset via clear() remains the only discovered-world deletion path.
       for(const chunk of data.coarseChunks) upsertChunk.run(chunk.id,JSON.stringify(chunk),savedAt);
 
-      const fineIds=new Set(data.fineChunks.map(x=>x.chunkId));
-      const existingFine=this.db.prepare('SELECT chunk_id FROM fine_chunks').all() as Array<{chunk_id:string}>;
-      for(const row of existingFine) if(!fineIds.has(row.chunk_id)) deleteFine.run(row.chunk_id);
       for(const chunk of data.fineChunks){
         upsertFine.run(chunk.chunkId,JSON.stringify(chunk.npcStates),JSON.stringify(chunk.objectStates),JSON.stringify(chunk.wildlifeStates||[]),savedAt);
       }
@@ -245,11 +239,13 @@ export class WorldPersistence {
         );
       }
 
-      const transferIds=new Set((data.wildlifeTransfers||[]).map(transfer=>transfer.entityId));
-      const existingTransfers=this.db.prepare('SELECT entity_id FROM wildlife_transfers').all() as Array<{entity_id:string}>;
-      for(const row of existingTransfers)if(!transferIds.has(row.entity_id))deleteTransfer.run(row.entity_id);
-      for(const transfer of data.wildlifeTransfers||[]){
-        upsertTransfer.run(transfer.entityId,JSON.stringify(transfer),savedAt);
+      if(data.wildlifeTransfers!==undefined){
+        const transferIds=new Set(data.wildlifeTransfers.map(transfer=>transfer.entityId));
+        const existingTransfers=this.db.prepare('SELECT entity_id FROM wildlife_transfers').all() as Array<{entity_id:string}>;
+        for(const row of existingTransfers)if(!transferIds.has(row.entity_id))deleteTransfer.run(row.entity_id);
+        for(const transfer of data.wildlifeTransfers){
+          upsertTransfer.run(transfer.entityId,JSON.stringify(transfer),savedAt);
+        }
       }
     });
 

@@ -41,6 +41,14 @@ The browser loads `GET /api/world/state` on startup. If no save exists, determin
 
 While playing, the browser posts a complete state snapshot roughly every 15 seconds. During page unload, it also attempts a final `sendBeacon` write.
 
+### Merge-preserving partial snapshot semantics
+
+Normal saves treat missing coarse or fine rows as omitted by that writer, not as deletion requests. Existing discovered coarse history and visited fine-chunk state remain durable unless an explicit world reset is performed. Supplied rows continue to upsert normally.
+
+The optional `wildlifeTransfers` field has distinct queue semantics: omission preserves the pending queue for legacy or partial writers, while a supplied array synchronizes the queue, so an explicit empty array means those pending transfers have completed.
+
+This omission contract does not solve stale-writer concurrency. Revision/CAS protection for delayed saves and final beacons remains a separate #51 slice.
+
 `DELETE /api/world/state` clears the save. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
 
 ## Coarse/fine interaction
