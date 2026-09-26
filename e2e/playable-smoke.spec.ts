@@ -184,15 +184,24 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // Clearing x=-12 is sufficient to leave the north-house footprint and enter the
   // western bypass. Do not force the player farther west into unrelated town geometry.
   await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-12.0,18_000);
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-2.3,20_000);
-  // Align the first-person center ray with the tree trunk at x=-8 using normal strafe
-  // speed. Sprinting across this final short leg can stop inside the interaction trigger
-  // while leaving the narrow trunk off-center, which is not a valid visual acquisition.
+  // Reach the north side of the tree while still outside its interaction trigger.
+  // Align laterally in free space first; trying to strafe after entering the trigger would
+  // correctly run into the tree's authoritative solid collider.
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-3.0,20_000);
   await moveUntil(page,['KeyD'],state=>state.playerX>-8.2,14_000);
+  const aligned=await runtime(page);
+  expect(aligned.playerX).toBeGreaterThan(-8.2);
+  expect(aligned.playerX).toBeLessThan(-7.7);
+  expect(aligned.playerZ).toBeGreaterThan(-3.85);
+
+  // Walk straight into interaction reach. Physics must stop the player before trunk
+  // penetration while the center ray and semantic trigger both acquire the same tree.
+  await moveUntil(page,['KeyW'],state=>state.playerZ<-4.1,8_000);
   const treeApproach=await runtime(page);
   expect(treeApproach.playerX).toBeGreaterThan(-8.2);
   expect(treeApproach.playerX).toBeLessThan(-7.7);
-  expect(treeApproach.playerZ).toBeLessThan(-2.3);
+  expect(treeApproach.playerZ).toBeLessThan(-4.1);
+  expect(treeApproach.playerZ).toBeGreaterThan(-4.7);
   await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
