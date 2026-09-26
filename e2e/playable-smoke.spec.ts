@@ -197,24 +197,28 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // of the tree while lateral alignment happens; the observed stop is around z=4.0.
   await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.5,10_000);
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
-  await moveUntil(page,['KeyD'],state=>state.playerX>13.7,8_000);
   let eastAligned=await runtime(page);
-  // Hosted software rendering can advance one extra movement slice while observability is
-  // being sampled. Correct any eastward overshoot with real player input before approach.
-  if(eastAligned.playerX>14.5){
-    await moveUntil(page,['KeyA'],state=>state.playerX<14.3,8_000);
+  // Precision alignment uses short real-input pulses with the key released before each
+  // observability read. This prevents software-rendered CI from moving another meter while
+  // a slow page.evaluate sample is in flight.
+  for(let i=0;i<12&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
+    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],80);
     eastAligned=await runtime(page);
   }
-  expect(eastAligned.playerX).toBeGreaterThan(13.5);
-  expect(eastAligned.playerX).toBeLessThan(14.5);
+  expect(eastAligned.playerX).toBeGreaterThan(13.65);
+  expect(eastAligned.playerX).toBeLessThan(14.35);
   expect(eastAligned.playerZ).toBeGreaterThan(2.65);
 
-  // Approach from north of tree_apple_2. Its interaction trigger reaches z=2.65 while
-  // authoritative tree collision prevents the 0.30-radius player from penetrating the trunk.
-  await moveUntil(page,['KeyW'],state=>state.playerZ<2.55,8_000);
-  const treeApproach=await runtime(page);
-  expect(treeApproach.playerX).toBeGreaterThan(13.7);
-  expect(treeApproach.playerX).toBeLessThan(14.5);
+  // Approach from north of tree_apple_2 with the same released-before-sample input pulses.
+  // The semantic trigger starts at z=2.65; the authoritative tree collider then prevents
+  // penetration before the player can pass through the trunk.
+  let treeApproach=eastAligned;
+  for(let i=0;i<10&&treeApproach.playerZ>=2.65;i++){
+    await moveWithKeys(page,['KeyW'],80);
+    treeApproach=await runtime(page);
+  }
+  expect(treeApproach.playerX).toBeGreaterThan(13.65);
+  expect(treeApproach.playerX).toBeLessThan(14.35);
   expect(treeApproach.playerZ).toBeLessThan(2.65);
   expect(treeApproach.playerZ).toBeGreaterThan(2.05);
   await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
