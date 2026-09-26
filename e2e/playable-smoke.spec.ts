@@ -60,8 +60,21 @@ async function moveUntil(
   timeoutMs=10_000
 ) {
   for(const key of keys)await page.keyboard.down(key);
+  let last:RuntimeSnapshot|undefined;
+  const deadline=Date.now()+timeoutMs;
   try{
-    await expect.poll(async()=>reached(await runtime(page)),{timeout:timeoutMs,intervals:[120]}).toBe(true);
+    while(true){
+      last=await runtime(page);
+      if(reached(last))break;
+      if(Date.now()>=deadline){
+        // page.evaluate can finish after the nominal deadline on software WebGL runners.
+        // Accept the final authoritative sample if movement reached the waypoint meanwhile.
+        last=await runtime(page);
+        if(reached(last))break;
+        throw new Error(`movement waypoint timed out after ${timeoutMs}ms at (${last.playerX.toFixed(3)}, ${last.playerZ.toFixed(3)})`);
+      }
+      await page.waitForTimeout(120);
+    }
   }finally{
     for(const key of [...keys].reverse())await page.keyboard.up(key);
   }
