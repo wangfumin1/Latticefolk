@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Coarse chunk/region/world policy POSTs now have an 8-second abortable deadline, release pending gates on timeout, preserve prior policies on failure, and recover through the existing bounded retry cadence; stale/out-of-batch reply rejection remains tracked in #56.
+
 - Coarse-world neighbor planning now reuses a persistent coordinate index maintained across chunk discovery/restore, removing duplicate full-world coordinate-map rebuilds from conserved flows and wildlife migration while preserving deterministic outputs and conservation semantics.
 
 - Discovered-world chunk policy scheduling now uses a bounded rotating candidate window (256 chunks per wake), preserving pressure/surprise ranking inside each window while preventing decision wakes from scanning an ever-growing persistent world; the stable rotation guarantees eventual coverage without materializing distant chunks.

@@ -41,6 +41,7 @@ export interface CoarseWorldStatus {
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
+  requestTimeouts: number;
 }
 
 interface UpdateContext {
@@ -84,8 +85,13 @@ export class CoarseWorldRuntime {
   private decisionScanIds:string[]=[];
   private decisionScanCursor=0;
   private readonly maxDecisionScanPerWake=256;
+  private requestTimeouts=0;
 
-  constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
+  constructor(
+    private scene:THREE.Scene,
+    private worldSeed='latticefolk-default',
+    private readonly requestDeadlineMs=8_000
+  ) {
     this.root.name='coarse-world';
     this.scene.add(this.root);
     this.generate();
@@ -412,6 +418,37 @@ export class CoarseWorldRuntime {
     };
   }
 
+  private async postDecision<T>(url:string,body:unknown):Promise<T> {
+    const controller=new AbortController();
+    let timeout:ReturnType<typeof setTimeout>|undefined;
+    let timedOut=false;
+    const deadline=new Promise<never>((_,reject)=>{
+      timeout=setTimeout(()=>{
+        timedOut=true;
+        controller.abort();
+        reject(new Error(`decision request timed out: ${url}`));
+      },this.requestDeadlineMs);
+    });
+    const request=(async()=>{
+      const response=await fetch(url,{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(body),
+        signal:controller.signal
+      });
+      if(!response.ok)throw new Error(`decision request failed: ${url}`);
+      return await response.json() as T;
+    })();
+    try{
+      return await Promise.race([request,deadline]);
+    }catch(error){
+      if(timedOut)this.requestTimeouts++;
+      throw error;
+    }finally{
+      if(timeout!==undefined)clearTimeout(timeout);
+    }
+  }
+
   private async requestRegions(ctx:UpdateContext) {
     this.regionPending=true;
     const regions=this.aggregateRegions().sort((a,b)=>{
@@ -420,9 +457,7 @@ export class CoarseWorldRuntime {
     }).slice(0,8);
     const body:RegionDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,regions};
     try{
-      const response=await fetch('/api/world/regions/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await response.json() as RegionDecisionResponse;
-      if(!response.ok)throw new Error('region decision failed');
+      const result=await this.postDecision<RegionDecisionResponse>('/api/world/regions/decide',body);
       for(const decision of result.decisions)this.regionPolicies.set(decision.regionId,decision);
     }catch{
       // Existing regional policies remain authoritative until the next successful refresh.
@@ -441,9 +476,7 @@ export class CoarseWorldRuntime {
       summary:this.worldSummary(regions),regions:regionDecisions
     };
     try{
-      const response=await fetch('/api/world/strategy/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await response.json() as WorldDecisionResponse;
-      if(!response.ok)throw new Error('world decision failed');
+      const result=await this.postDecision<WorldDecisionResponse>('/api/world/strategy/decide',body);
       this.worldPolicy=result.decision;
     }catch{
       // Keep the previous bounded world policy if the provider is temporarily unavailable.
@@ -483,9 +516,7 @@ export class CoarseWorldRuntime {
     let completed=false;
     const body:ChunkDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,chunks};
     try{
-      const r=await fetch('/api/world/chunks/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await r.json() as ChunkDecisionResponse;
-      if(!r.ok)throw new Error('chunk decision failed');
+      const result=await this.postDecision<ChunkDecisionResponse>('/api/world/chunks/decide',body);
       const decidedAt=Date.now();
       for(const decision of result.decisions){
         const chunk=this.chunks.get(decision.chunkId);if(!chunk)continue;
@@ -583,7 +614,8 @@ export class CoarseWorldRuntime {
       })(),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
-      avgProsperity:avg(c=>c.prosperity)
+      avgProsperity:avg(c=>c.prosperity),
+      requestTimeouts:this.requestTimeouts
     };
   }
 }
