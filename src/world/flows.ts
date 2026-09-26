@@ -20,7 +20,6 @@ export interface FlowContext {
   materialized?: ReadonlySet<string>;
 }
 
-const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const round=(v:number)=>Math.round(v*1000)/1000;
 
 function pairId(a:CoarseChunkState,b:CoarseChunkState){
@@ -122,34 +121,28 @@ export function applyConservedFlows(chunks:Map<string,CoarseChunkState>,flows:Wo
   const applied:WorldFlowRecord[]=[];
   for(const flow of flows){
     const from=chunks.get(flow.fromChunkId),to=chunks.get(flow.toChunkId);
-    if(!from||!to||flow.amount<=0)continue;
-    const amount=Math.max(0,flow.amount);
+    if(!from||!to||from===to||!Number.isFinite(flow.amount)||flow.amount<=0)continue;
+    let resource:'population'|'food'|'wood'|'water'|'ecology';
     switch(flow.kind){
-      case 'migration': {
-        const actual=Math.min(amount,Math.max(0,from.population));
-        from.population=round(from.population-actual);
-        to.population=round(to.population+actual);
-        if(actual>0)applied.push({...flow,amount:actual});
-        break;
-      }
-      case 'food_trade':
-      case 'wood_trade':
-      case 'water_trade': {
-        const resource=flow.kind==='food_trade'?'food':flow.kind==='wood_trade'?'wood':'water';
-        const actual=Math.min(amount,Math.max(0,from[resource]));
-        from[resource]=round(clamp(from[resource]-actual,0,100));
-        to[resource]=round(clamp(to[resource]+actual,0,100));
-        if(actual>0)applied.push({...flow,amount:actual});
-        break;
-      }
-      case 'ecology_spread': {
-        const actual=Math.min(amount,Math.max(0,from.ecology));
-        from.ecology=round(clamp(from.ecology-actual,0,100));
-        to.ecology=round(clamp(to.ecology+actual,0,100));
-        if(actual>0)applied.push({...flow,amount:actual});
-        break;
-      }
+      case 'migration': resource='population';break;
+      case 'food_trade': resource='food';break;
+      case 'wood_trade': resource='wood';break;
+      case 'water_trade': resource='water';break;
+      case 'ecology_spread': resource='ecology';break;
+      default: continue;
     }
+    const available=from[resource],balance=to[resource];
+    const capacity=resource==='population'?Infinity:100;
+    // A transfer must not silently repair corrupt balances or erase fractional history.
+    if(!Number.isFinite(available)||!Number.isFinite(balance)||available<0||balance<0||available>capacity||balance>capacity)continue;
+    const actual=Math.min(flow.amount,available,capacity-balance);
+    if(actual<=0)continue;
+    const nextFrom=available-actual,nextTo=balance+actual;
+    // Validate both sides before writing either; tiny/unrepresentable credits are no-ops.
+    if(!Number.isFinite(nextFrom)||!Number.isFinite(nextTo)||nextFrom<0||nextTo>capacity||nextFrom===available||nextTo===balance)continue;
+    from[resource]=nextFrom;
+    to[resource]=nextTo;
+    applied.push({...flow,amount:actual});
   }
   return applied;
 }
