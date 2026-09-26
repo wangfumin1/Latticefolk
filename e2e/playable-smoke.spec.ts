@@ -175,18 +175,21 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const firstRestored=await runtime(page);
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
 
-  // Real first-person tool interaction. Use the east apple tree at (14, 1.5):
-  // from the restored player position the east side is an open authoritative-physics route,
-  // avoiding the central cart/well and the NPC-heavy north-house bypass.
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,18_000);
+  // Real first-person tool interaction. Use the east apple tree at (14, 1.5).
+  // First clear the central cart/well laterally, then enter the open z≈3 cross-town lane.
+  // This keeps all NPC/wildlife dynamic collision enabled while avoiding the observed
+  // z=6.325 traffic line rather than disabling or bypassing authoritative physics.
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,10_000);
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<3.2,10_000);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
   await moveUntil(page,['KeyD'],state=>state.playerX>13.7,8_000);
   const eastAligned=await runtime(page);
   expect(eastAligned.playerX).toBeGreaterThan(13.7);
   expect(eastAligned.playerX).toBeLessThan(14.5);
+  expect(eastAligned.playerZ).toBeGreaterThan(2.65);
 
   // Approach from north of tree_apple_2. Its interaction trigger reaches z=2.65 while
   // authoritative tree collision prevents the 0.30-radius player from penetrating the trunk.
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<3.0,12_000);
   await moveUntil(page,['KeyW'],state=>state.playerZ<2.55,8_000);
   const treeApproach=await runtime(page);
   expect(treeApproach.playerX).toBeGreaterThan(13.7);
