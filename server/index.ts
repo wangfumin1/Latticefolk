@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { DialogueStore } from './dialogueStore.js';
 import { createDecisionProvider } from './decision/createProvider.js';
 import { WorldPersistence } from './worldPersistence.js';
-import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WildlifeDecisionBatchRequest, WorldPersistenceSnapshot } from '../src/types.js';
+import { registerWorldStateRoutes } from './worldStateRoutes.js';
+import type { DecisionRequest, DialogueRequest, ImportDialogueRequest, ChunkDecisionRequest, RegionDecisionRequest, WorldDecisionRequest, WildlifeDecisionBatchRequest } from '../src/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -20,6 +21,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json({ limit: '64mb' }));
+registerWorldStateRoutes(app,worldStore);
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -54,10 +56,6 @@ app.put('/api/decision/budget', (req, res) => {
   }
 });
 
-app.get('/api/world/state', (_req, res) => {
-  res.json({ snapshot:worldStore.load(), stats:worldStore.stats() });
-});
-
 app.get('/api/world/evolution', (_req, res) => {
   res.json({
     species:worldStore.evolutionStats(),
@@ -69,28 +67,6 @@ app.get('/api/world/evolution', (_req, res) => {
 
 app.get('/api/world/interactions', (_req, res) => {
   res.json({ network:worldStore.interactionNetwork(), persistence:worldStore.stats() });
-});
-
-app.post('/api/world/state', (req, res) => {
-  try {
-    const body=req.body as WorldPersistenceSnapshot;
-    if(!body || body.version!==1 || !body.meta || !Array.isArray(body.coarseChunks) || !Array.isArray(body.fineChunks)){
-      res.status(400).json({error:'Invalid world persistence payload'});
-      return;
-    }
-    res.json(worldStore.save(body));
-  } catch(error) {
-    res.status(400).json({error:error instanceof Error?error.message:String(error)});
-  }
-});
-
-app.delete('/api/world/state', (_req, res) => {
-  const runtimeAdminAllowed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_RUNTIME_ADMIN === 'true';
-  if(!runtimeAdminAllowed){
-    res.status(403).json({error:'World reset is disabled in production. Set ALLOW_RUNTIME_ADMIN=true to enable.'});
-    return;
-  }
-  res.json(worldStore.clear());
 });
 
 app.get('/api/dialogue/stats', (_req, res) => res.json(dialogue.stats()));
