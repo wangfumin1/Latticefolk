@@ -1,6 +1,7 @@
 import type {
   ChunkBiome, CoarseChunkState, CoarseWildlifePopulation, PlantBiomassState, WildlifeCompetitionPair, WildlifeDiseasePair, WildlifePredatorPressurePair, WildlifeSpecies, WorldSeason
 } from '../types';
+import { CoarseChunkSpatialIndex, type CoarseChunkCoordinateLookup } from './coarseSpatialIndex';
 import { canWildlifePredate, isWildlifePredator, WILDLIFE_HERBIVORES, WILDLIFE_PREDATORS, WILDLIFE_SPECIES, wildlifePredationPreference, wildlifePreySpecies, wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
 export interface WildlifeMigration {
@@ -394,15 +395,20 @@ export function simulateWildlife(chunk:CoarseChunkState,seconds:number,weather:s
   computeWildlifeDiseasePressure(chunk,populations,weather);
 }
 
-export function planWildlifeMigration(chunks:Iterable<CoarseChunkState>,materialized:ReadonlySet<string>,day=1):WildlifeMigration[]{
-  const list=[...chunks];
-  const byCoord=new Map(list.map(c=>[`${c.cx},${c.cz}`,c]));
+export function planWildlifeMigration(
+  chunks:Iterable<CoarseChunkState>,
+  materialized:ReadonlySet<string>,
+  day=1,
+  spatialIndex?:CoarseChunkCoordinateLookup
+):WildlifeMigration[]{
+  const list=spatialIndex?chunks:[...chunks];
+  const neighborLookup=spatialIndex??new CoarseChunkSpatialIndex(list);
   const moves:WildlifeMigration[]=[];
   for(const source of list){
     if(materialized.has(source.id))continue;
     ensureWildlifePopulations(source);
     for(const [dx,dz] of [[1,0],[0,1]] as const){
-      const other=byCoord.get(`${source.cx+dx},${source.cz+dz}`);
+      const other=neighborLookup.get(source.cx+dx,source.cz+dz);
       if(!other||materialized.has(other.id))continue;
       ensureWildlifePopulations(other);
       for(const species of SPECIES){

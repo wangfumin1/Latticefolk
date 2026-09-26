@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { applyConservedFlows, flowTotals, planConservedFlows } from '../src/world/flows.js';
+import { CoarseChunkSpatialIndex } from '../src/world/coarseSpatialIndex.js';
 
 const make=(id:string,cx:number,patch:Partial<CoarseChunkState>):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:1,population:20,food:50,wood:50,water:50,
@@ -14,7 +15,10 @@ test('planned cross-chunk transfers conserve population and transferable resourc
   const b=make('b',1,{population:10,food:18,wood:25,water:22,ecology:35,danger:8,prosperity:76,migrationPolicy:'attract',strategy:'trade_route'});
   const chunks=new Map([[a.id,a],[b.id,b]]);
   const before=flowTotals(chunks.values());
-  const planned=planConservedFlows(chunks.values(),{day:3,minuteOfDay:600});
+  const context={day:3,minuteOfDay:600};
+  const plannedFallback=planConservedFlows(chunks.values(),context);
+  const planned=planConservedFlows(chunks.values(),context,new CoarseChunkSpatialIndex(chunks.values()));
+  assert.deepEqual(planned,plannedFallback);
   assert.ok(planned.some(x=>x.kind==='migration'));
   assert.ok(planned.some(x=>x.kind==='food_trade'));
   assert.ok(planned.some(x=>x.kind==='wood_trade'));

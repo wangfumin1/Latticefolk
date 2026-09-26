@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Coarse-world neighbor planning now reuses a persistent coordinate index maintained across chunk discovery/restore, removing duplicate full-world coordinate-map rebuilds from conserved flows and wildlife migration while preserving deterministic outputs and conservation semantics.
+
 - Discovered-world chunk policy scheduling now uses a bounded rotating candidate window (256 chunks per wake), preserving pressure/surprise ranking inside each window while preventing decision wakes from scanning an ever-growing persistent world; the stable rotation guarantees eventual coverage without materializing distant chunks.
 
 - First-person chop/mine resource consequences are now gated by the shared deterministic contact authority; walls and materialized bodies can physically interpose before inventory or resource state mutates. Harvestable tree bodies remain solid physical targets, and Chromium E2E now walks to a licensed apple tree and executes a real chop interaction.

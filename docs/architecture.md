@@ -151,6 +151,7 @@ The coarse world is no longer bounded to the original 9×9 chunk square.
 - The always-fine center-town 3×3 footprint stays reserved.
 - God View never expands discovery or materialization.
 - Conserved-flow planning now scans coordinate neighbors instead of all chunk pairs, keeping it approximately O(n) in discovered chunks.
+- A persistent coarse-chunk coordinate index is maintained as chunks are discovered or restored. Deterministic conserved-flow and wildlife-migration planners reuse that index for neighbor lookup instead of copying the full discovered set and rebuilding duplicate coordinate maps every flow tick; conservation, materialization exclusion, and authoritative chunk state remain unchanged.
 
 The active render window and the discovered persistent world are separate concepts, so travel has no fixed map edge while scene complexity stays bounded.
 

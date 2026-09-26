@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { CoarseChunkState } from '../src/types.js';
 import { applyWildlifeMigration, computeWildlifeDiseasePressure, computeWildlifeNicheCompetition, computeWildlifePredatorPressure, ensurePlantBiomass, ensureWildlifePopulations, planWildlifeMigration, seasonalHabitatSuitability, seasonForDay, simulatePlantBiomass, simulateWildlife, wildlifeCount, wildlifeDiseaseContactCoefficient } from '../src/world/ecology.js';
 import { WILDLIFE_SPECIES } from '../src/world/wildlifeSpecies.js';
+import { CoarseChunkSpatialIndex } from '../src/world/coarseSpatialIndex.js';
 
 const chunk=(id:string,cx:number,patch:Partial<CoarseChunkState>={}):CoarseChunkState=>({
   id,cx,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:60,water:75,ecology:82,danger:12,prosperity:20,
@@ -30,7 +31,9 @@ test('wildlife migration conserves each species across neighbor chunks',()=>{
   for(const p of b.wildlife!)p.count=Math.max(0,p.carryingCapacity*.05);
   const before=new Map(a.wildlife!.map(p=>[p.species,p.count+(b.wildlife!.find(x=>x.species===p.species)?.count||0)]));
   const chunks=new Map([[a.id,a],[b.id,b]]);
-  const moves=planWildlifeMigration(chunks.values(),new Set());
+  const fallbackMoves=planWildlifeMigration(chunks.values(),new Set());
+  const moves=planWildlifeMigration(chunks.values(),new Set(),1,new CoarseChunkSpatialIndex(chunks.values()));
+  assert.deepEqual(moves,fallbackMoves);
   assert.ok(moves.length>0);
   applyWildlifeMigration(chunks,moves);
   for(const species of before.keys()){
