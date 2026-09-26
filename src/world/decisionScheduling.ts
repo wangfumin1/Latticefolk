@@ -107,8 +107,9 @@ export function boundedDecisionIdWindow(ids:readonly string[],cursor:number,maxS
   const total=ids.length;
   if(total===0||maxScan<=0)return {ids:[],nextCursor:0,scanned:0,total};
   const count=Math.min(total,Math.max(0,Math.floor(maxScan)));
+  if(count===total)return {ids:[...ids],nextCursor:0,scanned:count,total};
   const start=((Math.floor(cursor)%total)+total)%total;
   const selected:string[]=[];
   for(let offset=0;offset<count;offset++)selected.push(ids[(start+offset)%total]!);
-  return {ids:selected,nextCursor:count===total?0:(start+count)%total,scanned:count,total};
+  return {ids:selected,nextCursor:(start+count)%total,scanned:count,total};
 }
