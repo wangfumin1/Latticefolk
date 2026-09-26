@@ -419,7 +419,7 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   if(fine)fine.forEach((chunk,index)=>{
     const p=`snapshot.fineChunks[${index}]`,obj=v.record(chunk,p);if(!obj)return;
     const chunkId=v.string(obj.chunkId,`${p}.chunkId`,{max:256});
-    if(chunkId){if(fineIds.has(chunkId))v.issue(`${p}.chunkId`,'duplicate fine chunk');fineIds.add(chunkId);if(!coarseIds.has(chunkId))v.issue(`${p}.chunkId`,'fine chunk must reference a persisted coarse chunk');}
+    if(chunkId){if(fineIds.has(chunkId))v.issue(`${p}.chunkId`,'duplicate fine chunk');fineIds.add(chunkId);}
     const npcs=v.array(obj.npcStates,`${p}.npcStates`,WORLD_SNAPSHOT_LIMITS.entitiesPerFineChunk);
     if(npcs)npcs.forEach((npc,n)=>{validateNpc(v,npc,`${p}.npcStates[${n}]`,chunkId);if(isRecord(npc)&&typeof npc.id==='string'){if(npcIds.has(npc.id))v.issue(`${p}.npcStates[${n}].id`,'duplicate NPC id');npcIds.add(npc.id);}});
     const objects=v.array(obj.objectStates,`${p}.objectStates`,WORLD_SNAPSHOT_LIMITS.entitiesPerFineChunk);
@@ -447,7 +447,7 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
     const from=v.string(obj.fromChunkId,`${p}.fromChunkId`,{max:256});
     const to=v.string(obj.toChunkId,`${p}.toChunkId`,{max:256});
     if(id){if(transferIds.has(id))v.issue(`${p}.entityId`,'duplicate transfer entity id');transferIds.add(id);if(wildlifeIds.has(id))v.issue(`${p}.entityId`,'wildlife cannot be both materialized and in transit');}
-    if(from&&to){if(from===to)v.issue(p,'transfer source and destination must differ');if(!coarseIds.has(from))v.issue(`${p}.fromChunkId`,'must reference a persisted coarse chunk');if(!coarseIds.has(to))v.issue(`${p}.toChunkId`,'must reference a persisted coarse chunk');}
+    if(from&&to&&from===to)v.issue(p,'transfer source and destination must differ');
     const represented=v.number(obj.representedPopulation,`${p}.representedPopulation`,{min:Number.EPSILON});
     v.number(obj.transferredDay,`${p}.transferredDay`,{min:0});
     const state=validateWildlife(v,obj.state,`${p}.state`,to);
