@@ -134,3 +134,32 @@ test('zero-length segment reports overlap at t zero and deduplicates repeated dy
   assert.equal(hits[0]?.t,0);
   assert.equal(hits[0]?.distance,0);
 });
+
+
+test('physics spatial indexes stay synchronized across mutation and chunk teardown',()=>{
+  const physics=new FinePhysicsAuthority();
+  physics.registerStatic({id:'static:a',minX:0,maxX:1,minZ:0,maxZ:1,chunkId:'chunk_a'});
+  physics.registerDoor({id:'door:a',minX:2,maxX:2.2,minZ:0,maxZ:1,open:false,chunkId:'chunk_a'});
+  physics.registerTrigger({id:'trigger:b',minX:8,maxX:9,minZ:0,maxZ:1,chunkId:'chunk_b'});
+  physics.registerTerrain({id:'terrain:b',minX:8,maxX:16,minZ:0,maxZ:8,chunkId:'chunk_b',originX:8,originZ:0,originY:1,slopeX:0,slopeZ:0});
+  const populated=physics.stats();
+  assert.ok(populated.spatialCells.static>0);
+  assert.ok(populated.spatialCells.doors>0);
+  assert.ok(populated.spatialCells.triggers>0);
+  assert.ok(populated.spatialCells.terrain>0);
+
+  physics.setDoorOpen('door:a',true);
+  assert.equal(physics.isBlocked(2.1,.5,.1),false);
+  physics.setDoorOpen('door:a',false);
+  assert.equal(physics.isBlocked(2.1,.5,.1),true);
+
+  physics.clearChunk('chunk_a');
+  assert.equal(physics.isBlocked(.5,.5,.1),false);
+  assert.equal(physics.isBlocked(2.1,.5,.1),false);
+  assert.equal(physics.overlappingTriggers({x:8.5,z:.5})[0]?.id,'trigger:b');
+  assert.equal(physics.groundContactAt(10,2)?.surfaceId,'terrain:b');
+
+  physics.clear();
+  const cleared=physics.stats();
+  assert.deepEqual(cleared.spatialCells,{static:0,doors:0,triggers:0,terrain:0});
+});

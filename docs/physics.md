@@ -92,6 +92,12 @@ Buildings currently register their real footprint as static physics geometry and
 
 The initial WorldObject collider set includes solid objects such as well, bench, bed, food stall, workstation, tree, rock, and non-pickupable crate. The town cart is no longer registered as fixed static geometry: it persists `rigidBodyArchetype: 'cart'`, resolves radius/substep behavior from the shared registry, participates in the same dynamic-circle snapshot as characters, and is pushed only by a physics-resolved first-person contact. Old SQLite snapshots containing `movable` / `physicsRadius` are accepted and upgraded in memory to the canonical archetype field before the next normal snapshot save. Its visible transform follows `WorldObjectState.position`; the mesh is never authoritative. Non-solid semantic content such as roads, water patches, farm plots, bushes and flowers remains non-blocking unless a later physical archetype says otherwise.
 
+## Spatial candidate index
+
+Fine physics keeps deterministic spatial-hash indexes for static colliders, authoritative doors, triggers, and terrain surfaces. Registration, removal, door-state updates, chunk teardown, and full clears update the indexes together with the authoritative maps. Point overlap, trigger, ground-contact, kinematic blocker, and swept/segment contact queries first retrieve bounded nearby candidates and then run the same exact geometry tests as before. Candidate lookup therefore reduces whole-world scanning without changing collision truth or contact ordering.
+
+Dynamic NPC/wildlife/player/movable-body circles remain caller-supplied materialized snapshots because their identities and lifecycle are owned by fine simulation rather than duplicated into a second persistent physics store. The spatial hash is an acceleration structure only; deterministic simulation remains authoritative.
+
 ## Chunk lifecycle and sleeping
 
 Physics exists only for fine/materialized content.
@@ -118,7 +124,7 @@ Future uses can include door thresholds, hazard volumes, building interiors, wat
 
 ## Tests
 
-`tests/fine-physics.test.ts` covers anti-tunnelling substeps, wall sliding, dynamic body collision, separation from legacy overlap, chunk-scoped cleanup, non-blocking trigger overlap, closed-door collision, open-door traversal, door cleanup with chunk teardown, deterministic segment ordering, closed/open-door contact behavior, dynamic-body exclusion, swept-radius near misses, and zero-length overlap queries.
+`tests/fine-physics.test.ts` covers anti-tunnelling substeps, wall sliding, dynamic body collision, separation from legacy overlap, chunk-scoped cleanup, non-blocking trigger overlap, closed-door collision, open-door traversal, door cleanup with chunk teardown, deterministic segment ordering, closed/open-door contact behavior, dynamic-body exclusion, swept-radius near misses, zero-length overlap queries, and spatial-index synchronization across registration, door state changes, chunk teardown, and full clear. `tests/spatial-hash.test.ts` independently covers cross-cell lookup, large-entry deduplication, reindexing, removal, bounds normalization, and deterministic query ordering.
 
 The normal CI pipeline runs these tests together with typecheck, all existing simulation tests, the production build, and the real Chromium playable smoke gate.
 
