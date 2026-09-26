@@ -71,7 +71,7 @@ class Validator {
 
   array(value:unknown,path:string,max:number):unknown[]|undefined {
     if(!Array.isArray(value)){this.issue(path,'expected array');return undefined;}
-    if(value.length>max)this.issue(path,`too many entries (${value.length} > ${max})`);
+    if(value.length>max){this.issue(path,`too many entries (${value.length} > ${max})`);return undefined;}
     return value;
   }
 
@@ -456,7 +456,6 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   });
 
   if(root.savedAt!==undefined)v.number(root.savedAt,'snapshot.savedAt',{min:0});
-  v.jsonCompatible(root,'snapshot');
 
   if(v.issues.length)throw new WorldSnapshotValidationError(v.issues);
   return input as WorldPersistenceSnapshot;
