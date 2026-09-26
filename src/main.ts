@@ -255,6 +255,8 @@ class TownGame {
   persistenceReady = false;
   persistenceSaveInFlight = false;
   persistenceSaveQueued = false;
+  persistenceRevision = 0;
+  persistenceConflict = false;
   lastPersistenceSaveAt = 0;
   wildlifeDecisionPending = false;
   nextWildlifeBatchAt = 0;
@@ -982,12 +984,16 @@ class TownGame {
     try{
       const response=await fetch('/api/world/state');
       if(!response.ok)throw new Error(`HTTP ${response.status}`);
-      const data=await response.json() as {snapshot:WorldPersistenceSnapshot|null;stats?:unknown};
+      const data=await response.json() as {snapshot:WorldPersistenceSnapshot|null;revision?:unknown;stats?:unknown};
+      const revision=Number(data.revision);
+      if(!Number.isSafeInteger(revision)||revision<0)throw new Error('Invalid persistence revision from server');
+      this.persistenceRevision=revision;
+      this.persistenceConflict=false;
       if(data.snapshot){
         this.restoreWorldState(data.snapshot);
-        this.log(`已恢复世界存档 · day ${data.snapshot.meta.day} · ${data.snapshot.coarseChunks.length} coarse chunks · ${data.snapshot.fineChunks.length} visited fine chunks`);
+        this.log(`已恢复世界存档 · revision ${revision} · day ${data.snapshot.meta.day} · ${data.snapshot.coarseChunks.length} coarse chunks · ${data.snapshot.fineChunks.length} visited fine chunks`);
       }else{
-        this.log('未发现已有世界存档，将从当前 world seed 开始。');
+        this.log(`未发现已有世界存档，将从当前 world seed 开始 · revision ${revision}`);
       }
     }catch(error){
       this.log(`世界存档加载失败，继续使用当前运行时：${error instanceof Error?error.message:String(error)}`);
@@ -1094,7 +1100,7 @@ class TownGame {
   }
 
   async saveWorldState() {
-    if(!this.persistenceReady)return;
+    if(!this.persistenceReady||this.persistenceConflict)return;
     if(this.persistenceSaveInFlight){
       this.persistenceSaveQueued=true;
       return;
@@ -1108,21 +1114,39 @@ class TownGame {
       try{
         this.flushWildlifeHabitatExposure();
         const snapshot=this.buildWorldSnapshot();
+        const expectedRevision=this.persistenceRevision;
         const response=await fetch('/api/world/state',{
-          method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(snapshot)
+          method:'POST',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({snapshot,expectedRevision})
         });
+        if(response.status===409){
+          const conflict=await response.json().catch(()=>({})) as {currentRevision?:unknown};
+          const currentRevision=Number(conflict.currentRevision);
+          this.persistenceConflict=true;
+          this.persistenceSaveQueued=false;
+          throw new Error(Number.isSafeInteger(currentRevision)
+            ?`revision conflict (local ${expectedRevision}, server ${currentRevision}); reload required`
+            :`revision conflict (local ${expectedRevision}); reload required`);
+        }
         if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        const saved=await response.json() as {revision?:unknown};
+        const revision=Number(saved.revision);
+        if(!Number.isSafeInteger(revision)||revision!==expectedRevision+1){
+          throw new Error('Invalid persistence revision acknowledgement');
+        }
+        this.persistenceRevision=revision;
         lastSaveSucceeded=true;
       }catch(error){
         this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
       }finally{
         this.persistenceSaveInFlight=false;
       }
-    }while(this.persistenceSaveQueued&&this.persistenceReady);
+    }while(this.persistenceSaveQueued&&this.persistenceReady&&!this.persistenceConflict);
     if(lastSaveSucceeded){
       this.movableSaveRetryMs=1500;
       if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
-    }else if(this.movableDirty&&this.movableSaveTimer===undefined){
+    }else if(!this.persistenceConflict&&this.movableDirty&&this.movableSaveTimer===undefined){
       const retryMs=this.movableSaveRetryMs;
       this.movableSaveRetryMs=Math.min(15000,retryMs*2);
       this.scheduleMovablePersistence(retryMs);
@@ -1130,10 +1154,10 @@ class TownGame {
   }
 
   flushWorldBeacon() {
-    if(!this.persistenceReady)return;
+    if(!this.persistenceReady||this.persistenceConflict)return;
     try{
       this.flushWildlifeHabitatExposure();
-      const payload=JSON.stringify(this.buildWorldSnapshot());
+      const payload=JSON.stringify({snapshot:this.buildWorldSnapshot(),expectedRevision:this.persistenceRevision});
       navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
     }catch{}
   }
@@ -3175,6 +3199,8 @@ class TownGame {
     ui.world.dataset.cartVisualChildren=String(townCart?.mesh.children.length??0);
     ui.world.dataset.movableDirty=String(this.movableDirty);
     ui.world.dataset.persistenceSavePending=String(this.persistenceSaveInFlight||this.persistenceSaveQueued);
+    ui.world.dataset.persistenceRevision=String(this.persistenceRevision);
+    ui.world.dataset.persistenceConflict=String(this.persistenceConflict);
     ui.world.dataset.assetFailures=String(this.assetLoadFailures.length);
     ui.world.dataset.licensedVisualTargets=String(this.visualTargets.length);
     ui.world.dataset.licensedVisualsResolved=String(this.visualTargets.filter(target=>target.group.children.length>0).length);
