@@ -51,6 +51,21 @@ async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
   await page.waitForTimeout(120);
 }
 
+async function moveUntil(
+  page:Page,
+  keys:string[],
+  reached:(state:RuntimeSnapshot)=>boolean,
+  timeoutMs=10_000
+) {
+  for(const key of keys)await page.keyboard.down(key);
+  try{
+    await expect.poll(async()=>reached(await runtime(page)),{timeout:timeoutMs,intervals:[120]}).toBe(true);
+  }finally{
+    for(const key of [...keys].reverse())await page.keyboard.up(key);
+  }
+  await page.waitForTimeout(120);
+}
+
 async function persistedCartZ(page:Page):Promise<number> {
   return page.evaluate(async()=>{
     const response=await fetch('/api/world/state',{cache:'no-store'});
@@ -64,7 +79,7 @@ async function persistedCartZ(page:Page):Promise<number> {
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
   // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
@@ -123,7 +138,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
   await expect.poll(async()=>Math.abs((await persistedCartZ(page))-pushedCartZ),{timeout:45_000}).toBeLessThan(.08);
-  await expect.poll(async()=>(await runtime(page)).movableDirty,{timeout:8_000}).toBe(false);
+  await expect.poll(async()=>{const state=await runtime(page);return !state.persistenceSavePending&&!state.movableDirty;},{timeout:30_000}).toBe(true);
 
   await page.unroute('**/api/world/state');
   await page.reload();
@@ -154,7 +169,31 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   await page.keyboard.press('KeyG');
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('firstPerson');
+  await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
   const firstRestored=await runtime(page);
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
+
+  // Real first-person tool interaction. The persisted cart rests at z≈2 against the central
+  // well, so the centerline is intentionally impassable. Route around authoritative geometry:
+  // west of cart/well -> south cross-town lane -> east of the apple tree -> north-side approach.
+  // Waypoints use observed world coordinates rather than assuming wall-clock time maps to distance.
+  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-3.5,10_000);
+  await moveUntil(page,['ShiftLeft','KeyS'],state=>state.playerZ>9.0,10_000);
+  await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<-14.0,18_000);
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<-2.3,20_000);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>-8.7,14_000);
+  const treeApproach=await runtime(page);
+  expect(treeApproach.playerX).toBeGreaterThan(-8.7);
+  expect(treeApproach.playerZ).toBeLessThan(-2.3);
+  await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
+  await page.keyboard.press('KeyE');
+  await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#interactionTitle')).toContainText('苹果树');
+  const treeActions=page.locator('#interactionActions button');
+  await expect(treeActions).toHaveCount(3);
+  await treeActions.nth(2).click();
+  await expect(page.locator('#toast')).toContainText('木料 ×2');
+  await page.screenshot({path:testInfo.outputPath('first-person-tool-contact.png'),fullPage:true});
+
   expect(pageErrors).toEqual([]);
 });
