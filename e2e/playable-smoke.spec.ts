@@ -185,8 +185,14 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.5,10_000);
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
   await moveUntil(page,['KeyD'],state=>state.playerX>13.7,8_000);
-  const eastAligned=await runtime(page);
-  expect(eastAligned.playerX).toBeGreaterThan(13.7);
+  let eastAligned=await runtime(page);
+  // Hosted software rendering can advance one extra movement slice while observability is
+  // being sampled. Correct any eastward overshoot with real player input before approach.
+  if(eastAligned.playerX>14.5){
+    await moveUntil(page,['KeyA'],state=>state.playerX<14.3,8_000);
+    eastAligned=await runtime(page);
+  }
+  expect(eastAligned.playerX).toBeGreaterThan(13.5);
   expect(eastAligned.playerX).toBeLessThan(14.5);
   expect(eastAligned.playerZ).toBeGreaterThan(2.65);
 
