@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 
 const inventory={apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
@@ -56,7 +56,7 @@ async function startServer(port:number,dbPath:string){
   throw new Error(`server readiness timed out: ${output}`);
 }
 
-async function stopServer(child:ChildProcessWithoutNullStreams){
+async function stopServer(child:ChildProcess){
   if(child.exitCode!==null)return;
   child.kill('SIGTERM');
   await Promise.race([
