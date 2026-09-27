@@ -9,7 +9,7 @@ The project is currently pre-1.0 and evolving rapidly.
 ### Added
 
 - Durable world revision compare-and-swap now rejects stale browser saves and final beacons before any SQLite world-table mutation, persists revisions across reset/server restart, and exposes conflict state for real-browser verification.
-- Persistence saves now preserve discovered coarse/fine history when rows are omitted by a partial writer; omitted `wildlifeTransfers` preserves pending transit while an explicit array retains queue-completion semantics. Stale-writer revision/CAS remains tracked separately in #51.
+- Persistence saves preserve discovered coarse/fine history when rows are omitted by a partial writer; omitted `wildlifeTransfers` preserves pending transit while an explicit array retains queue-completion semantics.
 
 - World snapshot writes now pass a shared deterministic validator at both the HTTP and SQLite storage boundaries, rejecting malformed/nonfinite/duplicate or cross-reference-invalid persistence facts before any transaction while retaining additive version-1 legacy compatibility.
 
