@@ -174,6 +174,7 @@ interface NpcRuntime {
   activeAnimation?: string;
   activityAnimation?: string;
   activityAnimationUntil?: number;
+  nextGroundAlignAt: number;
   removed?: boolean;
 }
 
@@ -594,13 +595,13 @@ class TownGame {
           role==='guard'?[{kind:'bread',count:1}]:[],
         relationships:{},memories:[],currentAction:'idle',goal:'过好今天并照顾自己的需要',lastDecisionAt:0
       };
-      const mesh=this.makeBlockPerson(role); mesh.position.set(x,0,z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
+      const mesh=this.makeBlockPerson(role); mesh.position.set(x,this.groundHeightAt(x,z),z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
       const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1',haru:'male2',mei:'female2',toma:'male1',aki:'female1'};
       // Cube World characters already face the local +Z direction used by moveNpc.
       this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
-      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
+      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0});
     }
     for(const a of this.npcs.values()) {
       for(const b of this.npcs.values()) if(a!==b) a.state.relationships[b.state.id]={affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)};
@@ -917,7 +918,7 @@ class TownGame {
       this.camera.position.x=resolved.position.x;
       this.camera.position.z=resolved.position.z;
     }
-    this.camera.position.y=1.7;
+    this.camera.position.y=this.groundHeightAt(this.camera.position.x,this.camera.position.z)+1.7;
     this.playerPosition.x=this.camera.position.x;this.playerPosition.z=this.camera.position.z;
     this.firstPersonRotation.copy(this.camera.rotation);
   }
@@ -1330,7 +1331,7 @@ class TownGame {
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
     const mesh=this.makeBlockPerson(state.role);
-    mesh.position.set(state.position.x,0,state.position.z);
+    mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     mesh.userData={entityType:'npc',entityId:state.id};
     this.scene.add(mesh);
 
@@ -1338,7 +1339,7 @@ class TownGame {
     const nameEl=document.createElement('div');nameEl.className='npc-name hidden';ui.speechLayer.appendChild(nameEl);
     const agent:NpcRuntime={
       state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
-      pendingDecision:false,speechEl,nameEl
+      pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0
     };
     this.npcs.set(state.id,agent);
 
@@ -1362,7 +1363,7 @@ class TownGame {
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
     const g=this.makeProceduralAnimal(state);
-    g.position.set(state.position.x,0,state.position.z);
+    g.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
     this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
@@ -1715,6 +1716,7 @@ class TownGame {
 
       this.applyOwnedWildlifeCommand(animal);
       this.moveWildlife(animal,dt);
+      animal.mesh.position.y=this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
       if(animal.removed)continue;
       s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
@@ -2603,12 +2605,17 @@ class TownGame {
       n.hunger=clamp(n.hunger+dt*.20,0,100); n.energy=clamp(n.energy-dt*.075,0,100); n.social=clamp(n.social-dt*.04,0,100);
       const wasMoving=agent.pathIndex<agent.path.length;
       this.moveNpc(agent,dt);
+      agent.mesh.position.y=this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z);
       const isMoving=agent.pathIndex<agent.path.length || wasMoving;
       const activityActive=Boolean(agent.activityAnimationUntil&&now()<agent.activityAnimationUntil);
       if(agent.activityAnimationUntil&&now()>=agent.activityAnimationUntil){agent.activityAnimationUntil=undefined;agent.activityAnimation=undefined;}
       const locomotion=(agent.state.currentAction==='patrol'||agent.state.currentAction==='explore')?'Run':'Walk';
       this.setNpcAnimation(agent,activityActive?(agent.activityAnimation||'Idle'):(isMoving?locomotion:'Idle'));
       agent.mixer?.update(dt);
+      if(agent.mixer&&now()>=agent.nextGroundAlignAt){
+        this.alignNpcVisualToGround(agent);
+        agent.nextGroundAlignAt=now()+120;
+      }
       if(agent.task && agent.path.length===0) this.completeTask(agent);
       if(!this.aiPaused&&!agent.pendingDecision&&this.inFlight<this.maxInFlight&&now()>=agent.nextDecisionAt&&!agent.task) this.requestDecision(agent);
       n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;
@@ -3186,6 +3193,11 @@ class TownGame {
     const movableBodies=[...this.objects.values()].filter(object=>worldObjectRigidBody(object.state)&&object.mesh.visible);
     const activePhysicsBodies=this.npcs.size+this.wildlife.size+movableBodies.length+(this.cameraMode==='firstPerson'?1:0);
     const townCart=this.objects.get('cart_town');
+    const playerGroundingError=this.cameraMode==='firstPerson'
+      ?Math.abs(this.camera.position.y-(this.groundHeightAt(this.camera.position.x,this.camera.position.z)+1.7))
+      :0;
+    const npcGroundingMaxError=[...this.npcs.values()].reduce((max,agent)=>agent.removed?max:Math.max(max,Math.abs(agent.mesh.position.y-this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z))),0);
+    const wildlifeGroundingMaxError=[...this.wildlife.values()].reduce((max,animal)=>animal.removed?max:Math.max(max,Math.abs(animal.mesh.position.y-this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z))),0);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3197,6 +3209,9 @@ class TownGame {
     ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
     ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
     ui.world.dataset.playerZ=this.playerPosition.z.toFixed(4);
+    ui.world.dataset.playerGroundingError=playerGroundingError.toFixed(5);
+    ui.world.dataset.npcGroundingMaxError=npcGroundingMaxError.toFixed(5);
+    ui.world.dataset.wildlifeGroundingMaxError=wildlifeGroundingMaxError.toFixed(5);
     ui.world.dataset.movableBodies=String(movableBodies.length);
     ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
@@ -3462,6 +3477,22 @@ class TownGame {
   playerOverlapsObjectTrigger(objectId:string) {
     return this.physics.overlappingTriggers(this.playerPosition,.30)
       .some(trigger=>trigger.id===`object-trigger:${objectId}`);
+  }
+
+  groundHeightAt(x:number,z:number) {
+    return this.physics.groundContactAt(x,z)?.height??0;
+  }
+
+  alignNpcVisualToGround(agent:NpcRuntime) {
+    const ground=this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z);
+    agent.mesh.position.y=ground;
+    const model=agent.mesh.children[0];
+    if(!model)return;
+    const box=new THREE.Box3().setFromObject(model,true);
+    const error=box.min.y-ground;
+    if(!Number.isFinite(error)||Math.abs(error)>.35)return;
+    model.position.y-=error;
+    model.updateMatrixWorld(true);
   }
 
   wildlifePhysicsRadius(state:WildlifeState) {
