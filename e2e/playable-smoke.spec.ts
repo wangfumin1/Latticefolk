@@ -1,9 +1,18 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
+
+interface ChunkDecisionRequestForE2E {
+  chunks:Array<{id:string}>;
+}
+
 interface RuntimeSnapshot {
   cameraMode:string;
   discoveredChunks:number;
   materializedChunks:number;
+  coarseDecidedChunks:number;
+  coarseLastSource:string;
+  coarseLastBatchSize:number;
+  coarseRequestTimeouts:number;
   physicsBodies:number;
   terrainSurfaces:number;
   playerX:number;
@@ -31,6 +40,10 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cameraMode:data.cameraMode??'',
       discoveredChunks:read('discoveredChunks'),
       materializedChunks:read('materializedChunks'),
+      coarseDecidedChunks:read('coarseDecidedChunks'),
+      coarseLastSource:data.coarseLastSource??'',
+      coarseLastBatchSize:read('coarseLastBatchSize'),
+      coarseRequestTimeouts:read('coarseRequestTimeouts'),
       physicsBodies:read('physicsBodies'),
       terrainSurfaces:read('terrainSurfaces'),
       playerX:read('playerX'),
@@ -351,5 +364,112 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     releaseDelayed();
     if(!contextAClosed)await contextA.close();
     await contextB.close();
+  }
+});
+
+
+test('coarse policy reply crossing a real materialize-unload transition is discarded and retry recovers', async ({ page, request }, testInfo) => {
+  test.setTimeout(420_000);
+
+  const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
+  expect(reset.ok()).toBe(true);
+
+  await page.goto('/');
+  await expect(page.locator('#game canvas')).toBeVisible();
+  await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:30_000}).toBe(0);
+  await page.locator('#startBtn').click();
+  await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+
+  // Let the first ordinary coarse batch complete, then move to just inside the home/coarse
+  // ownership boundary. The next batch is held only after positioning, so the real
+  // materialize -> unload round trip can complete well inside the production 8s deadline.
+  await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>32.0,55_000);
+  let staged=await runtime(page);
+  for(let i=0;i<20&&staged.playerX<35.0;i++){
+    await moveWithKeys(page,['KeyD'],80);
+    staged=await runtime(page);
+  }
+  expect(staged.playerX).toBeGreaterThan(35.0);
+  expect(staged.playerX).toBeLessThan(35.6);
+  expect(staged.materializedChunks).toBe(0);
+
+  let heldRequest:ChunkDecisionRequestForE2E|undefined;
+  let releaseHeld=()=>{};
+  const heldGate=new Promise<void>(resolve=>{releaseHeld=resolve;});
+  let heldCompleted=false;
+  await page.route('**/api/world/chunks/decide',async route=>{
+    if(heldRequest){
+      await route.continue();
+      return;
+    }
+    heldRequest=JSON.parse(route.request().postData()||'{}') as ChunkDecisionRequestForE2E;
+    await heldGate;
+    const payload={
+      source:'e2e-stale-transition',
+      decisions:heldRequest.chunks.map(chunk=>({
+        chunkId:chunk.id,
+        strategy:'fortify',
+        migrationPolicy:'retain',
+        ecologyPolicy:'protect',
+        confidence:.9,
+        reasonCode:'e2e_stale_transition',
+        source:'e2e-stale-transition'
+      }))
+    };
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(payload)});
+    heldCompleted=true;
+  });
+
+  try{
+    await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
+    const before=await runtime(page);
+
+    const transition=await page.evaluate(async()=>{
+      const status=()=>document.querySelector<HTMLElement>('#worldStatus');
+      const materialized=()=>Number(status()?.dataset.materializedChunks??'NaN');
+      const key=(type:'keydown'|'keyup',code:string)=>window.dispatchEvent(new KeyboardEvent(type,{code,bubbles:true}));
+      const until=async(predicate:()=>boolean,timeoutMs:number)=>{
+        const deadline=performance.now()+timeoutMs;
+        while(!predicate()){
+          if(performance.now()>=deadline)return false;
+          await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+        }
+        return true;
+      };
+      key('keydown','ShiftLeft');
+      key('keydown','KeyD');
+      const entered=await until(()=>materialized()>0,2_500);
+      key('keyup','KeyD');
+      key('keydown','KeyA');
+      const exited=entered&&await until(()=>materialized()===0,2_500);
+      key('keyup','KeyA');
+      key('keyup','ShiftLeft');
+      return {entered,exited,materialized:materialized()};
+    });
+    expect(transition.entered).toBe(true);
+    expect(transition.exited).toBe(true);
+    expect(transition.materialized).toBe(0);
+
+    releaseHeld();
+    await expect.poll(()=>heldCompleted,{timeout:3_000}).toBe(true);
+    await page.waitForTimeout(250);
+    const afterStale=await runtime(page);
+    expect(afterStale.coarseRequestTimeouts).toBe(before.coarseRequestTimeouts);
+    expect(afterStale.coarseDecidedChunks).toBe(before.coarseDecidedChunks);
+    expect(afterStale.coarseLastBatchSize).toBe(before.coarseLastBatchSize);
+    expect(afterStale.coarseLastSource).not.toBe('e2e-stale-transition');
+    await page.screenshot({path:testInfo.outputPath('coarse-request-transition-rejected.png'),fullPage:true});
+
+    await page.unroute('**/api/world/chunks/decide');
+    await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:40_000}).toBeGreaterThan(before.coarseDecidedChunks);
+    const recovered=await runtime(page);
+    expect(recovered.coarseLastBatchSize).toBeGreaterThan(0);
+    expect(recovered.coarseLastSource).not.toBe('e2e-stale-transition');
+  }finally{
+    releaseHeld();
+    await page.unroute('**/api/world/chunks/decide').catch(()=>{});
   }
 });

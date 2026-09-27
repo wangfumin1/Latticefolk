@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Coarse chunk/region/world decision requests now use bounded abortable lifetimes, strict request-membership and reply-schema validation, runtime-generation invalidation across restore/materialization, and request-time baselines so stale or malformed provider replies cannot overwrite authoritative coarse policy state.
+
 - Durable world revision compare-and-swap now rejects stale browser saves and final beacons before any SQLite world-table mutation, persists revisions across reset/server restart, and exposes conflict state for real-browser verification.
 - Persistence saves preserve discovered coarse/fine history when rows are omitted by a partial writer; omitted `wildlifeTransfers` preserves pending transit while an explicit array retains queue-completion semantics.
 
