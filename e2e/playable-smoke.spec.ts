@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 interface RuntimeSnapshot {
   cameraMode:string;
@@ -14,6 +14,8 @@ interface RuntimeSnapshot {
   cartVisualChildren:number;
   movableDirty:boolean;
   persistenceSavePending:boolean;
+  persistenceRevision:number;
+  persistenceConflict:boolean;
   assetFailures:number;
   licensedVisualTargets:number;
   licensedVisualsResolved:number;
@@ -39,6 +41,8 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cartVisualChildren:read('cartVisualChildren'),
       movableDirty:data.movableDirty==='true',
       persistenceSavePending:data.persistenceSavePending==='true',
+      persistenceRevision:read('persistenceRevision'),
+      persistenceConflict:data.persistenceConflict==='true',
       assetFailures:read('assetFailures'),
       licensedVisualTargets:read('licensedVisualTargets'),
       licensedVisualsResolved:read('licensedVisualsResolved')
@@ -89,6 +93,15 @@ async function persistedCartZ(page:Page):Promise<number> {
     const cart=data.snapshot?.homeObjects?.find(object=>object.id==='cart_town');
     return Number(cart?.position?.z??Number.NaN);
   });
+}
+
+async function serverPersistence(request:APIRequestContext){
+  const response=await request.get('/api/world/state',{failOnStatusCode:false});
+  if(!response.ok())throw new Error(`world-state GET failed: HTTP ${response.status()}`);
+  return response.json() as Promise<{
+    revision:number;
+    snapshot?:{homeObjects?:Array<{id?:string;position?:{z?:number}}>}|null;
+  }>;
 }
 
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
@@ -232,4 +245,86 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await page.screenshot({path:testInfo.outputPath('first-person-tool-contact.png'),fullPage:true});
 
   expect(pageErrors).toEqual([]);
+});
+
+
+test('revision CAS rejects a delayed stale browser writer and stale final beacon', async ({ browser, request }) => {
+  test.setTimeout(180_000);
+
+  const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
+  expect(reset.ok()).toBe(true);
+  const resetBody=await reset.json() as {revision:number};
+  const baseRevision=resetBody.revision;
+  expect(Number.isSafeInteger(baseRevision)).toBe(true);
+
+  const contextA=await browser.newContext();
+  const contextB=await browser.newContext();
+  const pageA=await contextA.newPage();
+  const pageB=await contextB.newPage();
+  let releaseDelayed=()=>{};
+  const delayedGate=new Promise<void>(resolve=>{releaseDelayed=resolve;});
+  let delayedCaptured=false;
+  let delayedExpectedRevision=Number.NaN;
+
+  try{
+    await Promise.all([pageA.goto('/'),pageB.goto('/')]);
+    await expect.poll(async()=>(await runtime(pageA)).persistenceRevision,{timeout:15_000}).toBe(baseRevision);
+    await expect.poll(async()=>(await runtime(pageB)).persistenceRevision,{timeout:15_000}).toBe(baseRevision);
+    expect((await runtime(pageA)).persistenceConflict).toBe(false);
+    expect((await runtime(pageB)).persistenceConflict).toBe(false);
+    await expect.poll(async()=>(await runtime(pageA)).movableBodies,{timeout:15_000}).toBeGreaterThanOrEqual(1);
+    await expect.poll(async()=>(await runtime(pageB)).movableBodies,{timeout:15_000}).toBeGreaterThanOrEqual(1);
+
+    await pageB.route('**/api/world/state',async route=>{
+      if(route.request().method()==='POST'&&!delayedCaptured){
+        delayedCaptured=true;
+        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number};
+        delayedExpectedRevision=Number(body.expectedRevision);
+        await delayedGate;
+        await route.continue();
+        return;
+      }
+      await route.continue();
+    });
+
+    await pageB.locator('#startBtn').click();
+    await expect.poll(async()=>pageB.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(pageB,['ShiftLeft','KeyW'],650);
+    await expect.poll(()=>delayedCaptured,{timeout:10_000}).toBe(true);
+    expect(delayedExpectedRevision).toBe(baseRevision);
+
+    await pageA.locator('#startBtn').click();
+    await expect.poll(async()=>pageA.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(pageA,['ShiftLeft','KeyW'],650);
+    await expect.poll(async()=>(await runtime(pageA)).persistenceRevision,{timeout:15_000}).toBe(baseRevision+1);
+    const authoritativeCartZ=(await runtime(pageA)).cartZ;
+
+    releaseDelayed();
+    await expect.poll(async()=>(await runtime(pageB)).persistenceConflict,{timeout:10_000}).toBe(true);
+    await expect.poll(async()=>(await runtime(pageB)).persistenceSavePending,{timeout:10_000}).toBe(false);
+
+    const afterConflict=await serverPersistence(request);
+    expect(afterConflict.revision).toBe(baseRevision+1);
+    const storedCartZ=Number(afterConflict.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
+    expect(Math.abs(storedCartZ-authoritativeCartZ)).toBeLessThan(.08);
+    await pageB.waitForTimeout(1_800);
+    expect((await serverPersistence(request)).revision).toBe(afterConflict.revision);
+
+    await pageB.reload();
+    await expect.poll(async()=>(await runtime(pageB)).persistenceRevision,{timeout:15_000}).toBe(afterConflict.revision);
+    await expect.poll(async()=>(await runtime(pageB)).persistenceConflict,{timeout:15_000}).toBe(false);
+    await expect.poll(async()=>Math.abs((await runtime(pageB)).cartZ-authoritativeCartZ),{timeout:15_000}).toBeLessThan(.08);
+
+    await pageA.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await expect.poll(async()=>(await serverPersistence(request)).revision,{timeout:10_000}).toBe(afterConflict.revision+1);
+    const afterAuthoritativeBeacon=(await serverPersistence(request)).revision;
+
+    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await pageB.waitForTimeout(1_000);
+    expect((await serverPersistence(request)).revision).toBe(afterAuthoritativeBeacon);
+  }finally{
+    releaseDelayed();
+    await contextA.close();
+    await contextB.close();
+  }
 });
