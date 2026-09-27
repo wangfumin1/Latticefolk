@@ -322,13 +322,21 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
     await expect.poll(async()=>Math.abs((await worldStatusNumber(pageB,'data-cart-z'))-authoritativeCartZ),{timeout:30_000}).toBeLessThan(.08);
 
-    await pageA.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
-    await expect.poll(async()=>(await serverPersistence(request)).revision,{timeout:10_000}).toBeGreaterThan(afterConflict.revision);
-    const afterAuthoritativeBeacon=(await serverPersistence(request)).revision;
+    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+    await expect.poll(async()=>{
+      const localRevision=await worldStatusNumber(pageB,'data-persistence-revision');
+      return localRevision===(await serverPersistence(request)).revision;
+    },{timeout:30_000}).toBe(true);
+
+    const beforeFinalSave=(await serverPersistence(request)).revision;
+    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await expect.poll(async()=>(await serverPersistence(request)).revision,{timeout:10_000}).toBeGreaterThan(beforeFinalSave);
+    const afterFinalSave=(await serverPersistence(request)).revision;
+    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBeLessThan(afterFinalSave);
 
     await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
     await pageB.waitForTimeout(1_000);
-    expect((await serverPersistence(request)).revision).toBe(afterAuthoritativeBeacon);
+    expect((await serverPersistence(request)).revision).toBe(afterFinalSave);
   }finally{
     releaseDelayed();
     await contextA.close();
