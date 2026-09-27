@@ -7,6 +7,8 @@ import Database from 'better-sqlite3';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>saveCurrent(store,snapshot,store.revision());
+
 test('partial saves preserve omitted discovered rows and omitted transit queues',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-partial-save-'));
   const file=path.join(dir,'world.sqlite');
@@ -31,7 +33,7 @@ test('partial saves preserve omitted discovered rows and omitted transit queues'
       ],
       homeNpcs:[],homeObjects:[]
     };
-    store.save(initial);
+    saveCurrent(store,initial);
 
     const seedDb=new Database(file);
     seedDb.prepare('INSERT INTO wildlife_transfers(entity_id,transfer_json,updated_at) VALUES(?,?,?)')
@@ -44,7 +46,7 @@ test('partial saves preserve omitted discovered rows and omitted transit queues'
       coarseChunks:[{...initial.coarseChunks[0]!,food:73}],
       fineChunks:[initial.fineChunks[0]!]
     };
-    store.save(partial);
+    saveCurrent(store,partial);
 
     const preserved=store.load();
     assert.ok(preserved);
@@ -57,7 +59,7 @@ test('partial saves preserve omitted discovered rows and omitted transit queues'
     );
     assert.equal(store.stats().pendingWildlifeTransfers,1);
 
-    store.save({...partial,wildlifeTransfers:[]});
+    saveCurrent(store,{...partial,wildlifeTransfers:[]});
     assert.equal(store.stats().pendingWildlifeTransfers,0);
     assert.equal(store.load()?.coarseChunks.some(chunk=>chunk.id==='chunk_1_0'),true);
     assert.equal(store.load()?.fineChunks.some(chunk=>chunk.chunkId==='chunk_1_0'),true);
