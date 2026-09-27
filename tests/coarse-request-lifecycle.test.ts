@@ -99,7 +99,7 @@ test('coarse decision requests bound fetch and JSON stalls, release pending stat
 
     let jsonSignal:AbortSignal|undefined;
     globalThis.fetch=(async(_input:RequestInfo | URL,init?:RequestInit)=>{
-      jsonSignal=init?.signal;
+      jsonSignal=init?.signal??undefined;
       return {ok:true,json:()=>new Promise<unknown>(()=>{})} as Response;
     }) as typeof fetch;
     await state.requestWorld(context);
