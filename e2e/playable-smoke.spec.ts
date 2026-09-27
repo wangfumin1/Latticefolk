@@ -1,9 +1,18 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
+
+interface ChunkDecisionRequestForE2E {
+  chunks:Array<{id:string}>;
+}
+
 interface RuntimeSnapshot {
   cameraMode:string;
   discoveredChunks:number;
   materializedChunks:number;
+  coarseDecidedChunks:number;
+  coarseLastSource:string;
+  coarseLastBatchSize:number;
+  coarseRequestTimeouts:number;
   physicsBodies:number;
   terrainSurfaces:number;
   playerX:number;
@@ -31,6 +40,10 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cameraMode:data.cameraMode??'',
       discoveredChunks:read('discoveredChunks'),
       materializedChunks:read('materializedChunks'),
+      coarseDecidedChunks:read('coarseDecidedChunks'),
+      coarseLastSource:data.coarseLastSource??'',
+      coarseLastBatchSize:read('coarseLastBatchSize'),
+      coarseRequestTimeouts:read('coarseRequestTimeouts'),
       physicsBodies:read('physicsBodies'),
       terrainSurfaces:read('terrainSurfaces'),
       playerX:read('playerX'),
@@ -351,5 +364,84 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     releaseDelayed();
     if(!contextAClosed)await contextA.close();
     await contextB.close();
+  }
+});
+
+
+test('coarse policy reply crossing a real materialize-unload transition is discarded and retry recovers', async ({ page, request }, testInfo) => {
+  test.setTimeout(420_000);
+
+  const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
+  expect(reset.ok()).toBe(true);
+
+  let heldRequest:ChunkDecisionRequestForE2E|undefined;
+  let releaseHeld=()=>{};
+  const heldGate=new Promise<void>(resolve=>{releaseHeld=resolve;});
+  let heldCompleted=false;
+
+  await page.route('**/api/world/chunks/decide',async route=>{
+    if(heldRequest){
+      await route.continue();
+      return;
+    }
+    heldRequest=JSON.parse(route.request().postData()||'{}') as ChunkDecisionRequestForE2E;
+    await heldGate;
+    const payload={
+      source:'e2e-stale-transition',
+      decisions:heldRequest.chunks.map(chunk=>({
+        chunkId:chunk.id,
+        strategy:'fortify',
+        migrationPolicy:'retain',
+        ecologyPolicy:'protect',
+        confidence:.9,
+        reasonCode:'e2e_stale_transition',
+        source:'e2e-stale-transition'
+      }))
+    };
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(payload)});
+    heldCompleted=true;
+  });
+
+  try{
+    await page.goto('/');
+    await expect(page.locator('#game canvas')).toBeVisible();
+    await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:30_000}).toBe(0);
+    await page.locator('#startBtn').click();
+    await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
+
+    const before=await runtime(page);
+    expect(before.coarseDecidedChunks).toBe(0);
+    expect(before.coarseLastBatchSize).toBe(0);
+
+    // Follow the same real-input cross-town lane used by the primary playable path, then
+    // cross x=36 into a non-home coarse chunk so runtime ownership becomes fine/materialized.
+    await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
+    await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
+    await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>37.0,60_000);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:20_000}).toBeGreaterThan(0);
+    await page.screenshot({path:testInfo.outputPath('coarse-request-materialized-transition.png'),fullPage:true});
+
+    // Return to the home radius before releasing the old response. The request therefore
+    // crosses materialize -> unload and ends in the same unmaterialized shape it started in.
+    await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<34.0,60_000);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:20_000}).toBe(0);
+
+    releaseHeld();
+    await expect.poll(()=>heldCompleted,{timeout:10_000}).toBe(true);
+    await page.waitForTimeout(500);
+    const afterStale=await runtime(page);
+    expect(afterStale.coarseDecidedChunks).toBe(0);
+    expect(afterStale.coarseLastBatchSize).toBe(0);
+    expect(afterStale.coarseLastSource).not.toBe('e2e-stale-transition');
+
+    await page.unroute('**/api/world/chunks/decide');
+    await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:40_000}).toBeGreaterThan(0);
+    const recovered=await runtime(page);
+    expect(recovered.coarseLastBatchSize).toBeGreaterThan(0);
+    expect(recovered.coarseLastSource).not.toBe('e2e-stale-transition');
+  }finally{
+    releaseHeld();
+    await page.unroute('**/api/world/chunks/decide').catch(()=>{});
   }
 });
