@@ -26,6 +26,7 @@ The save format is currently `version: 1`.
 
 ## SQLite layout
 
+- `world_control` — durable monotonic write revision used for compare-and-swap; survives world reset
 - `world_meta`
 - `coarse_chunks`
 - `fine_chunks` — NPC JSON, object JSON, and wildlife JSON
@@ -37,9 +38,9 @@ Writes use a single SQLite transaction so one logical snapshot cannot partially 
 
 ## Runtime behavior
 
-The browser loads `GET /api/world/state` on startup. If no save exists, deterministic world generation remains authoritative.
+The browser loads `GET /api/world/state` on startup. The response carries both the current snapshot and the durable persistence revision. If no save exists, deterministic world generation remains authoritative, but the revision still advances across explicit resets.
 
-While playing, the browser posts a complete state snapshot roughly every 15 seconds. During page unload, it also attempts a final `sendBeacon` write.
+While playing, the browser posts `{ snapshot, expectedRevision }` roughly every 15 seconds. A successful transaction returns the next revision and the browser adopts it. During page unload, the browser also attempts a final `sendBeacon` with the same revision envelope.
 
 ### Authoritative write validation
 
@@ -47,7 +48,7 @@ Every world snapshot is validated by the same deterministic boundary before SQLi
 
 Additive legacy fields remain optional: older version-1 snapshots may omit fine wildlife, lineage, transit, phenotype/genome/domestication additions and may still carry the legacy movable-cart fields. Validation is a write-integrity boundary, not a migration rewrite.
 
-This validation does **not** solve stale-writer concurrency. Revision/CAS protection for delayed browser saves and final beacons remains tracked separately in #51.
+Validation is combined with revision compare-and-swap at the authoritative SQLite boundary. Validation answers whether a candidate snapshot is structurally legal; revision matching answers whether that writer is still current.
 
 ### Merge-preserving partial snapshot semantics
 
@@ -55,9 +56,15 @@ Normal saves treat missing coarse or fine rows as omitted by that writer, not as
 
 The optional `wildlifeTransfers` field has distinct queue semantics: omission preserves the pending queue for legacy or partial writers, while a supplied array synchronizes the queue, so an explicit empty array means those pending transfers have completed.
 
-This omission contract does not solve stale-writer concurrency. A delayed older writer can still overwrite rows it explicitly supplies until revision/CAS protection is completed in #51.
+### Revision/CAS stale-writer protection
 
-`DELETE /api/world/state` clears the save. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
+SQLite keeps a monotonic revision in `world_control`. Every ordinary world write must supply the revision observed by that writer. The transaction acquires the write boundary, compares `expectedRevision` before changing any world table, and either commits the entire snapshot with revision +1 or rejects it unchanged with HTTP 409. A delayed tab therefore cannot overwrite newer meta, chunk, fine-entity, lineage or transit facts.
+
+The browser latches a 409 as a persistence conflict and stops automatic retries instead of refreshing the revision and replaying stale state. Reload is required to restore the newer authoritative snapshot. Network failures remain retryable with the same revision; if a commit succeeded but its response was lost, the retry conflicts safely rather than duplicating or overwriting the committed write. A stale final beacon is rejected by the same route.
+
+`DELETE /api/world/state` clears the save. It also increments, rather than resets, the durable revision so a pre-reset writer cannot resurrect the deleted world through an ABA revision match. In production this destructive operation is disabled unless `ALLOW_RUNTIME_ADMIN=true`.
+
+Databases created before `world_control` are upgraded additively: their existing version-1 state remains intact and starts at revision 0. The revision then survives server-process restart independently of whether a current snapshot exists.
 
 ## Coarse/fine interaction
 
