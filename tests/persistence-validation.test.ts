@@ -4,12 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
+
 import Database from 'better-sqlite3';
 import express from 'express';
-import { WorldPersistence } from '../server/worldPersistence.js';
+import { WorldPersistence, WorldPersistenceConflictError } from '../server/worldPersistence.js';
 import { registerWorldStateRoutes } from '../server/worldStateRoutes.js';
 import { validateWorldPersistenceSnapshot, WorldSnapshotValidationError, WORLD_SNAPSHOT_LIMITS } from '../server/worldSnapshotValidation.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
+
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
 
 const inventory={apple:1,bread:1,wood:2,coin:8,flower:0,grain:0,flour:0,water:1,stone:0,plank:0,tool:1};
 
@@ -77,6 +80,7 @@ function logicalTables(file:string){
   const db=new Database(file,{readonly:true});
   try{
     return {
+      world_control:db.prepare('SELECT * FROM world_control ORDER BY slot').all(),
       world_meta:db.prepare('SELECT * FROM world_meta ORDER BY slot').all(),
       coarse_chunks:db.prepare('SELECT * FROM coarse_chunks ORDER BY id').all(),
       fine_chunks:db.prepare('SELECT * FROM fine_chunks ORDER BY chunk_id').all(),
@@ -135,7 +139,7 @@ test('additive legacy version-1 omissions still persist and load without reset',
     delete legacy.homeObjects[0].rigidBodyArchetype;
     legacy.homeObjects[0].movable=true;
     legacy.homeObjects[0].physicsRadius=.8;
-    store.save(legacy);
+    saveCurrent(store,legacy);
     const loaded=store.load();
     assert.ok(loaded);
     assert.equal(loaded.version,1);
@@ -176,12 +180,12 @@ test('WorldPersistence rejects malformed direct writes without changing any logi
   const file=path.join(dir,'world.sqlite');
   const store=new WorldPersistence(file);
   try{
-    store.save(validSnapshot());
+    saveCurrent(store,validSnapshot());
     const before=logicalTables(file);
     for(const [name,mutate] of invalidCases()){
       const candidate=structuredClone(validSnapshot()) as any;
       mutate(candidate);
-      assert.throws(()=>store.save(candidate),WorldSnapshotValidationError,name);
+      assert.throws(()=>saveCurrent(store,candidate),WorldSnapshotValidationError,name);
       assert.deepEqual(logicalTables(file),before,`${name} mutated SQLite state`);
     }
   }finally{
@@ -205,7 +209,7 @@ test('HTTP world-state route accepts valid writes and rejects malformed writes w
   try{
     const valid=validSnapshot();
     const saved=await fetch(`${base}/api/world/state`,{
-      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(valid)
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:valid,expectedRevision:store.revision()})
     });
     assert.equal(saved.status,200);
     const before=logicalTables(file);
@@ -214,7 +218,7 @@ test('HTTP world-state route accepts valid writes and rejects malformed writes w
     malformed.coarseChunks[0].biome='ocean';
     malformed.homeObjects[0].position.x=null;
     const rejected=await fetch(`${base}/api/world/state`,{
-      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(malformed)
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:malformed,expectedRevision:store.revision()})
     });
     assert.equal(rejected.status,400);
     const body=await rejected.json() as {error?:string;details?:string[]};
@@ -223,13 +227,137 @@ test('HTTP world-state route accepts valid writes and rejects malformed writes w
     assert.ok(body.details?.some(detail=>detail.includes('homeObjects[0].position.x')));
     assert.deepEqual(logicalTables(file),before);
 
+    const missingRevision=await fetch(`${base}/api/world/state`,{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:valid})
+    });
+    assert.equal(missingRevision.status,400);
+
+    const stale=structuredClone(valid);
+    stale.meta.day=99;
+    const staleWrite=await fetch(`${base}/api/world/state`,{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:stale,expectedRevision:0})
+    });
+    assert.equal(staleWrite.status,409);
+    const conflict=await staleWrite.json() as {expectedRevision?:number;currentRevision?:number};
+    assert.equal(conflict.expectedRevision,0);
+    assert.equal(conflict.currentRevision,1);
+    assert.deepEqual(logicalTables(file),before);
+
     const loaded=await fetch(`${base}/api/world/state`);
     assert.equal(loaded.status,200);
-    const response=await loaded.json() as {snapshot?:WorldPersistenceSnapshot|null};
+    const response=await loaded.json() as {snapshot?:WorldPersistenceSnapshot|null;revision?:number};
+    assert.equal(response.revision,1);
     assert.equal(response.snapshot?.coarseChunks[0]?.id,'chunk_2_0');
     assert.equal(response.snapshot?.homeObjects[0]?.id,'home_cart');
   }finally{
     await new Promise<void>(resolve=>server.close(()=>resolve()));
+    store.close();
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
+
+
+test('revision CAS rejects stale snapshots atomically and survives explicit reset without ABA',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-revision-cas-'));
+  const file=path.join(dir,'world.sqlite');
+  const store=new WorldPersistence(file);
+  try{
+    const initial=validSnapshot();
+    const first=store.save(initial,0);
+    assert.equal(first.revision,1);
+
+    const newer=structuredClone(initial);
+    newer.meta.day=9;
+    newer.coarseChunks[0]!.food=77.25;
+    newer.fineChunks[0]!.objectStates[0]!.name='Newer crate';
+    newer.wildlifeLineage![0]!.habitatExposure={
+      observedDays:4,
+      habitatMean:{ecology:70,food:64,water:72,danger:17,settlementLevel:1,plantBiomass:68},
+      biomeDays:{plains:4},
+      chunkDays:{chunk_2_0:4},
+      observedTransitions:0
+    };
+    newer.wildlifeTransfers![0]!.state.health=93;
+    const second=store.save(newer,1);
+    assert.equal(second.revision,2);
+
+    const beforeStale=logicalTables(file);
+    const stale=structuredClone(initial);
+    stale.meta.day=3;
+    stale.coarseChunks.splice(1,1);
+    stale.fineChunks[0]!.objectStates[0]!.name='Stale crate';
+    stale.wildlifeLineage![0]!.habitatExposure={
+      observedDays:1,
+      habitatMean:{ecology:20,food:10,water:20,danger:90,settlementLevel:1,plantBiomass:15},
+      biomeDays:{plains:1},
+      chunkDays:{chunk_2_0:1},
+      observedTransitions:0
+    };
+    stale.wildlifeTransfers=[];
+    assert.throws(
+      ()=>store.save(stale,1),
+      error=>error instanceof WorldPersistenceConflictError
+        &&error.expectedRevision===1&&error.currentRevision===2
+    );
+    assert.deepEqual(logicalTables(file),beforeStale,'stale conflict mutated authoritative SQLite tables');
+    assert.equal(store.load()?.meta.day,9);
+    assert.equal(store.load()?.coarseChunks.some(chunk=>chunk.id==='chunk_3_0'),true);
+    assert.equal(store.load()?.fineChunks[0]?.objectStates[0]?.name,'Newer crate');
+    assert.equal(store.load()?.wildlifeLineage?.[0]?.habitatExposure?.observedDays,4);
+    assert.equal(store.load()?.wildlifeTransfers?.[0]?.state.health,93);
+
+    const cleared=store.clear();
+    assert.equal(cleared.revision,3);
+    assert.equal(store.load(),null);
+    assert.throws(
+      ()=>store.save(newer,2),
+      error=>error instanceof WorldPersistenceConflictError
+        &&error.expectedRevision===2&&error.currentRevision===3
+    );
+    assert.equal(store.load(),null,'pre-reset writer resurrected a cleared world');
+    assert.equal(store.revision(),3);
+  }finally{
+    store.close();
+  }
+
+  const reopened=new WorldPersistence(file);
+  try{
+    assert.equal(reopened.revision(),3,'revision must survive process/store reopen');
+    assert.equal(reopened.load(),null);
+  }finally{
+    reopened.close();
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
+
+test('pre-revision version-1 SQLite data gains revision zero without resetting the save',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-revision-upgrade-'));
+  const file=path.join(dir,'world.sqlite');
+  const legacy=new Database(file);
+  const meta=validSnapshot().meta;
+  legacy.exec(`
+    CREATE TABLE world_meta (
+      slot TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
+      meta_json TEXT NOT NULL,
+      saved_at INTEGER NOT NULL
+    );
+  `);
+  legacy.prepare('INSERT INTO world_meta(slot,version,meta_json,saved_at) VALUES(?,?,?,?)')
+    .run('default',1,JSON.stringify(meta),123456);
+  legacy.close();
+
+  const store=new WorldPersistence(file);
+  try{
+    assert.equal(store.revision(),0);
+    const loaded=store.load();
+    assert.ok(loaded);
+    assert.equal(loaded.meta.day,meta.day);
+    assert.equal(loaded.savedAt,123456);
+    const saved=store.save(loaded,0);
+    assert.equal(saved.revision,1);
+    assert.equal(store.load()?.meta.day,meta.day);
+  }finally{
     store.close();
     fs.rmSync(dir,{recursive:true,force:true});
   }

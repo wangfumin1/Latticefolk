@@ -6,6 +6,9 @@ import path from 'node:path';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WildlifeDomesticationState, WildlifeState, WorldPersistenceSnapshot } from '../src/types.js';
 
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
+
+
 const inventory={apple:0,bread:0,wood:0,coin:0,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
 
 const domestication:WildlifeDomesticationState={
@@ -79,7 +82,7 @@ test('domestication state persists through fine chunks transfers and durable lin
     }]
   };
 
-  store.save(snapshot);
+  saveCurrent(store,snapshot);
   const loaded=store.load();
   assert.ok(loaded);
   assert.equal(loaded.fineChunks[0]?.wildlifeStates?.[0]?.domestication?.ownerId,'player');

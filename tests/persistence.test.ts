@@ -7,6 +7,9 @@ import Database from 'better-sqlite3';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
+
+
 test('SQLite persistence round-trips coarse, fine and home state',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-'));
   const file=path.join(dir,'world.sqlite');
@@ -101,7 +104,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
       fromChunkId:'chunk_2_-1',toChunkId:'chunk_3_-1',representedPopulation:2.5,transferredDay:4.2
     }]
   };
-  store.save(snapshot);
+  saveCurrent(store,snapshot);
   const loaded=store.load();
   assert.ok(loaded);
   assert.equal(loaded.meta.day,4);
@@ -168,7 +171,7 @@ test('SQLite persistence round-trips coarse, fine and home state',()=>{
   assert.equal(diseasePair?.bothSidesObserved,false);
   assert.equal(rabbitDisease?.generations[0]?.pressureMean,9);
 
-  store.save({...snapshot,wildlifeLineage:[],wildlifeTransfers:[]});
+  saveCurrent(store,{...snapshot,wildlifeLineage:[],wildlifeTransfers:[]});
   const afterSparseSave=store.load();
   assert.equal(afterSparseSave?.wildlifeLineage?.length,1,'lineage archive must not be pruned by later sparse snapshots');
   assert.equal(afterSparseSave?.wildlifeTransfers?.length,0,'completed transfer queue entries should be pruned');
@@ -232,7 +235,7 @@ test('SQLite migrates pre-origin lineage tables without losing ancestry',()=>{
       origin:'reproduction',offspringCount:0,reproductiveSuccess:false
     }]
   };
-  store.save(snapshot);
+  saveCurrent(store,snapshot);
   const migrated=store.load()?.wildlifeLineage?.[0];
   assert.equal(migrated?.origin,'reproduction');
   assert.equal(migrated?.phenotypeAtBirth?.morphology.bodyLength,1.03);
@@ -284,7 +287,7 @@ test('server evolution stats use persisted world time for living fitness eligibi
       }
     ]
   };
-  store.save(snapshot);
+  saveCurrent(store,snapshot);
   const disease=store.evolutionStats().find(entry=>entry.species==='rabbit')?.exposureFitness
     .find(entry=>entry.dimension==='diseasePressure');
   assert.equal(disease?.sampleSize,3);

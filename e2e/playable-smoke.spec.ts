@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 interface RuntimeSnapshot {
   cameraMode:string;
@@ -14,6 +14,8 @@ interface RuntimeSnapshot {
   cartVisualChildren:number;
   movableDirty:boolean;
   persistenceSavePending:boolean;
+  persistenceRevision:number;
+  persistenceConflict:boolean;
   assetFailures:number;
   licensedVisualTargets:number;
   licensedVisualsResolved:number;
@@ -39,6 +41,8 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       cartVisualChildren:read('cartVisualChildren'),
       movableDirty:data.movableDirty==='true',
       persistenceSavePending:data.persistenceSavePending==='true',
+      persistenceRevision:read('persistenceRevision'),
+      persistenceConflict:data.persistenceConflict==='true',
       assetFailures:read('assetFailures'),
       licensedVisualTargets:read('licensedVisualTargets'),
       licensedVisualsResolved:read('licensedVisualsResolved')
@@ -91,10 +95,24 @@ async function persistedCartZ(page:Page):Promise<number> {
   });
 }
 
+async function serverPersistence(request:APIRequestContext){
+  const response=await request.get('/api/world/state',{failOnStatusCode:false});
+  if(!response.ok())throw new Error(`world-state GET failed: HTTP ${response.status()}`);
+  return response.json() as Promise<{
+    revision:number;
+    snapshot?:{homeObjects?:Array<{id?:string;position?:{z?:number}}>}|null;
+  }>;
+}
+
+async function worldStatusNumber(page:Page,attribute:string){
+  const value=await page.locator('#worldStatus').getAttribute(attribute);
+  return Number(value??Number.NaN);
+}
+
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
   // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
@@ -201,8 +219,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // Precision alignment uses short real-input pulses with the key released before each
   // observability read. This prevents software-rendered CI from moving another meter while
   // a slow page.evaluate sample is in flight.
-  for(let i=0;i<12&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
-    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],80);
+  for(let i=0;i<30&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
+    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],100);
     eastAligned=await runtime(page);
   }
   expect(eastAligned.playerX).toBeGreaterThan(13.65);
@@ -232,4 +250,106 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await page.screenshot({path:testInfo.outputPath('first-person-tool-contact.png'),fullPage:true});
 
   expect(pageErrors).toEqual([]);
+});
+
+
+test('revision CAS rejects a delayed stale browser writer and stale final beacon', async ({ browser, request }) => {
+  test.setTimeout(300_000);
+
+  const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
+  expect(reset.ok()).toBe(true);
+  const resetBody=await reset.json() as {revision:number};
+  const baseRevision=resetBody.revision;
+  expect(Number.isSafeInteger(baseRevision)).toBe(true);
+
+  const contextA=await browser.newContext();
+  const contextB=await browser.newContext();
+  let contextAClosed=false;
+  const pageA=await contextA.newPage();
+  const pageB=await contextB.newPage();
+  let releaseDelayed=()=>{};
+  const delayedGate=new Promise<void>(resolve=>{releaseDelayed=resolve;});
+  let delayedCaptured=false;
+  let delayedExpectedRevision=Number.NaN;
+
+  try{
+    await Promise.all([pageA.goto('/'),pageB.goto('/')]);
+    const worldStatusA=pageA.locator('#worldStatus');
+    const worldStatusB=pageB.locator('#worldStatus');
+    await expect(worldStatusA).toHaveAttribute('data-persistence-revision',String(baseRevision),{timeout:30_000});
+    await expect(worldStatusB).toHaveAttribute('data-persistence-revision',String(baseRevision),{timeout:30_000});
+    await expect(worldStatusA).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
+    await expect.poll(()=>worldStatusNumber(pageA,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
+    await expect.poll(()=>worldStatusNumber(pageB,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
+
+    await pageB.route('**/api/world/state',async route=>{
+      if(route.request().method()==='POST'&&!delayedCaptured){
+        delayedCaptured=true;
+        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number};
+        delayedExpectedRevision=Number(body.expectedRevision);
+        await delayedGate;
+        await route.continue();
+        return;
+      }
+      await route.continue();
+    });
+
+    await pageB.locator('#startBtn').click();
+    await expect.poll(async()=>pageB.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(pageB,['ShiftLeft','KeyW'],650);
+    await expect.poll(()=>delayedCaptured,{timeout:10_000}).toBe(true);
+    expect(delayedExpectedRevision).toBe(baseRevision);
+
+    await pageA.locator('#startBtn').click();
+    await expect.poll(async()=>pageA.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(pageA,['ShiftLeft','KeyW'],650);
+    await expect.poll(()=>worldStatusNumber(pageA,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThan(baseRevision);
+    const authoritativeCartZ=await worldStatusNumber(pageA,'data-cart-z');
+
+    releaseDelayed();
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true',{timeout:30_000});
+    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+
+    const afterConflict=await serverPersistence(request);
+    expect(afterConflict.revision).toBeGreaterThan(baseRevision);
+    const storedCartZ=Number(afterConflict.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
+    expect(Math.abs(storedCartZ-authoritativeCartZ)).toBeLessThan(.08);
+    const conflictedLocalRevision=await worldStatusNumber(pageB,'data-persistence-revision');
+    await pageB.waitForTimeout(1_800);
+    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBe(conflictedLocalRevision);
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true');
+
+    // Stop the authoritative writer before reloading the stale tab. Keeping page A alive
+    // would let its normal periodic autosave legitimately advance the revision again while
+    // page B is adopting the conflict winner, turning this recovery assertion into a fresh race.
+    await contextA.close();
+    contextAClosed=true;
+    await pageB.waitForTimeout(500);
+
+    await pageB.reload();
+    await expect.poll(()=>worldStatusNumber(pageB,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThanOrEqual(afterConflict.revision);
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
+    await expect.poll(async()=>Math.abs((await worldStatusNumber(pageB,'data-cart-z'))-authoritativeCartZ),{timeout:30_000}).toBeLessThan(.08);
+
+    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+    await expect.poll(async()=>{
+      const localRevision=await worldStatusNumber(pageB,'data-persistence-revision');
+      return localRevision===(await serverPersistence(request)).revision;
+    },{timeout:30_000}).toBe(true);
+
+    const beforeFinalSave=(await serverPersistence(request)).revision;
+    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await expect.poll(async()=>(await serverPersistence(request)).revision,{timeout:10_000}).toBeGreaterThan(beforeFinalSave);
+    const afterFinalSave=(await serverPersistence(request)).revision;
+    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBeLessThan(afterFinalSave);
+
+    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await pageB.waitForTimeout(1_000);
+    expect((await serverPersistence(request)).revision).toBe(afterFinalSave);
+  }finally{
+    releaseDelayed();
+    if(!contextAClosed)await contextA.close();
+    await contextB.close();
+  }
 });
