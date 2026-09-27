@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
+
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>saveCurrent(store,snapshot,store.revision());
 import Database from 'better-sqlite3';
 import express from 'express';
 import { WorldPersistence } from '../server/worldPersistence.js';
@@ -135,7 +137,7 @@ test('additive legacy version-1 omissions still persist and load without reset',
     delete legacy.homeObjects[0].rigidBodyArchetype;
     legacy.homeObjects[0].movable=true;
     legacy.homeObjects[0].physicsRadius=.8;
-    store.save(legacy);
+    saveCurrent(store,legacy);
     const loaded=store.load();
     assert.ok(loaded);
     assert.equal(loaded.version,1);
@@ -176,12 +178,12 @@ test('WorldPersistence rejects malformed direct writes without changing any logi
   const file=path.join(dir,'world.sqlite');
   const store=new WorldPersistence(file);
   try{
-    store.save(validSnapshot());
+    saveCurrent(store,validSnapshot());
     const before=logicalTables(file);
     for(const [name,mutate] of invalidCases()){
       const candidate=structuredClone(validSnapshot()) as any;
       mutate(candidate);
-      assert.throws(()=>store.save(candidate),WorldSnapshotValidationError,name);
+      assert.throws(()=>saveCurrent(store,candidate),WorldSnapshotValidationError,name);
       assert.deepEqual(logicalTables(file),before,`${name} mutated SQLite state`);
     }
   }finally{
@@ -205,7 +207,7 @@ test('HTTP world-state route accepts valid writes and rejects malformed writes w
   try{
     const valid=validSnapshot();
     const saved=await fetch(`${base}/api/world/state`,{
-      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(valid)
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:valid,expectedRevision:store.revision()})
     });
     assert.equal(saved.status,200);
     const before=logicalTables(file);
@@ -214,7 +216,7 @@ test('HTTP world-state route accepts valid writes and rejects malformed writes w
     malformed.coarseChunks[0].biome='ocean';
     malformed.homeObjects[0].position.x=null;
     const rejected=await fetch(`${base}/api/world/state`,{
-      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(malformed)
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({snapshot:malformed,expectedRevision:store.revision()})
     });
     assert.equal(rejected.status,400);
     const body=await rejected.json() as {error?:string;details?:string[]};
