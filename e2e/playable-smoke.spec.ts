@@ -427,11 +427,31 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
     await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
     const before=await runtime(page);
 
-    await moveWithKeys(page,['ShiftLeft','KeyD'],300);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:2_000}).toBeGreaterThan(0);
-
-    await moveWithKeys(page,['ShiftLeft','KeyA'],450);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:2_000}).toBe(0);
+    const transition=await page.evaluate(async()=>{
+      const status=()=>document.querySelector<HTMLElement>('#worldStatus');
+      const materialized=()=>Number(status()?.dataset.materializedChunks??'NaN');
+      const key=(type:'keydown'|'keyup',code:string)=>window.dispatchEvent(new KeyboardEvent(type,{code,bubbles:true}));
+      const until=async(predicate:()=>boolean,timeoutMs:number)=>{
+        const deadline=performance.now()+timeoutMs;
+        while(!predicate()){
+          if(performance.now()>=deadline)return false;
+          await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+        }
+        return true;
+      };
+      key('keydown','ShiftLeft');
+      key('keydown','KeyD');
+      const entered=await until(()=>materialized()>0,2_500);
+      key('keyup','KeyD');
+      key('keydown','KeyA');
+      const exited=entered&&await until(()=>materialized()===0,2_500);
+      key('keyup','KeyA');
+      key('keyup','ShiftLeft');
+      return {entered,exited,materialized:materialized()};
+    });
+    expect(transition.entered).toBe(true);
+    expect(transition.exited).toBe(true);
+    expect(transition.materialized).toBe(0);
 
     releaseHeld();
     await expect.poll(()=>heldCompleted,{timeout:3_000}).toBe(true);
