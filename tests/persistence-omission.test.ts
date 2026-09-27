@@ -7,7 +7,8 @@ import Database from 'better-sqlite3';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 
-const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>saveCurrent(store,snapshot,store.revision());
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
+
 
 test('partial saves preserve omitted discovered rows and omitted transit queues',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-partial-save-'));
