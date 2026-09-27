@@ -3189,6 +3189,10 @@ class TownGame {
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
+    ui.world.dataset.coarseDecidedChunks=String(world.decidedChunks);
+    ui.world.dataset.coarseLastSource=world.lastSource;
+    ui.world.dataset.coarseLastBatchSize=String(world.lastBatchSize);
+    ui.world.dataset.coarseRequestTimeouts=String(world.requestTimeouts);
     ui.world.dataset.physicsBodies=String(activePhysicsBodies);
     ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
     ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
