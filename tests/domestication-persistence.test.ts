@@ -6,7 +6,8 @@ import path from 'node:path';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import type { WildlifeDomesticationState, WildlifeState, WorldPersistenceSnapshot } from '../src/types.js';
 
-const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>saveCurrent(store,snapshot,store.revision());
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
+
 
 const inventory={apple:0,bread:0,wood:0,coin:0,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
 
