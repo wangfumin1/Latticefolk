@@ -12,6 +12,59 @@ import { CoarseChunkSpatialIndex } from './coarseSpatialIndex';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
+const CHUNK_STRATEGIES=new Set<ChunkStrategy>(['sustain','grow_settlement','conserve','extract_resources','fortify','trade_route']);
+const CHUNK_MIGRATION_POLICIES=new Set<ChunkMigrationPolicy>(['attract','retain','release','evacuate']);
+const CHUNK_ECOLOGY_POLICIES=new Set<ChunkEcologyPolicy>(['recover','balance','harvest','protect']);
+const REGION_PRIORITIES=new Set(['balanced','food_security','trade_network','settlement_growth','ecology_recovery','security_coordination']);
+const REGION_MOVEMENT_POLICIES=new Set(['open','stabilize','redistribute','restrict']);
+const REGION_ECOLOGY_POLICIES=new Set(['restore_corridors','balanced_use','protected_network','productive_landscape']);
+const WORLD_PRIORITIES=new Set(['resilience','prosperity','expansion','ecology','security','exploration']);
+const WORLD_CONNECTIVITY_POLICIES=new Set(['localism','balanced_networks','trade_corridors','migration_corridors']);
+const WORLD_GROWTH_POLICIES=new Set(['steady','compact','frontier','conserve']);
+
+const isRecord=(value:unknown):value is Record<string,unknown>=>typeof value==='object'&&value!==null&&!Array.isArray(value);
+const isUnitConfidence=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1;
+const isNonemptyString=(value:unknown)=>typeof value==='string'&&value.length>0;
+
+function isChunkDecision(value:unknown):value is ChunkDecisionResponse['decisions'][number] {
+  if(!isRecord(value))return false;
+  return isNonemptyString(value.chunkId)
+    &&CHUNK_STRATEGIES.has(value.strategy as ChunkStrategy)
+    &&CHUNK_MIGRATION_POLICIES.has(value.migrationPolicy as ChunkMigrationPolicy)
+    &&CHUNK_ECOLOGY_POLICIES.has(value.ecologyPolicy as ChunkEcologyPolicy)
+    &&isUnitConfidence(value.confidence)
+    &&isNonemptyString(value.reasonCode)
+    &&isNonemptyString(value.source);
+}
+function isChunkDecisionResponse(value:unknown):value is ChunkDecisionResponse {
+  return isRecord(value)&&isNonemptyString(value.source)&&Array.isArray(value.decisions);
+}
+function isRegionDecision(value:unknown):value is RegionDecision {
+  if(!isRecord(value))return false;
+  return isNonemptyString(value.regionId)
+    &&REGION_PRIORITIES.has(value.priority as string)
+    &&REGION_MOVEMENT_POLICIES.has(value.movementPolicy as string)
+    &&REGION_ECOLOGY_POLICIES.has(value.ecologyPolicy as string)
+    &&isUnitConfidence(value.confidence)
+    &&isNonemptyString(value.reasonCode)
+    &&isNonemptyString(value.source);
+}
+function isRegionDecisionResponse(value:unknown):value is RegionDecisionResponse {
+  return isRecord(value)&&isNonemptyString(value.source)&&Array.isArray(value.decisions);
+}
+function isWorldDecision(value:unknown):value is WorldDecision {
+  if(!isRecord(value))return false;
+  return WORLD_PRIORITIES.has(value.priority as string)
+    &&WORLD_CONNECTIVITY_POLICIES.has(value.connectivity as string)
+    &&WORLD_GROWTH_POLICIES.has(value.growth as string)
+    &&isUnitConfidence(value.confidence)
+    &&isNonemptyString(value.reasonCode)
+    &&isNonemptyString(value.source);
+}
+function isWorldDecisionResponse(value:unknown):value is WorldDecisionResponse {
+  return isRecord(value)&&isNonemptyString(value.source)&&isWorldDecision(value.decision);
+}
+
 export interface CoarseWorldStatus {
   chunks: number;
   decidedChunks: number;
@@ -41,6 +94,7 @@ export interface CoarseWorldStatus {
   avgPopulation: number;
   avgEcology: number;
   avgProsperity: number;
+  requestTimeouts: number;
 }
 
 interface UpdateContext {
@@ -84,8 +138,14 @@ export class CoarseWorldRuntime {
   private decisionScanIds:string[]=[];
   private decisionScanCursor=0;
   private readonly maxDecisionScanPerWake=256;
+  private requestTimeouts=0;
+  private decisionContextGeneration=0;
 
-  constructor(private scene:THREE.Scene, private worldSeed='latticefolk-default') {
+  constructor(
+    private scene:THREE.Scene,
+    private worldSeed='latticefolk-default',
+    private readonly requestDeadlineMs=8_000
+  ) {
     this.root.name='coarse-world';
     this.scene.add(this.root);
     this.generate();
@@ -175,13 +235,17 @@ export class CoarseWorldRuntime {
   }
 
   restoreKnownChunks(saved:CoarseChunkState[]) {
+    let restoredAny=false;
     for(const state of saved){
       if(!state||typeof state.id!=='string')continue;
       const restored=structuredClone(state);ensureWildlifePopulations(restored);
       if(!this.chunks.has(state.id))this.decisionScanIds.push(state.id);
       this.chunks.set(state.id,restored);
       this.chunkSpatialIndex.upsert(restored);
+      this.decisionBaselines.delete(state.id);
+      restoredAny=true;
     }
+    if(restoredAny)this.decisionContextGeneration++;
     for(const id of this.activeChunkIds){
       const chunk=this.chunks.get(id);
       if(!chunk)continue;
@@ -412,18 +476,45 @@ export class CoarseWorldRuntime {
     };
   }
 
+  private async postDecision(url:string,body:unknown):Promise<unknown> {
+    const controller=new AbortController();
+    let timeout:ReturnType<typeof setTimeout>|undefined;
+    let timedOut=false;
+    const deadline=new Promise<never>((_,reject)=>{
+      timeout=setTimeout(()=>{
+        timedOut=true;
+        controller.abort();
+        reject(new Error(`decision request timed out: ${url}`));
+      },this.requestDeadlineMs);
+    });
+    const request=(async()=>{
+      const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      if(!response.ok)throw new Error(`decision request failed: ${url}`);
+      return await response.json() as unknown;
+    })();
+    try{return await Promise.race([request,deadline]);}
+    catch(error){if(timedOut)this.requestTimeouts++;throw error;}
+    finally{if(timeout!==undefined)clearTimeout(timeout);}
+  }
+
   private async requestRegions(ctx:UpdateContext) {
     this.regionPending=true;
+    const requestGeneration=this.decisionContextGeneration;
     const regions=this.aggregateRegions().sort((a,b)=>{
       const score=(r:RegionState)=>(this.regionPolicies.has(r.id)?0:1000)+(100-r.food)+(100-r.water)+r.danger+(100-r.ecology)*.5;
       return score(b)-score(a);
     }).slice(0,8);
+    const requestedRegionIds=new Set(regions.map(region=>region.id));
     const body:RegionDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,regions};
     try{
-      const response=await fetch('/api/world/regions/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await response.json() as RegionDecisionResponse;
-      if(!response.ok)throw new Error('region decision failed');
-      for(const decision of result.decisions)this.regionPolicies.set(decision.regionId,decision);
+      const raw=await this.postDecision('/api/world/regions/decide',body);
+      if(requestGeneration!==this.decisionContextGeneration||!isRegionDecisionResponse(raw))return;
+      const counts=new Map<string,number>();
+      for(const row of raw.decisions)if(isRecord(row)&&typeof row.regionId==='string')counts.set(row.regionId,(counts.get(row.regionId)||0)+1);
+      for(const decision of raw.decisions){
+        if(!isRegionDecision(decision)||counts.get(decision.regionId)!==1||!requestedRegionIds.has(decision.regionId))continue;
+        this.regionPolicies.set(decision.regionId,decision);
+      }
     }catch{
       // Existing regional policies remain authoritative until the next successful refresh.
     }finally{
@@ -434,17 +525,14 @@ export class CoarseWorldRuntime {
 
   private async requestWorld(ctx:UpdateContext) {
     this.worldPending=true;
+    const requestGeneration=this.decisionContextGeneration;
     const regions=this.aggregateRegions();
     const regionDecisions=regions.map(region=>this.regionPolicies.get(region.id)).filter((x):x is RegionDecision=>Boolean(x)).slice(0,16);
-    const body:WorldDecisionRequest={
-      day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,
-      summary:this.worldSummary(regions),regions:regionDecisions
-    };
+    const body:WorldDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,summary:this.worldSummary(regions),regions:regionDecisions};
     try{
-      const response=await fetch('/api/world/strategy/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await response.json() as WorldDecisionResponse;
-      if(!response.ok)throw new Error('world decision failed');
-      this.worldPolicy=result.decision;
+      const raw=await this.postDecision('/api/world/strategy/decide',body);
+      if(requestGeneration!==this.decisionContextGeneration||!isWorldDecisionResponse(raw))return;
+      this.worldPolicy=raw.decision;
     }catch{
       // Keep the previous bounded world policy if the provider is temporarily unavailable.
     }finally{
@@ -457,10 +545,7 @@ export class CoarseWorldRuntime {
     const window=boundedDecisionIdWindow(this.decisionScanIds,this.decisionScanCursor,this.maxDecisionScanPerWake);
     const chunks:CoarseChunkState[]=[];
     for(const id of window.ids){const chunk=this.chunks.get(id);if(chunk)chunks.push(chunk);}
-    return {
-      candidates:rankChunkDecisionCandidates(chunks,this.decisionBaselines,Date.now(),this.materialized,limit),
-      nextCursor:window.nextCursor
-    };
+    return {candidates:rankChunkDecisionCandidates(chunks,this.decisionBaselines,Date.now(),this.materialized,limit),nextCursor:window.nextCursor};
   }
 
   private wakeChunkDecisionDeadline() {
@@ -472,33 +557,37 @@ export class CoarseWorldRuntime {
 
   private async requestBatch(ctx:UpdateContext) {
     this.pending=true;
+    const requestGeneration=this.decisionContextGeneration;
     const scheduled=this.scheduledChunkDecisions(8);
     this.decisionScanCursor=scheduled.nextCursor;
     const chunks=scheduled.candidates.map(candidate=>candidate.chunk);
-    if(!chunks.length){
-      this.pending=false;
-      this.nextDecisionAt=performance.now()+30_000;
-      return;
-    }
+    if(!chunks.length){this.pending=false;this.nextDecisionAt=performance.now()+30_000;return;}
+    const capturedAt=Date.now();
+    const membership=new Map(chunks.map(chunk=>[chunk.id,{chunk,signal:captureChunkDecisionSignal(chunk,capturedAt)}]));
     let completed=false;
     const body:ChunkDecisionRequest={day:ctx.day,gameTime:ctx.gameTime,weather:ctx.weather,chunks};
     try{
-      const r=await fetch('/api/world/chunks/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      const result=await r.json() as ChunkDecisionResponse;
-      if(!r.ok)throw new Error('chunk decision failed');
+      const raw=await this.postDecision('/api/world/chunks/decide',body);
+      if(requestGeneration!==this.decisionContextGeneration||!isChunkDecisionResponse(raw))return;
+      const counts=new Map<string,number>();
+      for(const row of raw.decisions)if(isRecord(row)&&typeof row.chunkId==='string')counts.set(row.chunkId,(counts.get(row.chunkId)||0)+1);
       const decidedAt=Date.now();
-      for(const decision of result.decisions){
-        const chunk=this.chunks.get(decision.chunkId);if(!chunk)continue;
+      let accepted=0;
+      for(const decision of raw.decisions){
+        if(!isChunkDecision(decision)||counts.get(decision.chunkId)!==1)continue;
+        const member=membership.get(decision.chunkId);if(!member)continue;
+        const chunk=this.chunks.get(decision.chunkId);
+        if(chunk!==member.chunk||this.materialized.has(decision.chunkId))continue;
         chunk.strategy=decision.strategy;
         chunk.migrationPolicy=decision.migrationPolicy;
         chunk.ecologyPolicy=decision.ecologyPolicy;
         chunk.lastDecisionAt=decidedAt;
         chunk.decisionVersion++;
-        this.decisionBaselines.set(chunk.id,captureChunkDecisionSignal(chunk,decidedAt));
+        this.decisionBaselines.set(chunk.id,member.signal);
+        accepted++;
       }
-      this.lastSource=result.source;
-      this.lastBatchSize=result.decisions.length;
-      completed=result.decisions.length>0;
+      if(accepted>0){this.lastSource=raw.source;this.lastBatchSize=accepted;completed=true;}
+      else{this.lastSource='offline';this.lastBatchSize=0;}
     }catch{
       this.lastSource='offline';
       this.lastBatchSize=0;
@@ -519,7 +608,10 @@ export class CoarseWorldRuntime {
   setMaterialized(chunkId:string,value:boolean) {
     const chunk=this.chunks.get(chunkId);
     if(!chunk)return;
+    const wasMaterialized=this.materialized.has(chunkId);
+    if(wasMaterialized===value)return;
     if(value)this.materialized.add(chunkId);else this.materialized.delete(chunkId);
+    this.decisionContextGeneration++;
     const marker=this.markers.get(chunkId);
     if(marker)marker.visible=!value;
     if(!value)this.wakeChunkDecisionDeadline();
@@ -583,7 +675,8 @@ export class CoarseWorldRuntime {
       })(),
       avgPopulation:avg(c=>c.population),
       avgEcology:avg(c=>c.ecology),
-      avgProsperity:avg(c=>c.prosperity)
+      avgProsperity:avg(c=>c.prosperity),
+      requestTimeouts:this.requestTimeouts
     };
   }
 }
