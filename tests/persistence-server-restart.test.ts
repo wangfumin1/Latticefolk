@@ -105,8 +105,10 @@ test('world revision and snapshot survive an actual server-process restart',asyn
       body:JSON.stringify({snapshot:snapshot(1),expectedRevision:0})
     });
     assert.equal(stale.status,409);
-    const conflict=await stale.json() as {expectedRevision:number;currentRevision:number};
-    assert.deepEqual(conflict,{expectedRevision:0,currentRevision:1});
+    const conflict=await stale.json() as {error?:string;expectedRevision:number;currentRevision:number};
+    assert.equal(conflict.expectedRevision,0);
+    assert.equal(conflict.currentRevision,1);
+    assert.equal(conflict.error,'World persistence revision conflict');
 
     const afterConflict=await fetch(`${second.base}/api/world/state`);
     const afterBody=await afterConflict.json() as {revision:number;snapshot:WorldPersistenceSnapshot|null};
