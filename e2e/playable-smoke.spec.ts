@@ -386,14 +386,14 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
   await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>34.4,55_000);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>32.0,55_000);
   let staged=await runtime(page);
-  for(let i=0;i<12&&staged.playerX<35.1;i++){
-    await moveWithKeys(page,['KeyD'],70);
+  for(let i=0;i<20&&staged.playerX<35.0;i++){
+    await moveWithKeys(page,['KeyD'],80);
     staged=await runtime(page);
   }
   expect(staged.playerX).toBeGreaterThan(35.0);
-  expect(staged.playerX).toBeLessThan(36.0);
+  expect(staged.playerX).toBeLessThan(35.6);
   expect(staged.materializedChunks).toBe(0);
 
   let heldRequest:ChunkDecisionRequestForE2E|undefined;
@@ -427,12 +427,11 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
     await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
     const before=await runtime(page);
 
-    await moveWithKeys(page,['ShiftLeft','KeyD'],350);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:3_000}).toBeGreaterThan(0);
-    await page.screenshot({path:testInfo.outputPath('coarse-request-materialized-transition.png'),fullPage:true});
+    await moveWithKeys(page,['ShiftLeft','KeyD'],300);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:2_000}).toBeGreaterThan(0);
 
-    await moveWithKeys(page,['ShiftLeft','KeyA'],550);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:3_000}).toBe(0);
+    await moveWithKeys(page,['ShiftLeft','KeyA'],450);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:2_000}).toBe(0);
 
     releaseHeld();
     await expect.poll(()=>heldCompleted,{timeout:3_000}).toBe(true);
@@ -442,6 +441,7 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
     expect(afterStale.coarseDecidedChunks).toBe(before.coarseDecidedChunks);
     expect(afterStale.coarseLastBatchSize).toBe(before.coarseLastBatchSize);
     expect(afterStale.coarseLastSource).not.toBe('e2e-stale-transition');
+    await page.screenshot({path:testInfo.outputPath('coarse-request-transition-rejected.png'),fullPage:true});
 
     await page.unroute('**/api/world/chunks/decide');
     await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:40_000}).toBeGreaterThan(before.coarseDecidedChunks);
