@@ -315,8 +315,10 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     expect(afterConflict.revision).toBeGreaterThan(baseRevision);
     const storedCartZ=Number(afterConflict.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
     expect(Math.abs(storedCartZ-authoritativeCartZ)).toBeLessThan(.08);
+    const conflictedLocalRevision=await worldStatusNumber(pageB,'data-persistence-revision');
     await pageB.waitForTimeout(1_800);
-    expect((await serverPersistence(request)).revision).toBe(afterConflict.revision);
+    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBe(conflictedLocalRevision);
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true');
 
     // Stop the authoritative writer before reloading the stale tab. Keeping page A alive
     // would let its normal periodic autosave legitimately advance the revision again while
