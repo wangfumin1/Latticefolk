@@ -5,13 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
-const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>saveCurrent(store,snapshot,store.revision());
 import Database from 'better-sqlite3';
 import express from 'express';
 import { WorldPersistence } from '../server/worldPersistence.js';
 import { registerWorldStateRoutes } from '../server/worldStateRoutes.js';
 import { validateWorldPersistenceSnapshot, WorldSnapshotValidationError, WORLD_SNAPSHOT_LIMITS } from '../server/worldSnapshotValidation.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
+
+const saveCurrent=(store:WorldPersistence,snapshot:WorldPersistenceSnapshot)=>store.save(snapshot,store.revision());
 
 const inventory={apple:1,bread:1,wood:2,coin:8,flower:0,grain:0,flour:0,water:1,stone:0,plank:0,tool:1};
 
