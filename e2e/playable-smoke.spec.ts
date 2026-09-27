@@ -112,7 +112,7 @@ async function worldStatusNumber(page:Page,attribute:string){
 test('real playable scene keeps God View observer-only and uses authoritative ground', async ({ page }, testInfo) => {
   // Software-rendered Chromium can spend most of the default 60s budget loading the real 3D asset set on hosted runners.
   // Keep assertions individually bounded while allowing the full playable path enough wall-clock time to finish.
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   const pageErrors:string[]=[];
   page.on('pageerror',(error)=>pageErrors.push(error.message));
 
@@ -264,6 +264,7 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
 
   const contextA=await browser.newContext();
   const contextB=await browser.newContext();
+  let contextAClosed=false;
   const pageA=await contextA.newPage();
   const pageB=await contextB.newPage();
   let releaseDelayed=()=>{};
@@ -317,6 +318,13 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await pageB.waitForTimeout(1_800);
     expect((await serverPersistence(request)).revision).toBe(afterConflict.revision);
 
+    // Stop the authoritative writer before reloading the stale tab. Keeping page A alive
+    // would let its normal periodic autosave legitimately advance the revision again while
+    // page B is adopting the conflict winner, turning this recovery assertion into a fresh race.
+    await contextA.close();
+    contextAClosed=true;
+    await pageB.waitForTimeout(500);
+
     await pageB.reload();
     await expect.poll(()=>worldStatusNumber(pageB,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThanOrEqual(afterConflict.revision);
     await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
@@ -339,7 +347,7 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     expect((await serverPersistence(request)).revision).toBe(afterFinalSave);
   }finally{
     releaseDelayed();
-    await contextA.close();
+    if(!contextAClosed)await contextA.close();
     await contextB.close();
   }
 });
