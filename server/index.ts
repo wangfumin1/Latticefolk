@@ -15,7 +15,8 @@ const root = path.resolve(__dirname, '..');
 const dialogue = new DialogueStore(path.join(root, 'data', 'dialogue.jsonl'));
 const selection = createDecisionProvider(dialogue);
 const decision = selection.active;
-const worldStore = new WorldPersistence(path.join(root, 'data', 'latticefolk.sqlite'));
+const worldDbPath = process.env.WORLD_DB_PATH ? path.resolve(process.env.WORLD_DB_PATH) : path.join(root, 'data', 'latticefolk.sqlite');
+const worldStore = new WorldPersistence(worldDbPath);
 const app = express();
 
 app.disable('x-powered-by');
