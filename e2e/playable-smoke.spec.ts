@@ -219,8 +219,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // Precision alignment uses short real-input pulses with the key released before each
   // observability read. This prevents software-rendered CI from moving another meter while
   // a slow page.evaluate sample is in flight.
-  for(let i=0;i<12&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
-    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],80);
+  for(let i=0;i<30&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
+    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],100);
     eastAligned=await runtime(page);
   }
   expect(eastAligned.playerX).toBeGreaterThan(13.65);
