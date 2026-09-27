@@ -40,8 +40,8 @@ async function startServer(port:number,dbPath:string){
     stdio:['ignore','pipe','pipe']
   });
   let output='';
-  child.stdout.on('data',chunk=>{output+=String(chunk);});
-  child.stderr.on('data',chunk=>{output+=String(chunk);});
+  child.stdout?.on('data',chunk=>{output+=String(chunk);});
+  child.stderr?.on('data',chunk=>{output+=String(chunk);});
   const base=`http://127.0.0.1:${port}`;
   const deadline=Date.now()+12_000;
   while(Date.now()<deadline){
