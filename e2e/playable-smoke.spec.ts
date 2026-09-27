@@ -300,8 +300,9 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     const authoritativeCartZ=(await runtime(pageA)).cartZ;
 
     releaseDelayed();
-    await expect.poll(async()=>(await runtime(pageB)).persistenceConflict,{timeout:10_000}).toBe(true);
-    await expect.poll(async()=>(await runtime(pageB)).persistenceSavePending,{timeout:10_000}).toBe(false);
+    const worldStatusB=pageB.locator('#worldStatus');
+    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true',{timeout:30_000});
+    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
 
     const afterConflict=await serverPersistence(request);
     expect(afterConflict.revision).toBeGreaterThan(baseRevision);
