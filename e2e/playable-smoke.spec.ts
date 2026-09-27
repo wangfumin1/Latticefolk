@@ -374,11 +374,32 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
   expect(reset.ok()).toBe(true);
 
+  await page.goto('/');
+  await expect(page.locator('#game canvas')).toBeVisible();
+  await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:30_000}).toBe(0);
+  await page.locator('#startBtn').click();
+  await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+
+  // Let the first ordinary coarse batch complete, then move to just inside the home/coarse
+  // ownership boundary. The next batch is held only after positioning, so the real
+  // materialize -> unload round trip can complete well inside the production 8s deadline.
+  await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
+  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>34.4,55_000);
+  let staged=await runtime(page);
+  for(let i=0;i<12&&staged.playerX<35.1;i++){
+    await moveWithKeys(page,['KeyD'],70);
+    staged=await runtime(page);
+  }
+  expect(staged.playerX).toBeGreaterThan(35.0);
+  expect(staged.playerX).toBeLessThan(36.0);
+  expect(staged.materializedChunks).toBe(0);
+
   let heldRequest:ChunkDecisionRequestForE2E|undefined;
   let releaseHeld=()=>{};
   const heldGate=new Promise<void>(resolve=>{releaseHeld=resolve;});
   let heldCompleted=false;
-
   await page.route('**/api/world/chunks/decide',async route=>{
     if(heldRequest){
       await route.continue();
@@ -403,40 +424,27 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   });
 
   try{
-    await page.goto('/');
-    await expect(page.locator('#game canvas')).toBeVisible();
-    await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:30_000}).toBe(0);
-    await page.locator('#startBtn').click();
-    await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
     await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
-
     const before=await runtime(page);
-    expect(before.coarseDecidedChunks).toBe(0);
-    expect(before.coarseLastBatchSize).toBe(0);
 
-    // Follow the same real-input cross-town lane used by the primary playable path, then
-    // cross x=36 into a non-home coarse chunk so runtime ownership becomes fine/materialized.
-    await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
-    await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
-    await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>37.0,60_000);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:20_000}).toBeGreaterThan(0);
+    await moveWithKeys(page,['ShiftLeft','KeyD'],350);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:3_000}).toBeGreaterThan(0);
     await page.screenshot({path:testInfo.outputPath('coarse-request-materialized-transition.png'),fullPage:true});
 
-    // Return to the home radius before releasing the old response. The request therefore
-    // crosses materialize -> unload and ends in the same unmaterialized shape it started in.
-    await moveUntil(page,['ShiftLeft','KeyA'],state=>state.playerX<34.0,60_000);
-    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:20_000}).toBe(0);
+    await moveWithKeys(page,['ShiftLeft','KeyA'],550);
+    await expect.poll(async()=>(await runtime(page)).materializedChunks,{timeout:3_000}).toBe(0);
 
     releaseHeld();
-    await expect.poll(()=>heldCompleted,{timeout:10_000}).toBe(true);
-    await page.waitForTimeout(500);
+    await expect.poll(()=>heldCompleted,{timeout:3_000}).toBe(true);
+    await page.waitForTimeout(250);
     const afterStale=await runtime(page);
-    expect(afterStale.coarseDecidedChunks).toBe(0);
-    expect(afterStale.coarseLastBatchSize).toBe(0);
+    expect(afterStale.coarseRequestTimeouts).toBe(before.coarseRequestTimeouts);
+    expect(afterStale.coarseDecidedChunks).toBe(before.coarseDecidedChunks);
+    expect(afterStale.coarseLastBatchSize).toBe(before.coarseLastBatchSize);
     expect(afterStale.coarseLastSource).not.toBe('e2e-stale-transition');
 
     await page.unroute('**/api/world/chunks/decide');
-    await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:40_000}).toBeGreaterThan(0);
+    await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:40_000}).toBeGreaterThan(before.coarseDecidedChunks);
     const recovered=await runtime(page);
     expect(recovered.coarseLastBatchSize).toBeGreaterThan(0);
     expect(recovered.coarseLastSource).not.toBe('e2e-stale-transition');
