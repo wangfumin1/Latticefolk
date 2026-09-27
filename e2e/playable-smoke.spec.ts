@@ -17,6 +17,9 @@ interface RuntimeSnapshot {
   terrainSurfaces:number;
   playerX:number;
   playerZ:number;
+  playerGroundingError:number;
+  npcGroundingMaxError:number;
+  wildlifeGroundingMaxError:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -48,6 +51,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       terrainSurfaces:read('terrainSurfaces'),
       playerX:read('playerX'),
       playerZ:read('playerZ'),
+      playerGroundingError:read('playerGroundingError'),
+      npcGroundingMaxError:read('npcGroundingMaxError'),
+      wildlifeGroundingMaxError:read('wildlifeGroundingMaxError'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -140,6 +146,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.movableBodies).toBeGreaterThanOrEqual(1);
   expect(home.materializedChunks).toBe(0);
   expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
+  expect(home.playerGroundingError).toBeLessThan(.02);
+  expect(home.npcGroundingMaxError).toBeLessThan(.02);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -220,13 +228,15 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
 
   // Real first-person tool interaction. Use the east apple tree at (14, 1.5).
-  // First clear the central cart/well laterally, then enter the open z≈3 cross-town lane.
-  // This keeps all NPC/wildlife dynamic collision enabled while avoiding the observed
-  // z=6.325 traffic line rather than disabling or bypassing authoritative physics.
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,10_000);
-  // Stop one polling interval early under software WebGL so the player remains north
-  // of the tree while lateral alignment happens; the observed stop is around z=4.0.
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.5,10_000);
+  // Cross the center on a diagonal rather than requiring one exact traffic lane to stay empty:
+  // NPC/wildlife dynamic collision remains authoritative, while a legitimate moving body can no
+  // longer make the browser gate fail merely because it temporarily occupies z≈6.3.
+  await moveUntil(
+    page,
+    ['ShiftLeft','KeyD','KeyW'],
+    state=>state.playerX>4.0&&state.playerZ<4.5,
+    16_000
+  );
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
   let eastAligned=await runtime(page);
   // Precision alignment uses short real-input pulses with the key released before each
@@ -312,20 +322,31 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await expect.poll(async()=>pageB.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
     await moveWithKeys(pageB,['ShiftLeft','KeyW'],650);
     await expect.poll(()=>delayedCaptured,{timeout:10_000}).toBe(true);
-    expect(delayedExpectedRevision).toBe(baseRevision);
+    expect(Number.isSafeInteger(delayedExpectedRevision)).toBe(true);
+    expect(delayedExpectedRevision).toBeGreaterThanOrEqual(baseRevision);
+    const staleRevision=delayedExpectedRevision;
 
+    // Asset loading and the normal 15s autosave are intentionally real in this test.
+    // They may legitimately advance the server after reset, so resynchronize the authoritative
+    // writer instead of assuming the reset revision is still current at the delayed-save instant.
+    await pageA.reload();
+    await expect.poll(()=>worldStatusNumber(pageA,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThanOrEqual(staleRevision);
     await pageA.locator('#startBtn').click();
     await expect.poll(async()=>pageA.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
     await moveWithKeys(pageA,['ShiftLeft','KeyW'],650);
-    await expect.poll(()=>worldStatusNumber(pageA,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThan(baseRevision);
     const authoritativeCartZ=await worldStatusNumber(pageA,'data-cart-z');
+    await expect.poll(async()=>{
+      const persisted=await serverPersistence(request);
+      const stored=Number(persisted.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
+      return persisted.revision>staleRevision&&Number.isFinite(stored)&&Math.abs(stored-authoritativeCartZ)<.08;
+    },{timeout:30_000}).toBe(true);
 
     releaseDelayed();
     await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true',{timeout:30_000});
     await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
 
     const afterConflict=await serverPersistence(request);
-    expect(afterConflict.revision).toBeGreaterThan(baseRevision);
+    expect(afterConflict.revision).toBeGreaterThan(staleRevision);
     const storedCartZ=Number(afterConflict.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
     expect(Math.abs(storedCartZ-authoritativeCartZ)).toBeLessThan(.08);
     const conflictedLocalRevision=await worldStatusNumber(pageB,'data-persistence-revision');
@@ -384,8 +405,12 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   // ownership boundary. The next batch is held only after positioning, so the real
   // materialize -> unload round trip can complete well inside the production 8s deadline.
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
+  await moveUntil(
+    page,
+    ['ShiftLeft','KeyD','KeyW'],
+    state=>state.playerX>4.0&&state.playerZ<4.2,
+    18_000
+  );
   await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>32.0,55_000);
   let staged=await runtime(page);
   for(let i=0;i<20&&staged.playerX<35.0;i++){
@@ -424,7 +449,9 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   });
 
   try{
-    await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
+    // A settled coarse world may legally choose the production 30s cadence.
+    // Wait beyond that cadence instead of treating a healthy quiet period as a missing request.
+    await expect.poll(()=>Boolean(heldRequest),{timeout:45_000}).toBe(true);
     const before=await runtime(page);
 
     const transition=await page.evaluate(async()=>{
