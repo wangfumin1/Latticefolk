@@ -142,7 +142,8 @@ async function drivePlayerTo(
     const deadline=performance.now()+timeoutMs;
     let last=read();
     let lastMovedAt=performance.now();
-    let avoidUntil=0;
+    let detourUntil=0;
+    let detourCode:string|undefined;
     let avoidSign=1;
     try{
       while(performance.now()<deadline){
@@ -160,22 +161,26 @@ async function drivePlayerTo(
         const distance=Math.hypot(dx,dz);
         if(distance<=tolerance)return {reached:true,x:p.x,z:p.z,distance};
 
-        // If authoritative collision has prevented any actual movement for long enough,
-        // commit to a short perpendicular detour. Do not judge that detour by direct
-        // distance-to-goal improvement: moving sideways is legitimate progress around a body.
-        if(currentTime-lastMovedAt>700&&currentTime>=avoidUntil){
+        // A dynamic circle can pin a diagonal "forward + sideways" request against its edge.
+        // When no actual movement occurs, temporarily drop the forward component and make a
+        // short ordinary-speed perpendicular move, then resume toward the goal.
+        if(currentTime-lastMovedAt>700&&currentTime>=detourUntil){
           avoidSign*=-1;
-          avoidUntil=currentTime+1_400;
+          detourCode=Math.abs(dx)>=Math.abs(dz)
+            ?(avoidSign>0?'KeyW':'KeyS')
+            :(avoidSign>0?'KeyD':'KeyA');
+          detourUntil=currentTime+850;
           lastMovedAt=currentTime;
         }
 
         const next=new Set<string>();
-        if(distance>1.8)next.add('ShiftLeft');
-        if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
-        if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
-        if(currentTime<avoidUntil){
-          if(Math.abs(dx)>=Math.abs(dz))next.add(avoidSign>0?'KeyW':'KeyS');
-          else next.add(avoidSign>0?'KeyD':'KeyA');
+        if(detourCode&&currentTime<detourUntil){
+          next.add(detourCode);
+        }else{
+          detourCode=undefined;
+          if(distance>1.8)next.add('ShiftLeft');
+          if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
+          if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
         }
         setHeld(next);
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
