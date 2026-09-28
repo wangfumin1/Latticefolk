@@ -132,8 +132,9 @@ async function drivePlayerTo(
     };
     const release=()=>setHeld(new Set());
     const deadline=performance.now()+timeoutMs;
-    let best=Number.POSITIVE_INFINITY;
-    let lastProgressAt=performance.now();
+    let last=read();
+    let lastMovedAt=performance.now();
+    let avoidUntil=0;
     let avoidSign=1;
     try{
       while(performance.now()<deadline){
@@ -142,24 +143,29 @@ async function drivePlayerTo(
           await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
           continue;
         }
+        const currentTime=performance.now();
+        if(Number.isFinite(last.x)&&Number.isFinite(last.z)&&Math.hypot(p.x-last.x,p.z-last.z)>.035){
+          lastMovedAt=currentTime;
+          last=p;
+        }
         const dx=target.x-p.x,dz=target.z-p.z;
         const distance=Math.hypot(dx,dz);
         if(distance<=tolerance)return {reached:true,x:p.x,z:p.z,distance};
-        if(distance<best-.06){best=distance;lastProgressAt=performance.now();}
-        const stalledFor=performance.now()-lastProgressAt;
-        if(stalledFor>1_800){
+
+        // If authoritative collision has prevented any actual movement for long enough,
+        // commit to a short perpendicular detour. Do not judge that detour by direct
+        // distance-to-goal improvement: moving sideways is legitimate progress around a body.
+        if(currentTime-lastMovedAt>700&&currentTime>=avoidUntil){
           avoidSign*=-1;
-          lastProgressAt=performance.now();
+          avoidUntil=currentTime+1_400;
+          lastMovedAt=currentTime;
         }
 
         const next=new Set<string>();
         if(distance>1.8)next.add('ShiftLeft');
         if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
         if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
-
-        // Preserve authoritative collision. When progress stalls, steer around the blocker
-        // with ordinary movement input rather than teleporting or disabling dynamic bodies.
-        if(stalledFor>650){
+        if(currentTime<avoidUntil){
           if(Math.abs(dx)>=Math.abs(dz))next.add(avoidSign>0?'KeyW':'KeyS');
           else next.add(avoidSign>0?'KeyD':'KeyA');
         }
