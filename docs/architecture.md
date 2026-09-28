@@ -22,6 +22,13 @@ DecisionProvider
   └─ jev (optional TypeSafe System One adapter)
 ```
 
+
+## Licensed building presentation and physical alignment
+
+Authored and procedural settlements treat a building as one semantic object with an invisible authoritative footprint plus a sourced visual asset. The runtime does not construct a temporary wall/roof/window/door mesh while a licensed model loads. In particular, building packs already contain their visible entrance; no second visible door is generated.
+
+Building source assets are normalized against explicit world-space width, height and depth targets using the ~1.82 m NPC reference. Once a licensed model resolves, its actual world-space bounding box replaces the conservative loading-time static collider, so player/NPC/wildlife collision follows the rendered footprint rather than a stale placeholder estimate. The semantic interaction point remains separate from the mesh origin. Persistence therefore restores building state without moving the deterministic building center to its entrance trigger.
+
 ## Core invariant
 
 A decision provider is not authoritative over the world. It cannot teleport an NPC, invent inventory, bypass collisions, or directly mutate numeric state. It selects high-level intent from legal candidates; the simulation validates and executes the result.
