@@ -40,7 +40,9 @@ Writes use a single SQLite transaction so one logical snapshot cannot partially 
 
 The browser loads `GET /api/world/state` on startup. The response carries both the current snapshot and the durable persistence revision. If no save exists, deterministic world generation remains authoritative, but the revision still advances across explicit resets.
 
-While playing, the browser posts `{ snapshot, expectedRevision }` roughly every 15 seconds. A successful transaction returns the next revision and the browser adopts it. During page unload, the browser also attempts a final `sendBeacon` with the same revision envelope.
+While playing, the browser posts `{ snapshot, expectedRevision }` roughly every 15 seconds. A successful transaction returns the next revision and the browser adopts it.
+
+During page unload the browser cannot reliably enqueue an arbitrarily large discovered-world snapshot: the regular payload is already around megabyte scale in realistic runs, while beacon/keepalive bodies have a much smaller browser budget. The final `sendBeacon` therefore sends a bounded critical snapshot containing world/player meta, center-town NPC/object state and the current wildlife-transit queue, with empty coarse/fine row lists and omitted lineage. SQLite's omission-preserving semantics keep previously persisted coarse/fine/lineage history intact; regular autosaves remain responsible for the complete discovered-world snapshot. The final checkpoint uses the same `expectedRevision` CAS envelope, so a stale unload writer is still rejected rather than overwriting a newer world.
 
 ### Authoritative write validation
 
