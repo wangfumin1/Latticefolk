@@ -277,6 +277,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:15_000}).toBe(0);
   await expect.poll(async()=>{const state=await runtime(page);return state.licensedVisualTargets>0&&state.licensedVisualsResolved===state.licensedVisualTargets;},{timeout:15_000}).toBe(true);
   await expect.poll(async()=>Math.abs((await runtime(page)).cartZ-pushedCartZ),{timeout:8_000}).toBeLessThan(.08);
+  const restoredGrounding=await runtime(page);
+  expect(restoredGrounding.playerGroundingError).toBeLessThan(.02);
+  expect(restoredGrounding.npcGroundingMaxError).toBeLessThan(.02);
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
