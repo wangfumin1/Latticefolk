@@ -32,6 +32,10 @@ interface RuntimeSnapshot {
   assetFailures:number;
   licensedVisualTargets:number;
   licensedVisualsResolved:number;
+  buildingVisualCount:number;
+  buildingMinHeight:number;
+  buildingMaxHeight:number;
+  buildingCenterMaxError:number;
 }
 
 async function runtime(page:Page):Promise<RuntimeSnapshot> {
@@ -65,7 +69,11 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       persistenceConflict:data.persistenceConflict==='true',
       assetFailures:read('assetFailures'),
       licensedVisualTargets:read('licensedVisualTargets'),
-      licensedVisualsResolved:read('licensedVisualsResolved')
+      licensedVisualsResolved:read('licensedVisualsResolved'),
+      buildingVisualCount:read('buildingVisualCount'),
+      buildingMinHeight:read('buildingMinHeight'),
+      buildingMaxHeight:read('buildingMaxHeight'),
+      buildingCenterMaxError:read('buildingCenterMaxError')
     };
   });
 }
@@ -230,6 +238,10 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
   expect(home.playerGroundingError).toBeLessThan(.02);
   expect(home.npcGroundingMaxError).toBeLessThan(.02);
+  expect(home.buildingVisualCount).toBeGreaterThanOrEqual(12);
+  expect(home.buildingMinHeight).toBeGreaterThanOrEqual(4.15);
+  expect(home.buildingMaxHeight).toBeGreaterThanOrEqual(10.4);
+  expect(home.buildingCenterMaxError).toBeLessThan(.01);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -286,6 +298,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const restoredGrounding=await runtime(page);
   expect(restoredGrounding.playerGroundingError).toBeLessThan(.02);
   expect(restoredGrounding.npcGroundingMaxError).toBeLessThan(.02);
+  expect(restoredGrounding.buildingVisualCount).toBeGreaterThanOrEqual(12);
+  expect(restoredGrounding.buildingMinHeight).toBeGreaterThanOrEqual(4.15);
+  expect(restoredGrounding.buildingCenterMaxError).toBeLessThan(.01);
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
