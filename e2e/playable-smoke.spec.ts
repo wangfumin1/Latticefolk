@@ -21,6 +21,9 @@ interface RuntimeSnapshot {
   playerGroundingError:number;
   npcGroundingMaxError:number;
   wildlifeGroundingMaxError:number;
+  buildingVisualTargets:number;
+  buildingVisualMinHeight:number;
+  buildingVisualMaxBoundsError:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -55,6 +58,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       playerGroundingError:read('playerGroundingError'),
       npcGroundingMaxError:read('npcGroundingMaxError'),
       wildlifeGroundingMaxError:read('wildlifeGroundingMaxError'),
+      buildingVisualTargets:read('buildingVisualTargets'),
+      buildingVisualMinHeight:read('buildingVisualMinHeight'),
+      buildingVisualMaxBoundsError:read('buildingVisualMaxBoundsError'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -230,6 +236,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
   expect(home.playerGroundingError).toBeLessThan(.02);
   expect(home.npcGroundingMaxError).toBeLessThan(.02);
+  expect(home.buildingVisualTargets).toBeGreaterThanOrEqual(12);
+  expect(home.buildingVisualMinHeight).toBeGreaterThanOrEqual(5.0);
+  expect(home.buildingVisualMaxBoundsError).toBeLessThan(.03);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
