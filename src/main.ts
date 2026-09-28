@@ -127,7 +127,16 @@ const ui = {
 
 interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
 interface AssetTemplate { scene: THREE.Object3D; animations: THREE.AnimationClip[]; }
-interface VisualTarget { group: THREE.Group; asset: string; height: number; rotationY?: number; targetWidth?: number; targetDepth?: number; }
+interface VisualTarget {
+  group: THREE.Group;
+  asset: string;
+  height: number;
+  rotationY?: number;
+  targetWidth?: number;
+  targetDepth?: number;
+  fit?: 'contain'|'dimensions';
+  onResolved?: (model:THREE.Object3D)=>void;
+}
 interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
 interface FineChunkRuntime {
@@ -242,6 +251,7 @@ class TownGame {
   fbxLoader = new FBXLoader();
   assets = new Map<string,AssetTemplate>();
   visualTargets: VisualTarget[] = [];
+  buildingVisualMetrics = new Map<string,{width:number;height:number;depth:number}>();
   assetRoot = '/assets/quaternius';
   assetsReady = false;
   assetLoadFailures:string[] = [];
@@ -362,33 +372,26 @@ class TownGame {
   }
 
   addBuilding(name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
+    // Building visuals are always sourced assets. Keep the group empty until the licensed
+    // model resolves; invisible physics/interaction state remains authoritative meanwhile.
     const g = new THREE.Group();
-    const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9});
-    const trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,3,d), wallMat);
-    wall.position.y=1.5; wall.castShadow=true; wall.receiveShadow=true; g.add(wall);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));
-    roof.position.y=4; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(.95,1.9,.12),trimMat);
-    door.position.set(0,.95,d/2+.065); g.add(door);
-    for(const sx of [-1,1]){
-      const window=new THREE.Mesh(new THREE.BoxGeometry(.75,.7,.09),new THREE.MeshStandardMaterial({color:0x9ed5e8,roughness:.35,metalness:.05}));
-      window.position.set(sx*Math.min(1.5,w*.25),1.75,d/2+.07);g.add(window);
-    }
-    const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));
-    foundation.position.y=.12;foundation.receiveShadow=true;g.add(foundation);
     g.position.set(x,0,z); this.scene.add(g);
-    if(asset)this.attachVisualTarget({group:g,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
 
     const profile=this.buildingInteractionProfile(name);
-    const doorDistance=d/2+1.15;
+    const visualWidth=w*.92;
+    const visualDepth=d*.92;
+    const visualHeight=this.buildingTargetHeight(asset,height);
+    const doorDistance=visualDepth/2+1.15;
     const interactionPosition={x:x+Math.sin(rotationY)*doorDistance,z:z+Math.cos(rotationY)*doorDistance};
     const object:WorldObjectState={
       id:options?.id||`building_${name}`,chunkId:options?.chunkId,kind:'building',name,position:interactionPosition,tags:profile.tags,
       usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined
     };
-    g.userData={entityType:'object',entityId:object.id};
+    g.userData={entityType:'object',entityId:object.id,buildingCenter:{x,z}};
     this.objects.set(object.id,{state:object,mesh:g});
+
+    // Register an invisible conservative footprint immediately, then replace it with the
+    // resolved asset's actual world-space AABB as soon as the visual is available.
     this.physics.registerStatic({
       id:`building:${object.id}`,
       minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
@@ -401,8 +404,39 @@ class TownGame {
       chunkId:options?.chunkId,tag:'interaction'
     });
 
+    if(asset)this.attachVisualTarget({
+      group:g,asset,height:visualHeight,rotationY,targetWidth:visualWidth,targetDepth:visualDepth,fit:'dimensions',
+      onResolved:()=>{
+        g.updateMatrixWorld(true);
+        const box=new THREE.Box3().setFromObject(g);
+        const size=new THREE.Vector3();box.getSize(size);
+        if(Number.isFinite(size.x)&&Number.isFinite(size.y)&&Number.isFinite(size.z)&&size.x>0&&size.z>0){
+          this.buildingVisualMetrics.set(object.id,{width:size.x,height:size.y,depth:size.z});
+          this.physics.registerStatic({
+            id:`building:${object.id}`,
+            minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z,
+            chunkId:options?.chunkId
+          });
+        }
+      }
+    });
+
     if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(g);
     return g;
+  }
+
+  buildingTargetHeight(asset:string|undefined,requested:number) {
+    const minimum:Record<string,number>={
+      marketBuilding:4.2,
+      storageBuilding:5.4,
+      houseB:6.4,
+      houseA:8.0,
+      barracksBuilding:7.0,
+      townCenter:9.0,
+      windmill:10.5,
+      farmBuilding:8.2
+    };
+    return Math.max(requested,asset?minimum[asset]??requested:requested);
   }
 
   buildingInteractionProfile(name:string):{tags:string[];capabilities:InteractionCapability[];storage?:boolean} {
@@ -686,10 +720,11 @@ class TownGame {
     const tpl=this.assets.get(target.asset);if(!tpl)return;
     const isCharacter=target.asset.startsWith('female')||target.asset.startsWith('male');
     const model=(isCharacter?cloneSkeleton(tpl.scene):tpl.scene.clone(true)) as THREE.Object3D;
-    this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth);
+    this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit);
     model.rotation.y=target.rotationY||0;
     target.group.clear();
     target.group.add(model);
+    target.onResolved?.(model);
     if(isCharacter){
       const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
       if(agent&&tpl.animations.length){
@@ -700,17 +735,23 @@ class TownGame {
     }
   }
 
-  normalizeModel(model:THREE.Object3D,targetHeight:number,targetWidth?:number,targetDepth?:number) {
+  normalizeModel(model:THREE.Object3D,targetHeight:number,targetWidth?:number,targetDepth?:number,fit:'contain'|'dimensions'='contain') {
     model.traverse(o=>{if((o as THREE.Mesh).isMesh){const m=o as THREE.Mesh;m.castShadow=true;m.receiveShadow=true;}});
     model.updateMatrixWorld(true);
     let box=new THREE.Box3().setFromObject(model);const size=new THREE.Vector3();box.getSize(size);
     if(size.y>0){
-      let scale=targetHeight/size.y;
-      if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
-        const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
-        scale=Math.min(footprintScale,targetHeight/size.y);
+      if(fit==='dimensions'&&targetWidth&&targetDepth&&size.x>0&&size.z>0){
+        model.scale.x*=targetWidth/size.x;
+        model.scale.y*=targetHeight/size.y;
+        model.scale.z*=targetDepth/size.z;
+      }else{
+        let scale=targetHeight/size.y;
+        if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
+          const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
+          scale=Math.min(footprintScale,targetHeight/size.y);
+        }
+        model.scale.multiplyScalar(scale);
       }
-      model.scale.multiplyScalar(scale);
     }
     model.updateMatrixWorld(true);box=new THREE.Box3().setFromObject(model);
     const center=new THREE.Vector3();box.getCenter(center);
@@ -1097,8 +1138,13 @@ class TownGame {
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
       normalizeWorldObjectRigidBody(runtime.state);
-      runtime.mesh.position.x=runtime.state.position.x;
-      runtime.mesh.position.z=runtime.state.position.z;
+      // Building state.position is the semantic entrance/interaction point, not the mesh
+      // origin. Its visual center is deterministic from setupWorld and must not jump to the
+      // doorway when a save is restored.
+      if(runtime.state.kind!=='building'){
+        runtime.mesh.position.x=runtime.state.position.x;
+        runtime.mesh.position.z=runtime.state.position.z;
+      }
       if(worldObjectRigidBody(runtime.state))this.registerWorldObjectPhysics(runtime.state);
       if(runtime.state.respawnAt&&runtime.state.respawnAt>Date.now()&&!runtime.state.pickupable)runtime.mesh.visible=false;
       else runtime.mesh.visible=true;
@@ -3231,6 +3277,11 @@ class TownGame {
     const movableBodies=[...this.objects.values()].filter(object=>worldObjectRigidBody(object.state)&&object.mesh.visible);
     const activePhysicsBodies=this.npcs.size+this.wildlife.size+movableBodies.length+(this.cameraMode==='firstPerson'?1:0);
     const townCart=this.objects.get('cart_town');
+    const homeBuildingMetrics=[...this.buildingVisualMetrics.entries()]
+      .filter(([id])=>!this.objects.get(id)?.state.chunkId)
+      .map(([,metric])=>metric);
+    const buildingMinHeight=homeBuildingMetrics.length?Math.min(...homeBuildingMetrics.map(metric=>metric.height)):0;
+    const buildingMaxHeight=homeBuildingMetrics.length?Math.max(...homeBuildingMetrics.map(metric=>metric.height)):0;
     const playerGroundingError=this.cameraMode==='firstPerson'
       ?Math.abs(this.camera.position.y-(this.groundHeightAt(this.camera.position.x,this.camera.position.z)+1.7))
       :0;
@@ -3261,6 +3312,9 @@ class TownGame {
     ui.world.dataset.assetFailures=String(this.assetLoadFailures.length);
     ui.world.dataset.licensedVisualTargets=String(this.visualTargets.length);
     ui.world.dataset.licensedVisualsResolved=String(this.visualTargets.filter(target=>target.group.children.length>0).length);
+    ui.world.dataset.buildingVisualCount=String(homeBuildingMetrics.length);
+    ui.world.dataset.buildingMinHeight=buildingMinHeight.toFixed(3);
+    ui.world.dataset.buildingMaxHeight=buildingMaxHeight.toFixed(3);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
