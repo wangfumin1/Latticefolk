@@ -139,7 +139,7 @@ const BUILDINGS:Record<SettlementArchetype,BuildingDef[]>={
     ['风车','windmill',8.0,8.0,9.0,0x9a805f]
   ],
   market_hamlet:[
-    ['市场','marketBuilding',8.5,7.4,3.0,0x79a3a8],
+    ['市场','marketBuilding',8.5,7.4,5.2,0x79a3a8],
     ['旅店','houseB',8.2,7.4,5.8,0xb28c75],
     ['仓库','storageBuilding',8.3,7.1,4.8,0x8a795d],
     ['民居','houseA',8.0,7.0,7.5,0xa77c61]
@@ -158,7 +158,7 @@ const BUILDINGS:Record<SettlementArchetype,BuildingDef[]>={
   ],
   wetland_hamlet:[
     ['民居','houseB',8.0,7.0,5.6,0xb28c75],
-    ['市场','marketBuilding',8.4,7.2,3.0,0x79a3a8],
+    ['市场','marketBuilding',8.4,7.2,5.2,0x79a3a8],
     ['仓库','storageBuilding',8.2,7.0,4.7,0x8a795d],
     ['守卫所','barracksBuilding',8.0,7.0,6.2,0x8a7868]
   ],

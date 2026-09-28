@@ -45,6 +45,8 @@ PR #67 head `55cd56137a17520a0894ec97905c0bbb3d6c0799` passed CI #1341 / run `36
 
 Issue #69 is the temporary active parent frontier by explicit user direction. It intentionally keeps Phase A→B→C→D continuous instead of returning to #54 between slices. Phase A repairs current main's failed playable acceptance and authoritative character grounding; later phases own the already-observed building scale, well/furniture/primitive construction, tree occlusion, terrain seam/coarse proxy presentation, HUD/i18n, complete gameplay journeys, persistence/free-play and measured performance work. #37 remains the detailed visual-debt tracker, but #69 controls execution order until the recovery parent closes.
 
+Phase A merged in #70. Phase B begins by establishing the shared building scale contract: licensed visuals are normalized to the same semantic width/depth/height used for gameplay, rotated physical bounds follow the visible footprint, and building construction no longer creates primitive wall/roof/window/door geometry while assets load. This does not yet claim the well, furniture, tree occlusion, terrain seam or coarse proxy debt is fixed.
+
 ## Visual and E2E baseline
 
 Main CI #1312 artifact `10909675686` was downloaded, and `god-view.png` and `first-person-tool-contact.png` were actually opened. The scene is rendered, but the well reads as a square basin and representative furniture remains primitive-like; the tree canopy heavily occludes the tool-contact view. Building-to-person proportions still need calibrated model/world bounds using a roughly 1.7m reference, not a categorical judgment from perspective alone. No currently rendered duplicate door was established by those screenshots.

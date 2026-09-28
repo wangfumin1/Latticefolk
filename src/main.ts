@@ -127,7 +127,16 @@ const ui = {
 
 interface RuntimeObject { state: WorldObjectState; mesh: THREE.Object3D; }
 interface AssetTemplate { scene: THREE.Object3D; animations: THREE.AnimationClip[]; }
-interface VisualTarget { group: THREE.Group; asset: string; height: number; rotationY?: number; targetWidth?: number; targetDepth?: number; }
+interface VisualTarget {
+  group: THREE.Group;
+  asset: string;
+  height: number;
+  rotationY?: number;
+  targetWidth?: number;
+  targetDepth?: number;
+  fit?: 'uniform'|'exactBounds';
+  resolvedSize?: {x:number;y:number;z:number};
+}
 interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
 interface FineChunkRuntime {
@@ -326,7 +335,7 @@ class TownGame {
 
     this.addBuilding('农舍',-22,-18,9,8,0x9d744f,'houseA',8.4,.08);
     this.addBuilding('面包房',-10,-18,10,9,0xd58c55,'houseB',6.2,-.08);
-    this.addBuilding('杂货市场',8,-18,10,8,0x79a3a8,'marketBuilding',3.2,0);
+    this.addBuilding('杂货市场',8,-18,10,8,0x79a3a8,'marketBuilding',5.4,0);
     this.addBuilding('旅店',21,-22,10,9,0xb28c75,'houseB',6.4,Math.PI);
     this.addBuilding('工坊',-22,12,10,8,0x7f8796,'storageBuilding',5.2,.08);
     this.addBuilding('守卫所',20,12,10,8,0x8a7868,'barracksBuilding',7.0,-.08);
@@ -361,24 +370,12 @@ class TownGame {
     ] as Array<[number,number]>) this.addTreeDecoration(x,z);
   }
 
-  addBuilding(name:string,x:number,z:number,w:number,d:number,color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
+  addBuilding(name:string,x:number,z:number,w:number,d:number,_color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
+    // Buildings are semantic/physical entities first. The visible representation is exclusively
+    // the sourced licensed asset; never construct a temporary wall/roof/door primitive fallback.
     const g = new THREE.Group();
-    const wallMat=new THREE.MeshStandardMaterial({color,roughness:.9});
-    const trimMat=new THREE.MeshStandardMaterial({color:0x6d513a,roughness:.95});
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,3,d), wallMat);
-    wall.position.y=1.5; wall.castShadow=true; wall.receiveShadow=true; g.add(wall);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*.72,1.8,4),new THREE.MeshStandardMaterial({color:0x673f32,roughness:1}));
-    roof.position.y=4; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(.95,1.9,.12),trimMat);
-    door.position.set(0,.95,d/2+.065); g.add(door);
-    for(const sx of [-1,1]){
-      const window=new THREE.Mesh(new THREE.BoxGeometry(.75,.7,.09),new THREE.MeshStandardMaterial({color:0x9ed5e8,roughness:.35,metalness:.05}));
-      window.position.set(sx*Math.min(1.5,w*.25),1.75,d/2+.07);g.add(window);
-    }
-    const foundation=new THREE.Mesh(new THREE.BoxGeometry(w+.35,.25,d+.35),new THREE.MeshStandardMaterial({color:0x756b60,roughness:1}));
-    foundation.position.y=.12;foundation.receiveShadow=true;g.add(foundation);
     g.position.set(x,0,z); this.scene.add(g);
-    if(asset)this.attachVisualTarget({group:g,asset,height,rotationY,targetWidth:w*.92,targetDepth:d*.92});
+    if(asset)this.attachVisualTarget({group:g,asset,height,rotationY,targetWidth:w,targetDepth:d,fit:'exactBounds'});
 
     const profile=this.buildingInteractionProfile(name);
     const doorDistance=d/2+1.15;
@@ -389,9 +386,11 @@ class TownGame {
     };
     g.userData={entityType:'object',entityId:object.id};
     this.objects.set(object.id,{state:object,mesh:g});
+    const cos=Math.abs(Math.cos(rotationY)),sin=Math.abs(Math.sin(rotationY));
+    const halfX=(w*cos+d*sin)/2,halfZ=(w*sin+d*cos)/2;
     this.physics.registerStatic({
       id:`building:${object.id}`,
-      minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,
+      minX:x-halfX,maxX:x+halfX,minZ:z-halfZ,maxZ:z+halfZ,
       chunkId:options?.chunkId
     });
     this.physics.registerTrigger({
@@ -686,7 +685,7 @@ class TownGame {
     const tpl=this.assets.get(target.asset);if(!tpl)return;
     const isCharacter=target.asset.startsWith('female')||target.asset.startsWith('male');
     const model=(isCharacter?cloneSkeleton(tpl.scene):tpl.scene.clone(true)) as THREE.Object3D;
-    this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth);
+    target.resolvedSize=this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
     model.rotation.y=target.rotationY||0;
     target.group.clear();
     target.group.add(model);
@@ -700,23 +699,33 @@ class TownGame {
     }
   }
 
-  normalizeModel(model:THREE.Object3D,targetHeight:number,targetWidth?:number,targetDepth?:number) {
+  normalizeModel(model:THREE.Object3D,targetHeight:number,targetWidth?:number,targetDepth?:number,exactBounds=false) {
     model.traverse(o=>{if((o as THREE.Mesh).isMesh){const m=o as THREE.Mesh;m.castShadow=true;m.receiveShadow=true;}});
     model.updateMatrixWorld(true);
     let box=new THREE.Box3().setFromObject(model);const size=new THREE.Vector3();box.getSize(size);
     if(size.y>0){
-      let scale=targetHeight/size.y;
-      if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
-        const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
-        scale=Math.min(footprintScale,targetHeight/size.y);
+      if(exactBounds&&targetWidth&&targetDepth&&size.x>0&&size.z>0){
+        model.scale.x*=targetWidth/size.x;
+        model.scale.y*=targetHeight/size.y;
+        model.scale.z*=targetDepth/size.z;
+      }else{
+        let scale=targetHeight/size.y;
+        if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
+          const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
+          scale=Math.min(footprintScale,targetHeight/size.y);
+        }
+        model.scale.multiplyScalar(scale);
       }
-      model.scale.multiplyScalar(scale);
     }
     model.updateMatrixWorld(true);box=new THREE.Box3().setFromObject(model);
     const center=new THREE.Vector3();box.getCenter(center);
     model.position.x-=center.x;
     model.position.z-=center.z;
     model.position.y-=box.min.y;
+    model.updateMatrixWorld(true);
+    box=new THREE.Box3().setFromObject(model);
+    const resolved=new THREE.Vector3();box.getSize(resolved);
+    return {x:resolved.x,y:resolved.y,z:resolved.z};
   }
 
   spawnAssetDecoration(asset:string,x:number,z:number,height:number,rotationY=0) {
@@ -3236,6 +3245,14 @@ class TownGame {
       :0;
     const npcGroundingMaxError=[...this.npcs.values()].reduce((max,agent)=>agent.removed?max:Math.max(max,Math.abs(agent.mesh.position.y-this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z))),0);
     const wildlifeGroundingMaxError=[...this.wildlife.values()].reduce((max,animal)=>animal.removed?max:Math.max(max,Math.abs(animal.mesh.position.y-this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z))),0);
+    const buildingTargets=this.visualTargets.filter(target=>target.fit==='exactBounds'&&target.resolvedSize&&target.targetWidth&&target.targetDepth);
+    const buildingMinHeight=buildingTargets.length?Math.min(...buildingTargets.map(target=>target.resolvedSize!.y)):0;
+    const buildingMaxBoundsError=buildingTargets.reduce((max,target)=>Math.max(
+      max,
+      Math.abs(target.resolvedSize!.x-target.targetWidth!),
+      Math.abs(target.resolvedSize!.y-target.height),
+      Math.abs(target.resolvedSize!.z-target.targetDepth!)
+    ),0);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3250,6 +3267,9 @@ class TownGame {
     ui.world.dataset.playerGroundingError=playerGroundingError.toFixed(5);
     ui.world.dataset.npcGroundingMaxError=npcGroundingMaxError.toFixed(5);
     ui.world.dataset.wildlifeGroundingMaxError=wildlifeGroundingMaxError.toFixed(5);
+    ui.world.dataset.buildingVisualTargets=String(buildingTargets.length);
+    ui.world.dataset.buildingVisualMinHeight=buildingMinHeight.toFixed(4);
+    ui.world.dataset.buildingVisualMaxBoundsError=buildingMaxBoundsError.toFixed(5);
     ui.world.dataset.movableBodies=String(movableBodies.length);
     ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
