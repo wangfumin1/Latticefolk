@@ -1047,10 +1047,10 @@ class TownGame {
     this.playerPosition={x:Number(snapshot.meta.playerPosition?.x||0),z:Number(snapshot.meta.playerPosition?.z||7)};
     this.camera.position.x=this.playerPosition.x;
     this.camera.position.z=this.playerPosition.z;
-    this.camera.position.y=1.7;
 
     this.coarseWorld.restoreKnownChunks(snapshot.coarseChunks||[]);
     this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z,true);
+    this.camera.position.y=this.groundHeightAt(this.playerPosition.x,this.playerPosition.z)+1.7;
 
     this.wildlifeLineage.clear();
     for(const record of snapshot.wildlifeLineage||[]){
@@ -1081,8 +1081,13 @@ class TownGame {
       if(!runtime)continue;
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
-      runtime.mesh.position.set(runtime.state.position.x,0,runtime.state.position.z);
+      runtime.mesh.position.set(
+        runtime.state.position.x,
+        this.groundHeightAt(runtime.state.position.x,runtime.state.position.z),
+        runtime.state.position.z
+      );
       runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
+      runtime.nextGroundAlignAt=0;
       runtime.nextDecisionAt=now()+700+Math.random()*1800;
     }
 
@@ -1154,12 +1159,42 @@ class TownGame {
     }
   }
 
+  buildFinalWorldSnapshot():WorldPersistenceSnapshot {
+    // Browser unload/beacon requests share a small keepalive body budget. A full discovered-world
+    // snapshot can exceed 1 MB, so the final checkpoint intentionally writes only bounded critical
+    // session/home state. SQLite save semantics preserve omitted coarse/fine/lineage rows.
+    const homeNpcs=[...this.npcs.values()]
+      .filter(x=>!x.state.chunkId)
+      .map(x=>structuredClone(x.state));
+    const homeObjects=[...this.objects.values()]
+      .filter(x=>!x.state.chunkId)
+      .map(x=>structuredClone(x.state));
+    return {
+      version:1,
+      meta:{
+        day:this.day,
+        minuteOfDay:this.minuteOfDay,
+        weather:this.weather,
+        playerPosition:{...this.playerPosition},
+        playerInventory:{...this.playerInventory}
+      },
+      coarseChunks:[],
+      fineChunks:[],
+      homeNpcs,
+      homeObjects,
+      // Explicit transfer state is small in normal play and preserves completion/removal semantics.
+      // Lineage is append/update-only and can safely wait for the normal full autosave.
+      wildlifeTransfers:[...this.wildlifeTransfers.values()].map(transfer=>structuredClone(transfer))
+    };
+  }
+
   flushWorldBeacon() {
     if(!this.persistenceReady||this.persistenceConflict)return;
     try{
-      this.flushWildlifeHabitatExposure();
-      const payload=JSON.stringify({snapshot:this.buildWorldSnapshot(),expectedRevision:this.persistenceRevision});
-      navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
+      const snapshot=this.buildFinalWorldSnapshot();
+      const payload=JSON.stringify({snapshot,expectedRevision:this.persistenceRevision});
+      const accepted=navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
+      if(!accepted)this.log(`最终存档未进入浏览器发送队列 · ${new TextEncoder().encode(payload).byteLength} bytes`);
     }catch{}
   }
 
@@ -1185,6 +1220,9 @@ class TownGame {
     this.materializedChunks.set(chunk.id,runtime);
     this.coarseWorld.setMaterialized(chunk.id,true);
     registerFineTerrainForChunk(this.physics,chunk,this.coarseWorld.chunkSize);
+    if(this.cameraMode==='firstPerson'){
+      this.camera.position.y=this.groundHeightAt(this.playerPosition.x,this.playerPosition.z)+1.7;
+    }
 
     const cached=this.fineChunkCache.get(chunk.id);
     const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
