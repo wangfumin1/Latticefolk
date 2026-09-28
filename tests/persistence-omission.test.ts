@@ -60,7 +60,33 @@ test('partial saves preserve omitted discovered rows and omitted transit queues'
     );
     assert.equal(store.stats().pendingWildlifeTransfers,1);
 
-    saveCurrent(store,{...partial,wildlifeTransfers:[]});
+    // Final browser checkpoints deliberately send a bounded home/session snapshot with no
+    // discovered coarse/fine rows. Empty coarse/fine arrays must update meta/home state without
+    // deleting persistent discovered history, while omitted transfers remain untouched.
+    const compactFinal:WorldPersistenceSnapshot={
+      version:1,
+      meta:{...initial.meta,minuteOfDay:602,playerPosition:{x:3,z:4}},
+      coarseChunks:[],
+      fineChunks:[],
+      homeNpcs:[],
+      homeObjects:[{
+        id:'home_final_marker',kind:'crate',name:'Final marker',
+        position:{x:1,z:2},tags:['storage'],usable:true,pickupable:false
+      }]
+    };
+    saveCurrent(store,compactFinal);
+    const afterCompactFinal=store.load();
+    assert.ok(afterCompactFinal);
+    assert.equal(afterCompactFinal.meta.minuteOfDay,602);
+    assert.deepEqual(afterCompactFinal.meta.playerPosition,{x:3,z:4});
+    assert.equal(afterCompactFinal.homeObjects[0]?.id,'home_final_marker');
+    assert.equal(afterCompactFinal.coarseChunks.some(chunk=>chunk.id==='chunk_0_0'),true);
+    assert.equal(afterCompactFinal.coarseChunks.some(chunk=>chunk.id==='chunk_1_0'),true);
+    assert.equal(afterCompactFinal.fineChunks.some(chunk=>chunk.chunkId==='chunk_0_0'),true);
+    assert.equal(afterCompactFinal.fineChunks.some(chunk=>chunk.chunkId==='chunk_1_0'),true);
+    assert.equal(store.stats().pendingWildlifeTransfers,1);
+
+    saveCurrent(store,{...compactFinal,wildlifeTransfers:[]});
     assert.equal(store.stats().pendingWildlifeTransfers,0);
     assert.equal(store.load()?.coarseChunks.some(chunk=>chunk.id==='chunk_1_0'),true);
     assert.equal(store.load()?.fineChunks.some(chunk=>chunk.chunkId==='chunk_1_0'),true);

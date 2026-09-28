@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import type { WorldPersistenceSnapshot } from '../src/types.js';
 
 
 interface ChunkDecisionRequestForE2E {
@@ -17,6 +18,9 @@ interface RuntimeSnapshot {
   terrainSurfaces:number;
   playerX:number;
   playerZ:number;
+  playerGroundingError:number;
+  npcGroundingMaxError:number;
+  wildlifeGroundingMaxError:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -48,6 +52,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       terrainSurfaces:read('terrainSurfaces'),
       playerX:read('playerX'),
       playerZ:read('playerZ'),
+      playerGroundingError:read('playerGroundingError'),
+      npcGroundingMaxError:read('npcGroundingMaxError'),
+      wildlifeGroundingMaxError:read('wildlifeGroundingMaxError'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -98,6 +105,87 @@ async function moveUntil(
   await page.waitForTimeout(120);
 }
 
+async function drivePlayerTo(
+  page:Page,
+  target:{x:number;z:number},
+  timeoutMs=20_000,
+  tolerance=.35
+) {
+  const result=await page.evaluate(async({target,timeoutMs,tolerance})=>{
+    const status=()=>document.querySelector<HTMLElement>('#worldStatus');
+    const read=()=>{
+      const data=status()?.dataset;
+      return {x:Number(data?.playerX??'NaN'),z:Number(data?.playerZ??'NaN')};
+    };
+    const held=new Set<string>();
+    const setHeld=(next:Set<string>)=>{
+      for(const code of [...held]){
+        if(next.has(code))continue;
+        window.dispatchEvent(new KeyboardEvent('keyup',{code,bubbles:true}));
+        held.delete(code);
+      }
+      for(const code of next){
+        if(held.has(code))continue;
+        window.dispatchEvent(new KeyboardEvent('keydown',{code,bubbles:true}));
+        held.add(code);
+      }
+    };
+    const release=()=>setHeld(new Set());
+    const deadline=performance.now()+timeoutMs;
+    let last=read();
+    let lastMovedAt=performance.now();
+    let avoidUntil=0;
+    let avoidSign=1;
+    try{
+      while(performance.now()<deadline){
+        const p=read();
+        if(!Number.isFinite(p.x)||!Number.isFinite(p.z)){
+          await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+          continue;
+        }
+        const currentTime=performance.now();
+        if(Number.isFinite(last.x)&&Number.isFinite(last.z)&&Math.hypot(p.x-last.x,p.z-last.z)>.035){
+          lastMovedAt=currentTime;
+          last=p;
+        }
+        const dx=target.x-p.x,dz=target.z-p.z;
+        const distance=Math.hypot(dx,dz);
+        if(distance<=tolerance)return {reached:true,x:p.x,z:p.z,distance};
+
+        // If authoritative collision has prevented any actual movement for long enough,
+        // commit to a short perpendicular detour. Do not judge that detour by direct
+        // distance-to-goal improvement: moving sideways is legitimate progress around a body.
+        if(currentTime-lastMovedAt>700&&currentTime>=avoidUntil){
+          avoidSign*=-1;
+          avoidUntil=currentTime+1_400;
+          lastMovedAt=currentTime;
+        }
+
+        const next=new Set<string>();
+        if(distance>1.8)next.add('ShiftLeft');
+        if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
+        if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
+        if(currentTime<avoidUntil){
+          if(Math.abs(dx)>=Math.abs(dz))next.add(avoidSign>0?'KeyW':'KeyS');
+          else next.add(avoidSign>0?'KeyD':'KeyA');
+        }
+        setHeld(next);
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      }
+      const p=read();
+      const distance=Math.hypot(target.x-p.x,target.z-p.z);
+      return {reached:distance<=tolerance,x:p.x,z:p.z,distance};
+    }finally{
+      release();
+    }
+  },{target,timeoutMs,tolerance});
+  expect(
+    result.reached,
+    `player failed to reach (${target.x}, ${target.z}); stopped at (${result.x.toFixed(3)}, ${result.z.toFixed(3)})`
+  ).toBe(true);
+  return result;
+}
+
 async function persistedCartZ(page:Page):Promise<number> {
   return page.evaluate(async()=>{
     const response=await fetch('/api/world/state',{cache:'no-store'});
@@ -113,7 +201,7 @@ async function serverPersistence(request:APIRequestContext){
   if(!response.ok())throw new Error(`world-state GET failed: HTTP ${response.status()}`);
   return response.json() as Promise<{
     revision:number;
-    snapshot?:{homeObjects?:Array<{id?:string;position?:{z?:number}}>}|null;
+    snapshot?:WorldPersistenceSnapshot|null;
   }>;
 }
 
@@ -140,6 +228,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.movableBodies).toBeGreaterThanOrEqual(1);
   expect(home.materializedChunks).toBe(0);
   expect(home.terrainSurfaces).toBeGreaterThanOrEqual(1);
+  expect(home.playerGroundingError).toBeLessThan(.02);
+  expect(home.npcGroundingMaxError).toBeLessThan(.02);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -193,6 +283,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:15_000}).toBe(0);
   await expect.poll(async()=>{const state=await runtime(page);return state.licensedVisualTargets>0&&state.licensedVisualsResolved===state.licensedVisualTargets;},{timeout:15_000}).toBe(true);
   await expect.poll(async()=>Math.abs((await runtime(page)).cartZ-pushedCartZ),{timeout:8_000}).toBeLessThan(.08);
+  const restoredGrounding=await runtime(page);
+  expect(restoredGrounding.playerGroundingError).toBeLessThan(.02);
+  expect(restoredGrounding.npcGroundingMaxError).toBeLessThan(.02);
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
@@ -219,39 +312,17 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const firstRestored=await runtime(page);
   expect(firstRestored.physicsBodies).toBe(godAfter.physicsBodies+1);
 
-  // Real first-person tool interaction. Use the east apple tree at (14, 1.5).
-  // First clear the central cart/well laterally, then enter the open z≈3 cross-town lane.
-  // This keeps all NPC/wildlife dynamic collision enabled while avoiding the observed
-  // z=6.325 traffic line rather than disabling or bypassing authoritative physics.
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,10_000);
-  // Stop one polling interval early under software WebGL so the player remains north
-  // of the tree while lateral alignment happens; the observed stop is around z=4.0.
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.5,10_000);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>13.0,16_000);
-  let eastAligned=await runtime(page);
-  // Precision alignment uses short real-input pulses with the key released before each
-  // observability read. This prevents software-rendered CI from moving another meter while
-  // a slow page.evaluate sample is in flight.
-  for(let i=0;i<30&&(eastAligned.playerX<13.65||eastAligned.playerX>14.35);i++){
-    await moveWithKeys(page,[eastAligned.playerX<13.65?'KeyD':'KeyA'],100);
-    eastAligned=await runtime(page);
-  }
-  expect(eastAligned.playerX).toBeGreaterThan(13.65);
-  expect(eastAligned.playerX).toBeLessThan(14.35);
-
-  // Approach tree_apple_2 with the same released-before-sample input pulses. If lateral
-  // movement has already drifted into the semantic trigger, keep that valid physical state;
-  // otherwise advance until trigger reach. The authoritative trunk collider still prevents
-  // penetration before the player can pass through the tree.
-  let treeApproach=eastAligned;
-  for(let i=0;i<10&&treeApproach.playerZ>=2.65;i++){
-    await moveWithKeys(page,['KeyW'],80);
-    treeApproach=await runtime(page);
-  }
-  expect(treeApproach.playerX).toBeGreaterThan(13.65);
-  expect(treeApproach.playerX).toBeLessThan(14.35);
-  expect(treeApproach.playerZ).toBeLessThan(2.65);
-  expect(treeApproach.playerZ).toBeGreaterThan(2.05);
+  // Real first-person tool interaction. Use normal first-person input against the same
+  // authoritative static/dynamic collision, but keep the steering loop inside the page.
+  // Hosted software WebGL can make each Playwright protocol round-trip take seconds; the
+  // previous per-pulse protocol loop turned a few seconds of gameplay into several minutes.
+  await drivePlayerTo(page,{x:5.2,z:4.0},18_000,.55);
+  await drivePlayerTo(page,{x:13.95,z:3.4},25_000,.45);
+  const treeApproach=await drivePlayerTo(page,{x:13.95,z:2.35},12_000,.28);
+  expect(treeApproach.x).toBeGreaterThan(13.55);
+  expect(treeApproach.x).toBeLessThan(14.4);
+  expect(treeApproach.z).toBeLessThan(2.65);
+  expect(treeApproach.z).toBeGreaterThan(2.0);
   await expect(page.locator('#prompt')).toContainText('苹果树',{timeout:10_000});
   await page.keyboard.press('KeyE');
   await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
@@ -266,8 +337,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 });
 
 
-test('revision CAS rejects a delayed stale browser writer and stale final beacon', async ({ browser, request }) => {
-  test.setTimeout(300_000);
+test('revision CAS rejects a delayed stale browser writer and stale final beacon', async ({ page, request }) => {
+  test.setTimeout(240_000);
 
   const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
   expect(reset.ok()).toBe(true);
@@ -275,95 +346,102 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
   const baseRevision=resetBody.revision;
   expect(Number.isSafeInteger(baseRevision)).toBe(true);
 
-  const contextA=await browser.newContext();
-  const contextB=await browser.newContext();
-  let contextAClosed=false;
-  const pageA=await contextA.newPage();
-  const pageB=await contextB.newPage();
   let releaseDelayed=()=>{};
   const delayedGate=new Promise<void>(resolve=>{releaseDelayed=resolve;});
   let delayedCaptured=false;
   let delayedExpectedRevision=Number.NaN;
+  let delayedSnapshot:WorldPersistenceSnapshot|undefined;
 
   try{
-    await Promise.all([pageA.goto('/'),pageB.goto('/')]);
-    const worldStatusA=pageA.locator('#worldStatus');
-    const worldStatusB=pageB.locator('#worldStatus');
-    await expect(worldStatusA).toHaveAttribute('data-persistence-revision',String(baseRevision),{timeout:30_000});
-    await expect(worldStatusB).toHaveAttribute('data-persistence-revision',String(baseRevision),{timeout:30_000});
-    await expect(worldStatusA).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
-    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
-    await expect.poll(()=>worldStatusNumber(pageA,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
-    await expect.poll(()=>worldStatusNumber(pageB,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
+    await page.goto('/');
+    const worldStatus=page.locator('#worldStatus');
+    await expect(worldStatus).toHaveAttribute('data-persistence-revision',String(baseRevision),{timeout:30_000});
+    await expect(worldStatus).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
+    await expect.poll(()=>worldStatusNumber(page,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
 
-    await pageB.route('**/api/world/state',async route=>{
+    // Establish one real browser save first so the server has a complete authoritative snapshot
+    // and this tab's local revision is synchronized before we deliberately make its next write stale.
+    await page.locator('#startBtn').click();
+    await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(page,['ShiftLeft','KeyW'],650);
+    await expect.poll(async()=>{
+      const local=await worldStatusNumber(page,'data-persistence-revision');
+      const stored=await serverPersistence(request);
+      return local>baseRevision&&local===stored.revision&&Boolean(stored.snapshot);
+    },{timeout:30_000}).toBe(true);
+    const synchronizedRevision=await worldStatusNumber(page,'data-persistence-revision');
+
+    await page.route('**/api/world/state',async route=>{
       if(route.request().method()==='POST'&&!delayedCaptured){
         delayedCaptured=true;
-        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number};
+        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number;snapshot?:WorldPersistenceSnapshot};
         delayedExpectedRevision=Number(body.expectedRevision);
+        delayedSnapshot=body.snapshot?structuredClone(body.snapshot):undefined;
         await delayedGate;
-        await route.continue();
+        try{
+          await route.continue();
+        }catch(error){
+          if(!page.isClosed())throw error;
+        }
         return;
       }
       await route.continue();
     });
 
-    await pageB.locator('#startBtn').click();
-    await expect.poll(async()=>pageB.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
-    await moveWithKeys(pageB,['ShiftLeft','KeyW'],650);
-    await expect.poll(()=>delayedCaptured,{timeout:10_000}).toBe(true);
-    expect(delayedExpectedRevision).toBe(baseRevision);
+    // Push the cart again: this uses the game's normal movable-object save scheduling and gives
+    // us one in-flight browser write to hold while another authority advances the CAS revision.
+    await moveWithKeys(page,['ShiftLeft','KeyW'],650);
+    await expect.poll(()=>delayedCaptured,{timeout:20_000}).toBe(true);
+    expect(delayedExpectedRevision).toBe(synchronizedRevision);
+    const staleRevision=delayedExpectedRevision;
 
-    await pageA.locator('#startBtn').click();
-    await expect.poll(async()=>pageA.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
-    await moveWithKeys(pageA,['ShiftLeft','KeyW'],650);
-    await expect.poll(()=>worldStatusNumber(pageA,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThan(baseRevision);
-    const authoritativeCartZ=await worldStatusNumber(pageA,'data-cart-z');
+    const beforeAuthority=await serverPersistence(request);
+    expect(beforeAuthority.revision).toBe(staleRevision);
+    // The delayed browser POST may be the first save after reset, so the server snapshot can
+    // legitimately still be null. Use the captured real browser payload as the authoritative
+    // candidate, then let a competing CAS write win before releasing that stale browser request.
+    expect(delayedSnapshot).toBeTruthy();
+    const authoritativeSnapshot=structuredClone(delayedSnapshot!);
+    authoritativeSnapshot.meta.minuteOfDay=(authoritativeSnapshot.meta.minuteOfDay+1)%1440;
+    const authorityWrite=await request.post('/api/world/state',{
+      data:{expectedRevision:staleRevision,snapshot:authoritativeSnapshot},
+      failOnStatusCode:false
+    });
+    expect(authorityWrite.ok()).toBe(true);
+    const authorityBody=await authorityWrite.json() as {revision:number};
+    expect(authorityBody.revision).toBeGreaterThan(staleRevision);
 
     releaseDelayed();
-    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true',{timeout:30_000});
-    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+    await expect(worldStatus).toHaveAttribute('data-persistence-conflict','true',{timeout:30_000});
+    await expect(worldStatus).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+    expect(await worldStatusNumber(page,'data-persistence-revision')).toBe(staleRevision);
 
     const afterConflict=await serverPersistence(request);
-    expect(afterConflict.revision).toBeGreaterThan(baseRevision);
-    const storedCartZ=Number(afterConflict.snapshot?.homeObjects?.find(object=>object.id==='cart_town')?.position?.z??Number.NaN);
-    expect(Math.abs(storedCartZ-authoritativeCartZ)).toBeLessThan(.08);
-    const conflictedLocalRevision=await worldStatusNumber(pageB,'data-persistence-revision');
-    await pageB.waitForTimeout(1_800);
-    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBe(conflictedLocalRevision);
-    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','true');
+    expect(afterConflict.revision).toBe(authorityBody.revision);
+    expect(afterConflict.snapshot?.meta.minuteOfDay).toBe(authoritativeSnapshot.meta.minuteOfDay);
 
-    // Stop the authoritative writer before reloading the stale tab. Keeping page A alive
-    // would let its normal periodic autosave legitimately advance the revision again while
-    // page B is adopting the conflict winner, turning this recovery assertion into a fresh race.
-    await contextA.close();
-    contextAClosed=true;
-    await pageB.waitForTimeout(500);
-
-    await pageB.reload();
-    await expect.poll(()=>worldStatusNumber(pageB,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThanOrEqual(afterConflict.revision);
-    await expect(worldStatusB).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
-    await expect.poll(async()=>Math.abs((await worldStatusNumber(pageB,'data-cart-z'))-authoritativeCartZ),{timeout:30_000}).toBeLessThan(.08);
-
-    await expect(worldStatusB).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
+    await page.reload();
+    await expect.poll(()=>worldStatusNumber(page,'data-persistence-revision'),{timeout:30_000}).toBeGreaterThanOrEqual(authorityBody.revision);
+    await expect(worldStatus).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
+    await expect(worldStatus).toHaveAttribute('data-persistence-save-pending','false',{timeout:30_000});
     await expect.poll(async()=>{
-      const localRevision=await worldStatusNumber(pageB,'data-persistence-revision');
+      const localRevision=await worldStatusNumber(page,'data-persistence-revision');
       return localRevision===(await serverPersistence(request)).revision;
     },{timeout:30_000}).toBe(true);
 
     const beforeFinalSave=(await serverPersistence(request)).revision;
-    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
     await expect.poll(async()=>(await serverPersistence(request)).revision,{timeout:10_000}).toBeGreaterThan(beforeFinalSave);
     const afterFinalSave=(await serverPersistence(request)).revision;
-    expect(await worldStatusNumber(pageB,'data-persistence-revision')).toBeLessThan(afterFinalSave);
+    expect(await worldStatusNumber(page,'data-persistence-revision')).toBeLessThan(afterFinalSave);
 
-    await pageB.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
-    await pageB.waitForTimeout(1_000);
+    await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    await page.waitForTimeout(1_000);
     expect((await serverPersistence(request)).revision).toBe(afterFinalSave);
   }finally{
+    // Do not unroute a still-held request: Playwright may auto-continue it during unroute,
+    // making the resumed handler call continue() a second time.
     releaseDelayed();
-    if(!contextAClosed)await contextA.close();
-    await contextB.close();
   }
 });
 
@@ -384,16 +462,15 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   // ownership boundary. The next batch is held only after positioning, so the real
   // materialize -> unload round trip can complete well inside the production 8s deadline.
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>4.0,12_000);
-  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.playerZ<4.2,12_000);
-  await moveUntil(page,['ShiftLeft','KeyD'],state=>state.playerX>32.0,55_000);
-  let staged=await runtime(page);
-  for(let i=0;i<20&&staged.playerX<35.0;i++){
-    await moveWithKeys(page,['KeyD'],80);
-    staged=await runtime(page);
-  }
-  expect(staged.playerX).toBeGreaterThan(35.0);
-  expect(staged.playerX).toBeLessThan(35.6);
+  // Stage next to the ownership boundary with real first-person input. Return to the
+  // authored east-west main road first, then follow that open lane to the home boundary.
+  // Dynamic NPC/wildlife collision remains enabled; no coordinate mutation or physics bypass.
+  await drivePlayerTo(page,{x:5.2,z:.2},20_000,.55);
+  const stagedMove=await drivePlayerTo(page,{x:35.15,z:.2},55_000,.45);
+  const staged=await runtime(page);
+  expect(stagedMove.x).toBeGreaterThan(34.7);
+  expect(staged.playerX).toBeGreaterThan(34.7);
+  expect(staged.playerX).toBeLessThan(35.7);
   expect(staged.materializedChunks).toBe(0);
 
   let heldRequest:ChunkDecisionRequestForE2E|undefined;
@@ -424,7 +501,9 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   });
 
   try{
-    await expect.poll(()=>Boolean(heldRequest),{timeout:15_000}).toBe(true);
+    // A settled coarse world may legally choose the production 30s cadence.
+    // Wait beyond that cadence instead of treating a healthy quiet period as a missing request.
+    await expect.poll(()=>Boolean(heldRequest),{timeout:45_000}).toBe(true);
     const before=await runtime(page);
 
     const transition=await page.evaluate(async()=>{

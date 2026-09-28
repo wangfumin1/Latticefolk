@@ -8,6 +8,10 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Playable recovery Phase A grounds the first-person camera, NPCs and fine wildlife on the deterministic terrain authority, including persisted reload/materialization paths and animated NPC visual-foot compensation.
+- Final unload persistence now uses a bounded critical/home snapshot rather than attempting to queue the full discovered-world payload through `sendBeacon`; omission-preserving SQLite semantics retain coarse/fine/lineage history while meta, home state and transit completion remain CAS-protected.
+- Real-browser acceptance steering now uses ordinary in-page key events through authoritative collision, avoiding protocol-latency and transient-traffic false failures without teleporting or bypassing physics.
+
 - Coarse chunk/region/world decision requests now use bounded abortable lifetimes, strict request-membership and reply-schema validation, runtime-generation invalidation across restore/materialization, and request-time baselines so stale or malformed provider replies cannot overwrite authoritative coarse policy state.
 
 - Durable world revision compare-and-swap now rejects stale browser saves and final beacons before any SQLite world-table mutation, persists revisions across reset/server restart, and exposes conflict state for real-browser verification.
