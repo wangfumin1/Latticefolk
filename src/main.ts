@@ -446,7 +446,7 @@ class TownGame {
       return this.addAssetObject(
         state,
         assetOverride||'wellAsset',
-        assetHeight||1.45,
+        assetHeight||2.6,
         rotationY,
         2.0,
         2.0
@@ -504,7 +504,7 @@ class TownGame {
     }
 
     const halfExtents:Partial<Record<WorldObjectState['kind'],[number,number]>>={
-      well:[1.0,1.0],
+      well:[.70,1.0],
       bench:[.90,.34],
       bed:[.92,.46],
       food_stall:[1.08,.54],
