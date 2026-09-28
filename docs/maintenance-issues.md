@@ -45,6 +45,10 @@ PR #67 head `55cd56137a17520a0894ec97905c0bbb3d6c0799` passed CI #1341 / run `36
 
 Issue #69 is the temporary active parent frontier by explicit user direction. It intentionally keeps Phase A→B→C→D continuous instead of returning to #54 between slices. Phase A repairs current main's failed playable acceptance and authoritative character grounding; later phases own the already-observed building scale, well/furniture/primitive construction, tree occlusion, terrain seam/coarse proxy presentation, HUD/i18n, complete gameplay journeys, persistence/free-play and measured performance work. #37 remains the detailed visual-debt tracker, but #69 controls execution order until the recovery parent closes.
 
+## #69 Phase B building-scale recovery
+
+The first world-presentation slice removes `TownGame.addBuilding()`'s temporary primitive wall/roof/window/foundation/extra-door construction. Licensed building assets are normalized to explicit world dimensions, their resolved `Box3` becomes the static collision footprint, and reload no longer moves a building mesh to the semantic entrance point stored in `WorldObjectState.position`. Browser acceptance records home-building count/min/max visual height and center error before and after reload. The remaining well/furniture/tree/terrain-seam/coarse-proxy observations stay open under #69/#37 until their ordered Phase B slices are completed.
+
 ## Visual and E2E baseline
 
 Main CI #1312 artifact `10909675686` was downloaded, and `god-view.png` and `first-person-tool-contact.png` were actually opened. The scene is rendered, but the well reads as a square basin and representative furniture remains primitive-like; the tree canopy heavily occludes the tool-contact view. Building-to-person proportions still need calibrated model/world bounds using a roughly 1.7m reference, not a categorical judgment from perspective alone. No currently rendered duplicate door was established by those screenshots.
