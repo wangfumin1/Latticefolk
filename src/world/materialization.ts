@@ -235,7 +235,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     if(archetype==='timber_camp') add('sawmill','workstation','木材加工台',centerX-7.4,centerZ-1.7,['work','maker','sawmill'],['inspect','work','craft']);
     if(['timber_camp','quarry_outpost','refuge'].includes(archetype)||chunk.settlementLevel>=2){
       add('workshop','workstation','公共工坊',centerX+2.6,centerZ-7.8,['work','maker','craft'],['inspect','work','craft']);
-      add('guard','workstation','巡逻岗',centerX-2.6,centerZ-7.8,['work','guard','safety'],['inspect','work']);
+      add('guard','workstation','守卫装备架',centerX-2.6,centerZ-7.8,['work','guard','safety'],['inspect','work']);
     }
     add('supply','crate','公共补给箱',centerX-2.7,centerZ+2.5,['storage','supply'],['inspect','store','take'],{storage:[]},'crate_rts',1.05,.2);
     add('cart','cart','运输推车',centerX+4.7,centerZ+1.2,['transport','storage','trade'],['inspect','load','unload'],{storage:[]},'cart',1.3,Math.PI/2);
