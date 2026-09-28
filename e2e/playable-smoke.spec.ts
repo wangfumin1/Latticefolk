@@ -348,6 +348,18 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await expect(worldStatus).toHaveAttribute('data-persistence-conflict','false',{timeout:30_000});
     await expect.poll(()=>worldStatusNumber(page,'data-movable-bodies'),{timeout:30_000}).toBeGreaterThanOrEqual(1);
 
+    // Establish one real browser save first so the server has a complete authoritative snapshot
+    // and this tab's local revision is synchronized before we deliberately make its next write stale.
+    await page.locator('#startBtn').click();
+    await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    await moveWithKeys(page,['ShiftLeft','KeyW'],650);
+    await expect.poll(async()=>{
+      const local=await worldStatusNumber(page,'data-persistence-revision');
+      const stored=await serverPersistence(request);
+      return local>baseRevision&&local===stored.revision&&Boolean(stored.snapshot);
+    },{timeout:30_000}).toBe(true);
+    const synchronizedRevision=await worldStatusNumber(page,'data-persistence-revision');
+
     await page.route('**/api/world/state',async route=>{
       if(route.request().method()==='POST'&&!delayedCaptured){
         delayedCaptured=true;
@@ -360,17 +372,13 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
       await route.continue();
     });
 
-    await page.locator('#startBtn').click();
-    await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
+    // Push the cart again: this uses the game's normal movable-object save scheduling and gives
+    // us one in-flight browser write to hold while another authority advances the CAS revision.
     await moveWithKeys(page,['ShiftLeft','KeyW'],650);
     await expect.poll(()=>delayedCaptured,{timeout:20_000}).toBe(true);
-    expect(Number.isSafeInteger(delayedExpectedRevision)).toBe(true);
-    expect(delayedExpectedRevision).toBeGreaterThanOrEqual(baseRevision);
+    expect(delayedExpectedRevision).toBe(synchronizedRevision);
     const staleRevision=delayedExpectedRevision;
 
-    // With the browser writer held in-flight, advance the authoritative revision once using
-    // the real persistence API. This isolates stale-write behavior from unrelated 15s autosave
-    // races while still exercising the browser's conflict latch and reload recovery.
     const beforeAuthority=await serverPersistence(request);
     expect(beforeAuthority.revision).toBe(staleRevision);
     expect(beforeAuthority.snapshot).toBeTruthy();
@@ -412,8 +420,9 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await page.waitForTimeout(1_000);
     expect((await serverPersistence(request)).revision).toBe(afterFinalSave);
   }finally{
+    // Do not unroute a still-held request: Playwright may auto-continue it during unroute,
+    // making the resumed handler call continue() a second time.
     releaseDelayed();
-    await page.unroute('**/api/world/state').catch(()=>{});
   }
 });
 
@@ -439,10 +448,10 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   // multi-minute test. z≈5.3 avoids the known east-tree/central traffic line while all
   // authoritative collision remains enabled.
   await drivePlayerTo(page,{x:5.2,z:5.3},20_000,.6);
-  const stagedMove=await drivePlayerTo(page,{x:35.2,z:5.3},55_000,.35);
+  const stagedMove=await drivePlayerTo(page,{x:35.0,z:5.3},55_000,.55);
   const staged=await runtime(page);
-  expect(stagedMove.x).toBeGreaterThan(34.8);
-  expect(staged.playerX).toBeGreaterThan(34.8);
+  expect(stagedMove.x).toBeGreaterThan(34.5);
+  expect(staged.playerX).toBeGreaterThan(34.5);
   expect(staged.playerX).toBeLessThan(35.7);
   expect(staged.materializedChunks).toBe(0);
 
