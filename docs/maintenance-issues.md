@@ -10,6 +10,7 @@ P1 protects authoritative facts, conservation, persistence and deployment bounda
 
 | Order | Priority / issue | Finding and evidence class | First independently acceptable slice |
 | --- | --- | --- | --- |
+| 0 | Recovery [#69](https://github.com/wangfumin1/Latticefolk/issues/69) | Explicit user-priority playable quality recovery after direct run.bat play found correctness/presentation/usability debt; temporarily precedes the normal #54 queue | Complete Phase A correctness/grounding first, then B world presentation, C gameplay usability, D performance/user-journey/free-play gate before resuming #54. |
 | 1 | P1 [#49](https://github.com/wangfumin1/Latticefolk/issues/49) | Reproduced: transfer capacity loss, fraction erasure, invalid/self transfer mutation | Capacity-limited actual debit/credit; preserve fractions; atomic rejection and receipts. Repair and 14 regressions are included with this inventory. |
 | 2 | P1 [#50](https://github.com/wangfumin1/Latticefolk/issues/50) | Source-confirmed: local attract/release/evacuate ticks still create/delete population without endpoints | Remove the legacy population source/sink; policies influence only conserved neighbor transfers. |
 | 3 | P1 [#52](https://github.com/wangfumin1/Latticefolk/issues/52) | Source-confirmed: snapshot API checks only a shallow envelope | Validate unknown payloads before storage; malformed inputs leave a real SQLite world unchanged. |
@@ -39,6 +40,10 @@ The repair keeps planner/runtime signatures unchanged: `CoarseWorldRuntime.runCo
 ## #56 request-lifecycle repair evidence
 
 PR #67 head `55cd56137a17520a0894ec97905c0bbb3d6c0799` passed CI #1341 / run `36292650639`: 244/244 tests, typecheck/build, and 3/3 real Chromium/WebGL E2E scenarios. Artifact `10922951832` was downloaded and representative screenshots were opened, including the materialize→unload stale-reply rejection/retry transition. The runtime now bounds chunk/region/world fetch and JSON stalls, releases pending state for recovery, validates request membership and generation context, rejects stale/out-of-batch/unexpected/duplicate/invalid proposals, preserves request-time baseline correctness, and keeps provider calls under the shared budget controller. It merged with the verified expected head as `88e245d19715e4111bf02de6a7cb79893e42cebe`; #56 is closed as completed.
+
+## Playable recovery frontier
+
+Issue #69 is the temporary active parent frontier by explicit user direction. It intentionally keeps Phase A→B→C→D continuous instead of returning to #54 between slices. Phase A repairs current main's failed playable acceptance and authoritative character grounding; later phases own the already-observed building scale, well/furniture/primitive construction, tree occlusion, terrain seam/coarse proxy presentation, HUD/i18n, complete gameplay journeys, persistence/free-play and measured performance work. #37 remains the detailed visual-debt tracker, but #69 controls execution order until the recovery parent closes.
 
 ## Visual and E2E baseline
 
