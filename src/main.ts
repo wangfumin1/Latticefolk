@@ -442,11 +442,19 @@ class TownGame {
   }
 
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
+    if(state.kind==='well'){
+      return this.addAssetObject(
+        state,
+        assetOverride||'wellAsset',
+        assetHeight||1.45,
+        rotationY,
+        2.0,
+        2.0
+      );
+    }
     const g = new THREE.Group();
     let mesh: THREE.Mesh;
     switch(state.kind) {
-      case 'well':
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(1,1,.85,12),new THREE.MeshStandardMaterial({color:0x8b8c86})); mesh.position.y=.43; break;
       case 'water_patch':
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
       case 'bench':
@@ -476,7 +484,6 @@ class TownGame {
     this.objects.set(state.id,{state,mesh:g});
     this.registerWorldObjectPhysics(state);
     if(assetOverride)this.attachVisualTarget({group:g,asset:assetOverride,height:assetHeight||2,rotationY});
-    else if(state.kind==='well') this.attachVisualTarget({group:g,asset:'wellAsset',height:3.4,targetWidth:3.6,targetDepth:3.6});
     else if(state.kind==='tree') this.attachVisualTarget({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
     else if(state.kind==='crate') this.attachVisualTarget({group:g,asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2});
     else if(state.id==='mine') this.attachVisualTarget({group:g,asset:'mineAsset',height:4.5,rotationY:Math.PI});
@@ -497,7 +504,7 @@ class TownGame {
     }
 
     const halfExtents:Partial<Record<WorldObjectState['kind'],[number,number]>>={
-      well:[.95,.95],
+      well:[1.0,1.0],
       bench:[.90,.34],
       bed:[.92,.46],
       food_stall:[1.08,.54],
@@ -3253,6 +3260,8 @@ class TownGame {
       Math.abs(target.resolvedSize!.y-target.height),
       Math.abs(target.resolvedSize!.z-target.targetDepth!)
     ),0);
+    const wellTarget=this.visualTargets.find(target=>target.asset==='wellAsset'&&target.resolvedSize);
+    const wellVisualSize=wellTarget?.resolvedSize;
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3270,6 +3279,9 @@ class TownGame {
     ui.world.dataset.buildingVisualTargets=String(buildingTargets.length);
     ui.world.dataset.buildingVisualMinHeight=buildingMinHeight.toFixed(4);
     ui.world.dataset.buildingVisualMaxBoundsError=buildingMaxBoundsError.toFixed(5);
+    ui.world.dataset.wellVisualWidth=wellVisualSize?.x.toFixed(4)??'NaN';
+    ui.world.dataset.wellVisualHeight=wellVisualSize?.y.toFixed(4)??'NaN';
+    ui.world.dataset.wellVisualDepth=wellVisualSize?.z.toFixed(4)??'NaN';
     ui.world.dataset.movableBodies=String(movableBodies.length);
     ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
