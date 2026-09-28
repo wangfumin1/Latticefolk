@@ -456,15 +456,14 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   // ownership boundary. The next batch is held only after positioning, so the real
   // materialize -> unload round trip can complete well inside the production 8s deadline.
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
-  // Stage next to the ownership boundary with real first-person input. Keep the long
-  // steering loop in-page so software WebGL protocol latency does not turn travel into a
-  // multi-minute test. z≈5.3 avoids the known east-tree/central traffic line while all
-  // authoritative collision remains enabled.
-  await drivePlayerTo(page,{x:5.2,z:5.3},20_000,.6);
-  const stagedMove=await drivePlayerTo(page,{x:35.0,z:5.3},55_000,.55);
+  // Stage next to the ownership boundary with real first-person input. Return to the
+  // authored east-west main road first, then follow that open lane to the home boundary.
+  // Dynamic NPC/wildlife collision remains enabled; no coordinate mutation or physics bypass.
+  await drivePlayerTo(page,{x:5.2,z:.2},20_000,.55);
+  const stagedMove=await drivePlayerTo(page,{x:35.15,z:.2},55_000,.45);
   const staged=await runtime(page);
-  expect(stagedMove.x).toBeGreaterThan(34.5);
-  expect(staged.playerX).toBeGreaterThan(34.5);
+  expect(stagedMove.x).toBeGreaterThan(34.7);
+  expect(staged.playerX).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeLessThan(35.7);
   expect(staged.materializedChunks).toBe(0);
 
