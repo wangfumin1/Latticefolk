@@ -167,7 +167,8 @@ async function drivePlayerTo(
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
       }
       const p=read();
-      return {reached:false,x:p.x,z:p.z,distance:Math.hypot(target.x-p.x,target.z-p.z)};
+      const distance=Math.hypot(target.x-p.x,target.z-p.z);
+      return {reached:distance<=tolerance,x:p.x,z:p.z,distance};
     }finally{
       release();
     }
@@ -340,6 +341,7 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
   const delayedGate=new Promise<void>(resolve=>{releaseDelayed=resolve;});
   let delayedCaptured=false;
   let delayedExpectedRevision=Number.NaN;
+  let delayedSnapshot:WorldPersistenceSnapshot|undefined;
 
   try{
     await page.goto('/');
@@ -363,10 +365,15 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     await page.route('**/api/world/state',async route=>{
       if(route.request().method()==='POST'&&!delayedCaptured){
         delayedCaptured=true;
-        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number};
+        const body=JSON.parse(route.request().postData()||'{}') as {expectedRevision?:number;snapshot?:WorldPersistenceSnapshot};
         delayedExpectedRevision=Number(body.expectedRevision);
+        delayedSnapshot=body.snapshot?structuredClone(body.snapshot):undefined;
         await delayedGate;
-        await route.continue();
+        try{
+          await route.continue();
+        }catch(error){
+          if(!page.isClosed())throw error;
+        }
         return;
       }
       await route.continue();
@@ -381,8 +388,11 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
 
     const beforeAuthority=await serverPersistence(request);
     expect(beforeAuthority.revision).toBe(staleRevision);
-    expect(beforeAuthority.snapshot).toBeTruthy();
-    const authoritativeSnapshot=structuredClone(beforeAuthority.snapshot!);
+    // The delayed browser POST may be the first save after reset, so the server snapshot can
+    // legitimately still be null. Use the captured real browser payload as the authoritative
+    // candidate, then let a competing CAS write win before releasing that stale browser request.
+    expect(delayedSnapshot).toBeTruthy();
+    const authoritativeSnapshot=structuredClone(delayedSnapshot!);
     authoritativeSnapshot.meta.minuteOfDay=(authoritativeSnapshot.meta.minuteOfDay+1)%1440;
     const authorityWrite=await request.post('/api/world/state',{
       data:{expectedRevision:staleRevision,snapshot:authoritativeSnapshot},
