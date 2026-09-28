@@ -471,6 +471,25 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
 
   const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
   expect(reset.ok()).toBe(true);
+  const resetBody=await reset.json() as {revision:number};
+
+  // Seed a legal saved first-person position just inside the authored-home boundary. The
+  // browser still performs the materialize/unload crossing with ordinary player input and
+  // authoritative physics; this removes unrelated stochastic town traffic from a chunk
+  // lifecycle acceptance test.
+  const boundarySeed:WorldPersistenceSnapshot={
+    version:1,
+    meta:{
+      day:1,minuteOfDay:8*60+15,weather:'clear',playerPosition:{x:35.1,z:.2},
+      playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}
+    },
+    coarseChunks:[],fineChunks:[],homeNpcs:[],homeObjects:[]
+  };
+  const seeded=await request.post('/api/world/state',{
+    data:{expectedRevision:resetBody.revision,snapshot:boundarySeed},
+    failOnStatusCode:false
+  });
+  expect(seeded.ok()).toBe(true);
 
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
@@ -478,17 +497,11 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
-  // Let the first ordinary coarse batch complete, then move to just inside the home/coarse
-  // ownership boundary. The next batch is held only after positioning, so the real
-  // materialize -> unload round trip can complete well inside the production 8s deadline.
+  // Let the first ordinary coarse batch complete at the restored boundary position. The
+  // next batch is held only after staging, so the real materialize -> unload round trip can
+  // complete well inside the production request deadline.
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
-  // Stage next to the ownership boundary with real first-person input. Return to the
-  // authored east-west main road first, then follow that open lane to the home boundary.
-  // Dynamic NPC/wildlife collision remains enabled; no coordinate mutation or physics bypass.
-  await drivePlayerTo(page,{x:5.2,z:.2},20_000,.55);
-  const stagedMove=await drivePlayerTo(page,{x:35.15,z:.2},55_000,.45);
   const staged=await runtime(page);
-  expect(stagedMove.x).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeLessThan(35.7);
   expect(staged.materializedChunks).toBe(0);
