@@ -27,6 +27,9 @@ interface RuntimeSnapshot {
   wellVisualWidth:number;
   wellVisualHeight:number;
   wellVisualDepth:number;
+  semanticLicensedTargets:number;
+  semanticLicensedResolved:number;
+  semanticPrimitiveMeshes:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -67,6 +70,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       wellVisualWidth:read('wellVisualWidth'),
       wellVisualHeight:read('wellVisualHeight'),
       wellVisualDepth:read('wellVisualDepth'),
+      semanticLicensedTargets:read('semanticLicensedTargets'),
+      semanticLicensedResolved:read('semanticLicensedResolved'),
+      semanticPrimitiveMeshes:read('semanticPrimitiveMeshes'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -256,6 +262,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.wellVisualDepth).toBeLessThanOrEqual(2.05);
   expect(home.wellVisualHeight).toBeGreaterThan(2.3);
   expect(home.wellVisualHeight).toBeLessThanOrEqual(2.65);
+  expect(home.semanticLicensedTargets).toBe(8);
+  expect(home.semanticLicensedResolved).toBe(home.semanticLicensedTargets);
+  expect(home.semanticPrimitiveMeshes).toBe(0);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -312,6 +321,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   const restoredGrounding=await runtime(page);
   expect(restoredGrounding.playerGroundingError).toBeLessThan(.02);
   expect(restoredGrounding.npcGroundingMaxError).toBeLessThan(.02);
+  expect(restoredGrounding.semanticLicensedResolved).toBe(restoredGrounding.semanticLicensedTargets);
+  expect(restoredGrounding.semanticPrimitiveMeshes).toBe(0);
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
