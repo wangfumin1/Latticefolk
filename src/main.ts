@@ -3344,6 +3344,18 @@ class TownGame {
     ),0);
     const wellTarget=this.visualTargets.find(target=>target.asset==='wellAsset'&&target.resolvedSize);
     const wellVisualSize=wellTarget?.resolvedSize;
+    const semanticLicensedIds=['bench_w','bench_e','farm_plot','market','maker_table','guard_post','bed_n','mill'];
+    const semanticLicensedObjects=semanticLicensedIds.map(id=>this.objects.get(id)).filter((object):object is RuntimeObject=>Boolean(object));
+    const semanticLicensedResolved=semanticLicensedObjects.filter(object=>{
+      let meshes=0;object.mesh.traverse(child=>{if((child as THREE.Mesh).isMesh)meshes++;});return meshes>0;
+    }).length;
+    const semanticPrimitiveMeshes=semanticLicensedObjects.reduce((count,object)=>{
+      object.mesh.traverse(child=>{
+        const mesh=child as THREE.Mesh;
+        if(mesh.isMesh&&(mesh.geometry?.type==='BoxGeometry'||mesh.geometry?.type==='CylinderGeometry'||mesh.geometry?.type==='ConeGeometry'))count++;
+      });
+      return count;
+    },0);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3364,6 +3376,9 @@ class TownGame {
     ui.world.dataset.wellVisualWidth=wellVisualSize?.x.toFixed(4)??'NaN';
     ui.world.dataset.wellVisualHeight=wellVisualSize?.y.toFixed(4)??'NaN';
     ui.world.dataset.wellVisualDepth=wellVisualSize?.z.toFixed(4)??'NaN';
+    ui.world.dataset.semanticLicensedTargets=String(semanticLicensedObjects.length);
+    ui.world.dataset.semanticLicensedResolved=String(semanticLicensedResolved);
+    ui.world.dataset.semanticPrimitiveMeshes=String(semanticPrimitiveMeshes);
     ui.world.dataset.movableBodies=String(movableBodies.length);
     ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';
