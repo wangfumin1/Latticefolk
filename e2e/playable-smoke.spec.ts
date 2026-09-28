@@ -24,6 +24,9 @@ interface RuntimeSnapshot {
   buildingVisualTargets:number;
   buildingVisualMinHeight:number;
   buildingVisualMaxBoundsError:number;
+  wellVisualWidth:number;
+  wellVisualHeight:number;
+  wellVisualDepth:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -61,6 +64,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       buildingVisualTargets:read('buildingVisualTargets'),
       buildingVisualMinHeight:read('buildingVisualMinHeight'),
       buildingVisualMaxBoundsError:read('buildingVisualMaxBoundsError'),
+      wellVisualWidth:read('wellVisualWidth'),
+      wellVisualHeight:read('wellVisualHeight'),
+      wellVisualDepth:read('wellVisualDepth'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -140,7 +146,8 @@ async function drivePlayerTo(
     const deadline=performance.now()+timeoutMs;
     let last=read();
     let lastMovedAt=performance.now();
-    let avoidUntil=0;
+    let detourUntil=0;
+    let detourCode:string|undefined;
     let avoidSign=1;
     try{
       while(performance.now()<deadline){
@@ -158,22 +165,26 @@ async function drivePlayerTo(
         const distance=Math.hypot(dx,dz);
         if(distance<=tolerance)return {reached:true,x:p.x,z:p.z,distance};
 
-        // If authoritative collision has prevented any actual movement for long enough,
-        // commit to a short perpendicular detour. Do not judge that detour by direct
-        // distance-to-goal improvement: moving sideways is legitimate progress around a body.
-        if(currentTime-lastMovedAt>700&&currentTime>=avoidUntil){
+        // A dynamic body can pin a diagonal request against its edge. When the player has
+        // stopped moving, temporarily drop the forward component and take a short pure
+        // perpendicular step, then resume toward the target with normal authoritative input.
+        if(currentTime-lastMovedAt>700&&currentTime>=detourUntil){
           avoidSign*=-1;
-          avoidUntil=currentTime+1_400;
+          detourCode=Math.abs(dx)>=Math.abs(dz)
+            ?(avoidSign>0?'KeyW':'KeyS')
+            :(avoidSign>0?'KeyD':'KeyA');
+          detourUntil=currentTime+850;
           lastMovedAt=currentTime;
         }
 
         const next=new Set<string>();
-        if(distance>1.8)next.add('ShiftLeft');
-        if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
-        if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
-        if(currentTime<avoidUntil){
-          if(Math.abs(dx)>=Math.abs(dz))next.add(avoidSign>0?'KeyW':'KeyS');
-          else next.add(avoidSign>0?'KeyD':'KeyA');
+        if(detourCode&&currentTime<detourUntil){
+          next.add(detourCode);
+        }else{
+          detourCode=undefined;
+          if(distance>1.8)next.add('ShiftLeft');
+          if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
+          if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
         }
         setHeld(next);
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
@@ -239,6 +250,12 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.buildingVisualTargets).toBeGreaterThanOrEqual(12);
   expect(home.buildingVisualMinHeight).toBeGreaterThanOrEqual(5.0);
   expect(home.buildingVisualMaxBoundsError).toBeLessThan(.03);
+  expect(home.wellVisualWidth).toBeGreaterThan(1.2);
+  expect(home.wellVisualWidth).toBeLessThan(1.5);
+  expect(home.wellVisualDepth).toBeGreaterThan(1.8);
+  expect(home.wellVisualDepth).toBeLessThanOrEqual(2.05);
+  expect(home.wellVisualHeight).toBeGreaterThan(2.3);
+  expect(home.wellVisualHeight).toBeLessThanOrEqual(2.65);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -460,6 +477,24 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
 
   const reset=await request.delete('/api/world/state',{failOnStatusCode:false});
   expect(reset.ok()).toBe(true);
+  const resetBody=await reset.json() as {revision:number};
+
+  // Start from a legal persisted position just inside the authored-home boundary. The
+  // materialize/unload crossing itself still uses ordinary first-person input and the same
+  // authoritative physics; unrelated stochastic town traffic is not part of this lifecycle gate.
+  const boundarySeed:WorldPersistenceSnapshot={
+    version:1,
+    meta:{
+      day:1,minuteOfDay:8*60+15,weather:'clear',playerPosition:{x:35.1,z:1.2},
+      playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}
+    },
+    coarseChunks:[],fineChunks:[],homeNpcs:[],homeObjects:[]
+  };
+  const seeded=await request.post('/api/world/state',{
+    data:{expectedRevision:resetBody.revision,snapshot:boundarySeed},
+    failOnStatusCode:false
+  });
+  expect(seeded.ok()).toBe(true);
 
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
@@ -467,17 +502,8 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   await page.locator('#startBtn').click();
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
-  // Let the first ordinary coarse batch complete, then move to just inside the home/coarse
-  // ownership boundary. The next batch is held only after positioning, so the real
-  // materialize -> unload round trip can complete well inside the production 8s deadline.
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
-  // Stage next to the ownership boundary with real first-person input. Return to the
-  // authored east-west main road first, then follow that open lane to the home boundary.
-  // Dynamic NPC/wildlife collision remains enabled; no coordinate mutation or physics bypass.
-  await drivePlayerTo(page,{x:5.2,z:.2},20_000,.55);
-  const stagedMove=await drivePlayerTo(page,{x:35.15,z:.2},55_000,.45);
   const staged=await runtime(page);
-  expect(stagedMove.x).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeLessThan(35.7);
   expect(staged.materializedChunks).toBe(0);

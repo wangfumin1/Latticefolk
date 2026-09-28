@@ -223,7 +223,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   };
 
   if(chunk.settlementLevel>0){
-    add('well','well','聚落水井',centerX+2.4,centerZ+2.4,['water','settlement','social'],['inspect','draw_water','drink','wash'],{},'wellAsset',3.2);
+    add('well','well','聚落水井',centerX+2.4,centerZ+2.4,['water','settlement','social'],['inspect','draw_water','drink','wash'],{},'wellAsset',2.6);
     add('farm','farm_plot','公共农地',centerX-8.0,centerZ+1.8,['work','farm','food'],['inspect','harvest','work'],{
       item:'grain',resourceAmount:Math.max(3,Math.round((chunk.plants?.crop??chunk.food)/10))
     });
