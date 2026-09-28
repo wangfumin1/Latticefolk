@@ -3332,7 +3332,11 @@ class TownGame {
       :0;
     const npcGroundingMaxError=[...this.npcs.values()].reduce((max,agent)=>agent.removed?max:Math.max(max,Math.abs(agent.mesh.position.y-this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z))),0);
     const wildlifeGroundingMaxError=[...this.wildlife.values()].reduce((max,animal)=>animal.removed?max:Math.max(max,Math.abs(animal.mesh.position.y-this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z))),0);
-    const buildingTargets=this.visualTargets.filter(target=>target.fit==='exactBounds'&&target.resolvedSize&&target.targetWidth&&target.targetDepth);
+    const buildingTargets=this.visualTargets.filter(target=>{
+      const id=String(target.group.userData.entityId||'');
+      return this.objects.get(id)?.state.kind==='building'
+        &&target.fit==='exactBounds'&&target.resolvedSize&&target.targetWidth&&target.targetDepth;
+    });
     const buildingMinHeight=buildingTargets.length?Math.min(...buildingTargets.map(target=>target.resolvedSize!.y)):0;
     const buildingMaxBoundsError=buildingTargets.reduce((max,target)=>Math.max(
       max,
