@@ -1,0 +1,15 @@
+Quaternius — Fantasy Props MegaKit [Standard]
+
+Official pack: https://quaternius.com/packs/fantasypropsmegakit.html
+Creator: Quaternius
+License: CC0 1.0 Universal / Public Domain Dedication
+Pinned reproducible source mirror: https://github.com/agentkaerf/FreeModels/tree/db3df04d1e4714298a09510b26fb6de6645138a2/Fantasy%20Props%20MegaKit%5BStandard%5D/Exports/glTF
+
+Included in Latticefolk:
+- Bench.gltf + Bench.bin
+- Bed_Twin1.gltf + Bed_Twin1.bin
+- Stall_Empty.gltf + Stall_Empty.bin
+- Workbench.gltf + Workbench.bin
+- WeaponStand.gltf + WeaponStand.bin
+
+The source mesh/buffer bytes are preserved exactly. The copied glTF descriptors omit the pack's shared multi-megabyte texture atlases and retain the original material slots with compact flat PBR parameters. No geometry is generated or replaced by Latticefolk.
