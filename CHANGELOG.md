@@ -8,6 +8,10 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Playable recovery Phase B now calibrates licensed building assets to explicit world dimensions against the 1.82 m character reference, updates building collision from the resolved visual AABB, and preserves deterministic building centers across persistence restore.
+- Building creation no longer constructs temporary visible walls, roofs, windows, foundations, or an extra door before asset loading; semantic/physics state exists invisibly until the sourced licensed model resolves.
+- The coarse materialize→unload browser acceptance now starts from a legal persisted first-person position just inside the home boundary and performs the actual crossing with normal input/physics, isolating chunk-lifecycle semantics from stochastic town traffic.
+
 - Playable recovery Phase A grounds the first-person camera, NPCs and fine wildlife on the deterministic terrain authority, including persisted reload/materialization paths and animated NPC visual-foot compensation.
 - Final unload persistence now uses a bounded critical/home snapshot rather than attempting to queue the full discovered-world payload through `sendBeacon`; omission-preserving SQLite semantics retain coarse/fine/lineage history while meta, home state and transit completion remain CAS-protected.
 - Real-browser acceptance steering now uses ordinary in-page key events through authoritative collision, avoiding protocol-latency and transient-traffic false failures without teleporting or bypassing physics.
