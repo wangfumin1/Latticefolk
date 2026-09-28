@@ -246,11 +246,11 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.buildingVisualMinHeight).toBeGreaterThanOrEqual(5.0);
   expect(home.buildingVisualMaxBoundsError).toBeLessThan(.03);
   expect(home.wellVisualWidth).toBeGreaterThan(1.2);
-  expect(home.wellVisualWidth).toBeLessThanOrEqual(2.05);
-  expect(home.wellVisualDepth).toBeGreaterThan(1.2);
+  expect(home.wellVisualWidth).toBeLessThan(1.5);
+  expect(home.wellVisualDepth).toBeGreaterThan(1.8);
   expect(home.wellVisualDepth).toBeLessThanOrEqual(2.05);
-  expect(home.wellVisualHeight).toBeGreaterThan(.55);
-  expect(home.wellVisualHeight).toBeLessThanOrEqual(1.5);
+  expect(home.wellVisualHeight).toBeGreaterThan(2.3);
+  expect(home.wellVisualHeight).toBeLessThanOrEqual(2.65);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
@@ -486,8 +486,8 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   // Stage next to the ownership boundary with real first-person input. Return to the
   // authored east-west main road first, then follow that open lane to the home boundary.
   // Dynamic NPC/wildlife collision remains enabled; no coordinate mutation or physics bypass.
-  await drivePlayerTo(page,{x:5.2,z:.2},20_000,.55);
-  const stagedMove=await drivePlayerTo(page,{x:35.15,z:.2},55_000,.45);
+  await drivePlayerTo(page,{x:5.2,z:1.2},20_000,.55);
+  const stagedMove=await drivePlayerTo(page,{x:35.15,z:1.2},55_000,.45);
   const staged=await runtime(page);
   expect(stagedMove.x).toBeGreaterThan(34.7);
   expect(staged.playerX).toBeGreaterThan(34.7);
