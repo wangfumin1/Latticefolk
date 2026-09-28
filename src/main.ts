@@ -3282,6 +3282,12 @@ class TownGame {
       .map(([,metric])=>metric);
     const buildingMinHeight=homeBuildingMetrics.length?Math.min(...homeBuildingMetrics.map(metric=>metric.height)):0;
     const buildingMaxHeight=homeBuildingMetrics.length?Math.max(...homeBuildingMetrics.map(metric=>metric.height)):0;
+    const buildingCenterMaxError=[...this.objects.values()]
+      .filter(object=>object.state.kind==='building'&&!object.state.chunkId&&object.mesh.userData.buildingCenter)
+      .reduce((max,object)=>{
+        const center=object.mesh.userData.buildingCenter as {x:number;z:number};
+        return Math.max(max,Math.hypot(object.mesh.position.x-center.x,object.mesh.position.z-center.z));
+      },0);
     const playerGroundingError=this.cameraMode==='firstPerson'
       ?Math.abs(this.camera.position.y-(this.groundHeightAt(this.camera.position.x,this.camera.position.z)+1.7))
       :0;
@@ -3315,6 +3321,7 @@ class TownGame {
     ui.world.dataset.buildingVisualCount=String(homeBuildingMetrics.length);
     ui.world.dataset.buildingMinHeight=buildingMinHeight.toFixed(3);
     ui.world.dataset.buildingMaxHeight=buildingMaxHeight.toFixed(3);
+    ui.world.dataset.buildingCenterMaxError=buildingCenterMaxError.toFixed(5);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
