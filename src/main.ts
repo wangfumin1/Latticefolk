@@ -534,8 +534,6 @@ class TownGame {
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.25,.65),new THREE.MeshStandardMaterial({color:0x79563c})); mesh.position.y=.65; break;
       case 'bed':
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.35,1),new THREE.MeshStandardMaterial({color:0xddd2bd})); mesh.position.y=.35; break;
-      case 'farm_plot':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(4,.12,2.7),new THREE.MeshStandardMaterial({color:0x654a2d})); mesh.position.y=.06; break;
       case 'food_stall':
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.3,1.2),new THREE.MeshStandardMaterial({color:0xb86442})); mesh.position.y=.65; break;
       case 'workstation':
