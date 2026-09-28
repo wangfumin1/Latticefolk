@@ -24,6 +24,9 @@ interface RuntimeSnapshot {
   buildingVisualTargets:number;
   buildingVisualMinHeight:number;
   buildingVisualMaxBoundsError:number;
+  wellVisualWidth:number;
+  wellVisualHeight:number;
+  wellVisualDepth:number;
   movableBodies:number;
   cartX:number;
   cartZ:number;
@@ -61,6 +64,9 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
       buildingVisualTargets:read('buildingVisualTargets'),
       buildingVisualMinHeight:read('buildingVisualMinHeight'),
       buildingVisualMaxBoundsError:read('buildingVisualMaxBoundsError'),
+      wellVisualWidth:read('wellVisualWidth'),
+      wellVisualHeight:read('wellVisualHeight'),
+      wellVisualDepth:read('wellVisualDepth'),
       movableBodies:read('movableBodies'),
       cartX:read('cartX'),
       cartZ:read('cartZ'),
@@ -239,6 +245,12 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.buildingVisualTargets).toBeGreaterThanOrEqual(12);
   expect(home.buildingVisualMinHeight).toBeGreaterThanOrEqual(5.0);
   expect(home.buildingVisualMaxBoundsError).toBeLessThan(.03);
+  expect(home.wellVisualWidth).toBeGreaterThan(1.2);
+  expect(home.wellVisualWidth).toBeLessThanOrEqual(2.05);
+  expect(home.wellVisualDepth).toBeGreaterThan(1.2);
+  expect(home.wellVisualDepth).toBeLessThanOrEqual(2.05);
+  expect(home.wellVisualHeight).toBeGreaterThan(.55);
+  expect(home.wellVisualHeight).toBeLessThanOrEqual(1.5);
 
   await page.locator('#startBtn').click();
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
