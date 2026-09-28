@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Playable recovery Phase B calibrates the existing CC0 Medieval Village well to a ~2 m semantic footprint, shares that scale across home/generated settlements, aligns its static collider, and routes wells through the licensed asset-only path without constructing a visible cylinder placeholder.
+
 - Playable recovery Phase B starts from one 1.82 m human reference: sourced building assets now fit their declared semantic width/depth/height exactly, building collision AABBs include visual rotation, generated markets no longer use a sub-human 3 m target, and building creation no longer constructs temporary primitive walls/roofs/windows/doors before the licensed asset resolves.
 
 - Playable recovery Phase A grounds the first-person camera, NPCs and fine wildlife on the deterministic terrain authority, including persisted reload/materialization paths and animated NPC visual-foot compensation.
