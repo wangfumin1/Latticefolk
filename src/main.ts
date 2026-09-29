@@ -9,6 +9,7 @@ import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
+import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
 import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -1346,7 +1347,7 @@ class TownGame {
       runtime.objectIds.push(b.id);
       const saved=cachedObjects.get(b.id);
       const object=this.objects.get(b.id);
-      if(saved&&object)Object.assign(object.state,structuredClone(saved),{chunkId:chunk.id});
+      if(saved&&object)Object.assign(object.state,restoreBuildingForLayout(object.state,saved));
     }
 
     for(const p of plan.objects){

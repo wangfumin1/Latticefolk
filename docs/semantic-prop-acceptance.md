@@ -28,6 +28,14 @@ The original eight-target furniture counter remains unchanged. Baking ovens have
 
 The model's 3.6 m envelope includes the chimney; its work surface is roughly 1.08 m. The home source anchor remains stable, while only its visual is moved 0.4 m forward to clear the existing bakery facade. Actual resolved visual bounds drive collision and an exterior 0.5 m trigger margin. Generated ovens retain their original anchors without this home-specific presentation offset. Existing recipe and NPC `workAt` semantics are unchanged.
 
+## Generated lot and old-save frontage regression
+
+The first oven PR run (#1375 / `36542987638`, head `d85a6cd0f628003c1d34e296c915902a7198d84c`, executed merge-test `81e0a28ea076f0e8c5c78f9503e80934fac8f925`) passed the nine existing cases and home oven, but failed the generated approach. The downloaded report, native keyboard trace, pre-teardown state and screenshot showed player `(40.6,-22.5)` remaining stationary while a diagonally rotated market overlapped the oven. This was a runtime layout defect, not an asset-fetch failure, missing timeout, or wrong keyboard heading. Artifact `11021746491` has SHA-256 `ccb80c89872059e46500d991924f285118e3f6d1ff28a2cfd1a6ef3e1317bf0c`.
+
+The generator's land parcels and nature reservations are rectangular, but its previous diagonal yaw enlarged full-size building footprints across the utility street. Buildings now face that street with cardinal yaw. Only inward Z jitter that would invade the existing 4.5 m utility strip is clamped outward; workstation anchors, IDs, building dimensions and RNG consumption are retained. The browser fixture, player input, collision solver, target coordinates, retries and assertions are unchanged. `tests/baking-oven-layout.test.ts` first reproduced the original blockage, then checks the actual oven envelope and authoritative physical approach across 192 deterministic market/wetland layouts and all settlement levels.
+
+A building's saved `position` is its derived frontage, not a movable body anchor. `restoreBuildingForLayout` preserves stored items, resource values and mutable semantic state, while adopting the frontage already calculated for the current licensed model and trigger. Its regression covers a legacy diagonal frontage, no inventory aliasing/loss, identity/owner retention, mismatched restore rejection and repeat serialization. This is a layout-compatible version-1 restore, not a save reset or relocation of the oven/player. Final-head browser evidence remains required after any layout change.
+
 ## Still open
 
 The oven tests are controlled fixtures, not continuous town-to-remote exploration, unscripted free play, or the complete server-restart user journey. Scene-wide removal of primitive paths, tree occlusion, terrain joins, coarse presentation, full exploration/revisit and the remaining Phase C/D user journeys remain open in #69. No green count-only test may be used to close those acceptance items.

@@ -203,8 +203,16 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     const [baseName,asset,w,d,height,color]=defs[i]!;
     const [ox,oz]=lotOffsets[i]!;
     const jitterX=(random()-.5)*.7,jitterZ=(random()-.5)*.7;
-    const x=centerX+ox+jitterX,z=centerZ+oz+jitterZ;
-    const rotationY=Math.atan2(centerX-x,centerZ-z);
+    const x=centerX+ox+jitterX;
+    // Reserve the existing utility cross-street before placing full-size buildings.
+    // Clamp only inward Z jitter that would invade this 4.5 m strip; workstation
+    // anchors, dimensions, IDs and RNG consumption remain unchanged.
+    const proposedZ=centerZ+oz+jitterZ;
+    const frontageLimit=centerZ+Math.sign(oz)*(d/2+2.25);
+    const z=oz<0?Math.min(proposedZ,frontageLimit):Math.max(proposedZ,frontageLimit);
+    // Lots and nature reservations are axis aligned. Diagonal buildings would
+    // expand over the baked-in work sites even if their centers were in the lots.
+    const rotationY=oz<0?0:Math.PI;
     buildings.push({
       id:`${chunk.id}_building_${i}`,
       name:`${baseName} · ${chunk.cx},${chunk.cz}`,
