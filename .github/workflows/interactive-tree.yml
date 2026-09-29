@@ -1,0 +1,109 @@
+name: Interactive verified tree export
+on:
+  push:
+    branches: [quality/69-environment-visual]
+    paths: [.github/workflows/interactive-tree.yml]
+permissions:
+  contents: write
+concurrency:
+  group: interactive-environment-tree
+  cancel-in-progress: false
+jobs:
+  verify-tree:
+    if: github.repository == 'wangfumin1/Latticefolk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reconstruct hash-pinned implementation without transport files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,subprocess
+          from pathlib import Path
+          source=Path.cwd(); root=Path(os.environ['RUNNER_TEMP'])/'implementation'; root.mkdir()
+          parts=''.join((source/f'.interactive-phase-b/part{i}.b64').read_text() for i in (1,2))
+          archive=base64.b64decode(parts,validate=True)
+          assert hashlib.sha256(archive).hexdigest()=='a5ed18fa2a20b92c2ff8050a98dfe9d1c8431a18c017151188a2935460b4f0d8'
+          data=json.loads(lzma.decompress(archive))
+          assert data['base']=='fe29a67461f3c28b30a61d503a5a1e92e02d0c40'
+          assert data['baseTree']=='0fa97066a442b60d00e1b6707705c757f81d0ca1'
+          assert data['expectedTree']=='5998bfcd73c95ce3227955f6ad4d938910202fdb'
+          subprocess.run(['bash','-c','git archive "$1" | tar -x -C "$2"','archive',data['base'],str(root)],check=True)
+          subprocess.run(['git','init','-q'],cwd=root,check=True)
+          subprocess.run(['git','add','-f','.'],cwd=root,check=True)
+          assert subprocess.check_output(['git','write-tree'],cwd=root,text=True).strip()==data['baseTree']
+          subprocess.run(['git','apply','--unidiff-zero','--check','-'],input=data['patch'].encode(),cwd=root,check=True)
+          subprocess.run(['git','apply','--unidiff-zero','-'],input=data['patch'].encode(),cwd=root,check=True)
+          for name,text in data['newText'].items():
+              target=root/name
+              assert target.resolve().is_relative_to(root.resolve()) and not target.exists(),name
+              target.parent.mkdir(parents=True,exist_ok=True);target.write_text(text)
+          for name in ('crops_dirtDoubleRow','crops_wheatStageB'):
+              base=root/f'public/assets/kenney/nature/{name}.glb'
+              base.with_name(f'{name}.source.glb').write_bytes(base.read_bytes())
+          out=Path(os.environ['RUNNER_TEMP'])/'tree-evidence';out.mkdir()
+          (out/'manifest.json').write_text(json.dumps(data['manifest'],indent=2)+'\n')
+          (out/'expected.json').write_text(json.dumps({k:data[k] for k in ('base','baseTree','expectedTree')},indent=2)+'\n')
+          PY
+      - name: Check reconstructed implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/implementation"
+          npm install --no-audit --no-fund
+          npm run check 2>&1 | tee "$RUNNER_TEMP/tree-evidence/check.log"
+          node_modules/.bin/tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution Bundler --esModuleInterop --skipLibCheck --types node e2e/*.spec.ts
+      - name: Verify exact bytes and create Git tree objects only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,json,os,subprocess,urllib.request,urllib.error
+          from pathlib import Path
+          out=Path(os.environ['RUNNER_TEMP'])/'tree-evidence';root=Path(os.environ['RUNNER_TEMP'])/'implementation'
+          expected=json.loads((out/'expected.json').read_text());manifest=json.loads((out/'manifest.json').read_text())
+          for path,digest in manifest.items():
+              assert hashlib.sha256((root/path).read_bytes()).hexdigest()==digest,path
+          subprocess.run(['git','add','-f','--',*manifest],cwd=root,check=True)
+          tree=subprocess.check_output(['git','write-tree'],cwd=root,text=True).strip()
+          assert tree==expected['expectedTree'],tree
+          api='https://api.github.com/repos/wangfumin1/Latticefolk'
+          def call(path,data=None):
+              req=urllib.request.Request(api+path,data=None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},method='GET' if data is None else 'POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as response:return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise RuntimeError(f'GitHub HTTP {error.code}; Retry-After={error.headers.get("Retry-After")}; stop, no retries: '+error.read().decode()[:2000]) from None
+          # Never change refs or merge. Concurrent main advancement invalidates this export.
+          assert call('/git/ref/heads/main')['object']['sha']==expected['base'],'main advanced'
+          entries=[]
+          for path in manifest:
+              content=(root/path).read_bytes();entry={'path':path,'mode':'100644','type':'blob'}
+              if path.endswith('.source.glb'):
+                  entry['sha']=hashlib.sha1(b'blob '+str(len(content)).encode()+b'\0'+content).hexdigest()
+              elif path.endswith('.glb'):
+                  entry['sha']=call('/git/blobs',{'content':base64.b64encode(content).decode(),'encoding':'base64'})['sha']
+              else:entry['content']=content.decode()
+              entries.append(entry)
+          result=call('/git/trees',{'base_tree':expected['baseTree'],'tree':entries})
+          assert result['sha']==tree,(result['sha'],tree)
+          (out/'verified-tree.json').write_text(json.dumps({'tree':tree,'base':expected['base'],'transportHead':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'files':len(entries),'refMutation':False},indent=2)+'\n')
+          print('VERIFIED_TREE',tree,'FILES',len(entries),'NO_REF_MUTATION')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: environment-verified-tree-${{ github.run_id }}
+          path: ${{ runner.temp }}/tree-evidence/
+          retention-days: 3
+          if-no-files-found: error
