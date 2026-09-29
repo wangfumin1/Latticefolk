@@ -101,6 +101,22 @@ for(const scenario of cases){
       },{timeout:45_000}).toBe(true);
       await testInfo.attach(`${scenario.name}-reloaded-missing-water`,{body:await page.screenshot(),contentType:'image/png'});
       expect(errors).toEqual([]);
+    } catch(error) {
+      // Capture before fixture teardown, so a failed physical approach never loses
+      // its visible scene and real actor/physics state to page.close().
+      try {
+        const current=await savedWorld(request);
+        const actors=[...(current.snapshot?.homeNpcs??[]),...(current.snapshot?.fineChunks??[]).flatMap(chunk=>chunk.npcStates)];
+        await testInfo.attach(`${scenario.name}-failure-state`,{body:Buffer.from(JSON.stringify({
+          player:await position(page),ovens:await ovens(page),prompt:await page.locator('#prompt').innerText(),
+          worldStatus:await page.locator('#worldStatus').evaluate(el=>el.outerHTML),pageErrors:errors,
+          savedRevision:current.revision,actors:actors.map(actor=>({id:actor.id,position:actor.position,workAt:actor.workAt,currentAction:actor.currentAction}))
+        },null,2)),contentType:'application/json'});
+        await testInfo.attach(`${scenario.name}-failure-before-teardown`,{body:await page.screenshot(),contentType:'image/png'});
+      } catch(diagnosticError) {
+        await testInfo.attach(`${scenario.name}-diagnostic-error`,{body:Buffer.from(String(diagnosticError)),contentType:'text/plain'});
+      }
+      throw error;
     } finally {
       await page.keyboard.up('KeyW');await page.keyboard.up('KeyS');
       await page.close();
