@@ -12,6 +12,8 @@ Contributions are welcome. Keep changes focused, reproducible, and provider-neut
 
 A remote decision provider is optional. `DECISION_PROVIDER=fallback` provides a local development path with no API credentials.
 
+Gameplay and rendering changes also require the real Chromium/WebGL suite (`npm run test:e2e`) and inspected exact-head artifacts. See [Playable input validation](docs/playable-input-validation.md) for native startup/input, bounded physical-result assertions, trace diagnosis and the distinction between controlled fixtures and unscripted play. Do not weaken simulation assertions to compensate for a test harness's camera or timing assumptions.
+
 ## Architectural rules
 
 - The simulation owns movement, pathfinding, collision, inventory, state mutation, and action legality.

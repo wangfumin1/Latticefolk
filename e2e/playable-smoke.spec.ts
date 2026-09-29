@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
+import { startFirstPerson } from './helpers/native-start.js';
 
 
 interface ChunkDecisionRequestForE2E {
@@ -89,9 +90,12 @@ async function runtime(page:Page):Promise<RuntimeSnapshot> {
 }
 
 async function moveWithKeys(page:Page,keys:string[],durationMs:number) {
-  for(const key of keys)await page.keyboard.down(key);
-  await page.waitForTimeout(durationMs);
-  for(const key of [...keys].reverse())await page.keyboard.up(key);
+  try{
+    for(const key of keys)await page.keyboard.down(key);
+    await page.waitForTimeout(durationMs);
+  }finally{
+    for(const key of [...keys].reverse())await page.keyboard.up(key);
+  }
   await page.waitForTimeout(120);
 }
 
@@ -266,7 +270,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(home.semanticLicensedResolved).toBe(home.semanticLicensedTargets);
   expect(home.semanticPrimitiveMeshes).toBe(0);
 
-  await page.locator('#startBtn').click();
+  await startFirstPerson(page);
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
@@ -289,8 +293,12 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   const firstBefore=await runtime(page);
   expect(firstBefore.cameraMode).toBe('firstPerson');
-  await moveWithKeys(page,['ShiftLeft','KeyW'],650);
+  // Wait for a real physics-resolved push, not a fixed wall-clock pulse. The
+  // direction-sensitive scenario starts with native keyboard activation so an
+  // absolute mouse-positioning event cannot be mistaken for relative look input.
+  await moveUntil(page,['ShiftLeft','KeyW'],state=>state.cartZ<firstBefore.cartZ-.20,10_000);
   const firstAfter=await runtime(page);
+  expect(Math.abs(firstAfter.playerX-firstBefore.playerX)).toBeLessThan(.1);
   expect(Math.hypot(firstAfter.playerX-firstBefore.playerX,firstAfter.playerZ-firstBefore.playerZ)).toBeGreaterThan(.25);
   expect(firstAfter.terrainSurfaces).toBeGreaterThanOrEqual(1);
   expect(firstAfter.cartZ).toBeLessThan(firstBefore.cartZ-.08);
@@ -310,6 +318,10 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
   await expect.poll(async()=>Math.abs((await persistedCartZ(page))-pushedCartZ),{timeout:45_000}).toBeLessThan(.08);
   await expect.poll(async()=>{const state=await runtime(page);return !state.persistenceSavePending&&!state.movableDirty;},{timeout:30_000}).toBe(true);
+  await testInfo.attach('cart-push-and-save.json',{
+    contentType:'application/json',
+    body:Buffer.from(JSON.stringify({before:firstBefore,after:firstAfter,persistedCartZ:await persistedCartZ(page)},null,2))
+  });
 
   await page.unroute('**/api/world/state');
   await page.reload();
@@ -323,7 +335,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   expect(restoredGrounding.npcGroundingMaxError).toBeLessThan(.02);
   expect(restoredGrounding.semanticLicensedResolved).toBe(restoredGrounding.semanticLicensedTargets);
   expect(restoredGrounding.semanticPrimitiveMeshes).toBe(0);
-  await page.locator('#startBtn').click();
+  await startFirstPerson(page);
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
   await page.keyboard.press('KeyG');
@@ -398,7 +410,7 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
 
     // Establish one real browser save first so the server has a complete authoritative snapshot
     // and this tab's local revision is synchronized before we deliberately make its next write stale.
-    await page.locator('#startBtn').click();
+    await startFirstPerson(page);
     await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
     await moveWithKeys(page,['ShiftLeft','KeyW'],650);
     await expect.poll(async()=>{
@@ -510,7 +522,7 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   await page.goto('/');
   await expect(page.locator('#game canvas')).toBeVisible();
   await expect.poll(async()=>(await runtime(page)).assetFailures,{timeout:30_000}).toBe(0);
-  await page.locator('#startBtn').click();
+  await startFirstPerson(page);
   await expect.poll(async()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),{timeout:10_000}).toBe('CANVAS');
 
   await expect.poll(async()=>(await runtime(page)).coarseDecidedChunks,{timeout:20_000}).toBeGreaterThan(0);
