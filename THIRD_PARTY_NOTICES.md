@@ -58,3 +58,15 @@ Latticefolk includes selected CC0 crop GLBs from Kenney under `public/assets/ken
 - License: **CC0 1.0 Universal / Public Domain Dedication**
 - Pinned reproducible mirror: `shorepine/kenney@3694c6879e487c108f55677be7dd2ca75b07cc3b`
 - Included byte-for-byte: `crops_dirtDoubleRow.glb`, `crops_wheatStageB.glb`.
+
+
+## Firefly in the Dusk — Cast Iron Stove
+
+Latticefolk includes the author's CC0 wood-fired baking oven under `public/assets/firefly-in-the-dusk/cast-iron-stove/`.
+
+- Author publication: https://opengameart.org/content/cast-iron-stove (published 2025-12-17; license verified 2026-09-29).
+- Author: **Firefly in the Dusk**.
+- License: **CC0 1.0 Universal / Public Domain Dedication** — https://creativecommons.org/publicdomain/zero/1.0/.
+- Original glTF archive: https://opengameart.org/sites/default/files/cast_iron_stove_gltf.zip.
+- Source descriptor, binary buffer and two texture files are retained unchanged. Offline preparation selects only the complete oven node from the author's multi-variant scene. Its embedded doors are part of that source; no separate doors or substitute cookware are added.
+- Reproducible hashes and the precise scene-selection adaptation are recorded in the asset folder's `SOURCE.md` and `scripts/lib/baking-oven-assets.mjs`.

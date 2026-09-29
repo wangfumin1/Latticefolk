@@ -18,3 +18,14 @@ try {
   console.error(`[assets] ${fileURLToPath(source)}: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }
+
+// Keep the existing hash-pinned Well.source.fbx normalization above unchanged.
+try {
+  const { prepareBakingOven } = await import('./lib/baking-oven-assets.mjs');
+  const root = new URL('../public/assets/firefly-in-the-dusk/cast-iron-stove/', import.meta.url);
+  const prepared = prepareBakingOven(root);
+  console.log(`[assets] CastIronStove.gltf ${prepared ? 'prepared' : 'verified'}: original closed-door oven, no duplicate variant or cookware`);
+} catch (error) {
+  console.error(`[assets] baking oven: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+}

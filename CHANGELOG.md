@@ -8,6 +8,11 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Playable recovery adds a sourced CC0 wood-fired baking oven for the stable home `oven` and generated bakeries. Offline hash-pinned preparation selects the author's complete oven without altering geometry/materials or adding doors; actual resolved bounds define collision and the surrounding interaction trigger. Recipe, ingredient consumption, NPC work targets and save schemas stay unchanged.
+- Separate oven asset/physics/production regressions and native-input home/generated baking/save/reload browser contracts retain the existing eight-target furniture gate and distinguish controlled fixtures from full exploration/free play.
+- Already sourced tree/crate/mine/explicit-asset paths no longer construct discarded visible primitive placeholders. Generic drop/water/terrain/coarse paths remain tracked separately; this is not a whole-scene primitive-free claim.
+- Generated buildings now face the axis-aligned utility street, and inward lot jitter is bounded by its reserved strip. This prevents full-size buildings from covering existing bakery/workstation anchors and their approach lanes without shrinking or disabling collision. Restoring old building saves preserves storage/resources but recomputes the derived frontage against the current model/trigger layout.
+
 - Playable recovery Phase B replaces center-town and generated bench/bed/market/workbench/guard-equipment/farm primitives with sourced CC0 semantic visuals from Quaternius Fantasy Props and Kenney crops. Solid furniture collision is reconciled from resolved visual bounds; farm plots are composed from sourced soil/crop models only.
 - Third-party scene provenance now has a dedicated `THIRD_PARTY_ASSETS.md` manifest in addition to detailed notices and per-folder source records.
 

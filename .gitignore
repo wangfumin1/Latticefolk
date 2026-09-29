@@ -18,3 +18,6 @@ playwright-report/
 # Reproducible material adaptation of the unchanged licensed Well.source.fbx.
 public/assets/quaternius/medieval-village/Well.fbx
 public/assets/quaternius/medieval-village/Well.fbx.tmp-*
+
+# Derived from the immutable author descriptor by assets:prepare
+/public/assets/firefly-in-the-dusk/cast-iron-stove/CastIronStove.gltf
