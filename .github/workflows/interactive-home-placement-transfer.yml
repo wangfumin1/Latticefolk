@@ -1,0 +1,76 @@
+name: One-shot home placement tree transfer
+on:
+  push:
+    branches: [transfer/69-home-restore]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fe29a67461f3c28b30a61d503a5a1e92e02d0c40
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply exact locally checked patch to its exact base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/wangfumin1/Latticefolk/git/ref/heads/main --jq .object.sha)" = fe29a67461f3c28b30a61d503a5a1e92e02d0c40
+          python3 - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          encoded='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'
+          patch=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='76a11f1f19413e1773146961f1ca76517cf14765d3ff116f38fd20cfdcd390e3'
+          Path('/tmp/home-restore.patch').write_bytes(patch)
+          PY
+          git apply --check /tmp/home-restore.patch
+          git apply /tmp/home-restore.patch
+      - name: Recheck exact transferred implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          npm run check 2>&1 | tee /tmp/home-restore-check.log
+          ./node_modules/.bin/tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict --esModuleInterop --skipLibCheck --types node --lib ES2022,DOM e2e/baking-oven.spec.ts
+      - name: Verify final bytes and create only a Git tree object
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/wangfumin1/Latticefolk/git/ref/heads/main --jq .object.sha)" = fe29a67461f3c28b30a61d503a5a1e92e02d0c40
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          expected={
+            'src/main.ts':'9a172519b7fb6ccb734d8632d555bc4a14ed303b674f7dabcacbc4f839138476',
+            'src/world/finePhysics.ts':'a34c5a9d1704f88ddd4f7381c28a579bc43727b4642970d2fe6571f910154390',
+            'src/world/homeObjectRestore.ts':'612d0360b304d82dcaeb90eb6607a9516af51fd609c3a569c25a3892cfeafda9',
+            'tests/home-object-restore.test.ts':'8c91980c28e789d86d14e8da047f141cec29a2f2d5d37887ed9c97719a2c6ec4',
+            'e2e/baking-oven.spec.ts':'0135081336976bdcedbb468ff011c2340f6e26dbdfe7b41c7cd8f62a9ed56446',
+            'CHANGELOG.md':'e22532563d1319656252edf4401338acdab03269ca5379e36968a63e86f37f11',
+            'docs/semantic-prop-acceptance.md':'6780a215efb8fd60cf44fff58d85b5706e047adf593556a4a01e347a4a4c41a4',
+            'docs/maintenance-issues.md':'a824aa9dc58d1049938117565e6d373f090f4dfcb710a6f110b0d22e7ed284ae'}
+          for name,digest in expected.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==digest,name
+          entries=[{'path':name,'mode':'100644','type':'blob','content':Path(name).read_text()} for name in expected]
+          Path('/tmp/home-restore-tree-request.json').write_text(json.dumps({'base_tree':'0fa97066a442b60d00e1b6707705c757f81d0ca1','tree':entries}))
+          Path('/tmp/home-restore-hashes.json').write_text(json.dumps(expected,indent=2))
+          PY
+          gh api --method POST repos/wangfumin1/Latticefolk/git/trees --input /tmp/home-restore-tree-request.json --jq .sha > /tmp/home-restore-tree-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-home-restore-tree-${{ github.run_id }}
+          path: |
+            /tmp/home-restore-check.log
+            /tmp/home-restore-tree-sha.txt
+            /tmp/home-restore-hashes.json
+          retention-days: 3
