@@ -1,5 +1,5 @@
 import { test,expect,type Page,type APIRequestContext } from '@playwright/test';
-import type { WorldPersistenceSnapshot } from '../src/types.js';
+import type { WorldPersistenceSnapshot, DecisionResponse } from '../src/types.js';
 import type { StaticCollider,PhysicsTrigger } from '../src/world/finePhysics.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
@@ -128,4 +128,145 @@ test('rendered NPC soles remain supported through ordinary idle and moving simul
   const movingFraming=await frameActor();
   await info.attach('npc-current-skin-support-samples',{body:Buffer.from(JSON.stringify({decisionPaused,frames,pausedFraming,movingFraming},null,2)),contentType:'application/json'});
   await info.attach('npc-moving-pose-context',{body:await page.screenshot(),contentType:'image/png'});
+});
+
+test('native approach respects source head clearance while dialogue and observer shadows remain usable',async({page,request},info)=>{
+  test.setTimeout(180_000);
+  const revision=await seed(request,{x:-9,z:-7.5});
+  // One read-only DOM snapshot per checkpoint avoids mixing frames and spending
+  // the transient speech lifetime on repeated protocol round trips.
+  const readView=()=>status(page).evaluate(el=>{
+    const d=(el as HTMLElement).dataset;
+    return {player:{x:Number(d.playerX),z:Number(d.playerZ)},mode:d.cameraMode,
+      body:d.playerBodyPresent==='true',discovered:d.discoveredChunks,
+      actors:JSON.parse(d.characterSoles??'[]') as (SoleView&{minimumPlayerSeparation:number})[],
+      buildings:JSON.parse(d.homeBuildingAnchors??'[]') as {id:string;center:{x:number;z:number};frontage:{x:number;z:number};blockedAtCenter:boolean;ownTrigger:boolean}[],
+      shadow:JSON.parse(d.shadowView??'{}') as {mode:string;halfExtent:number;mapSize:number;focus:number[]}};
+  });
+  // Controlled bounded idle proposals isolate contact without deleting NPCs or stopping physics.
+  // Dialogue, inventory/persistence, rendering and input continue through the actual application.
+  await page.route('**/api/decision',async route=>{
+    const input=route.request().postDataJSON();expect(input.allowedActions).toContain('idle');
+    await route.fulfill({json:{source:'test-bounded-idle',action:'idle',stateShift:'stable',commitment:1,confidence:1,reasonCode:'contact-fixture'} satisfies DecisionResponse});
+  });
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
+  await page.goto('/',{waitUntil:'domcontentloaded'});
+  await expect.poll(async()=>(await soles(page)).length,{timeout:45_000}).toBeGreaterThanOrEqual(10);
+  await startFirstPerson(page);
+  const initial=await readView();
+  const actor=initial.actors.find(a=>a.id==='ren')!;expect(actor.position).toEqual({x:-9,z:-11});
+  const separation=actor.minimumPlayerSeparation;expect(separation).toBeCloseTo(1.75,8);
+  const before=initial.player;
+  expect(initial.buildings.length).toBe(12);
+  const bakery=initial.buildings.find(b=>b.id==='building_面包房')!;
+  expect(bakery.center).toEqual({x:-10,z:-18});expect(bakery.frontage).not.toEqual(bakery.center);
+  for(const building of initial.buildings){expect(building.blockedAtCenter).toBe(true);expect(building.ownTrigger).toBe(true);}
+  try{
+    await page.keyboard.down('KeyW');
+    await expect.poll(async()=>(await player(page)).z-actor.position.z,{timeout:20_000}).toBeLessThan(separation+.25);
+    await page.waitForTimeout(500);
+  }finally{await page.keyboard.up('KeyW');}
+  const contacted=await readView(),contact=contacted.player;
+  expect(contact.x).toBeCloseTo(-9,3);
+  expect(contact.z-actor.position.z).toBeGreaterThanOrEqual(separation-.0001);
+  expect(before.z-contact.z).toBeGreaterThan(1.4);
+  expect(contacted.actors.find(a=>a.id==='ren')!.position).toEqual(actor.position);
+  await lookForObject(page,'莲',0,.22);
+  await info.attach('npc-native-head-clearance',{body:await page.screenshot(),contentType:'image/png'});
+  // Observe the rendered bubble atomically before E. Sequential CDP visibility and
+  // boundingBox calls can outlive its real 9-second lifetime on software WebGL.
+  const displayed=page.evaluate(()=>new Promise<{text:string;visible:boolean;x:number;y:number;width:number;height:number}>(resolve=>{
+    const layer=document.querySelector('#speechLayer')!;
+    const observe=()=>{
+      for(const node of layer.querySelectorAll<HTMLElement>('.speech:not(.hidden)')){
+        const bounds=node.getBoundingClientRect();
+        if(!node.textContent||bounds.width===0||bounds.height===0)continue;
+        observer.disconnect();
+        resolve({text:node.textContent,visible:getComputedStyle(node).visibility!=='hidden',x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height});
+        return;
+      }
+    };
+    const observer=new MutationObserver(observe);
+    observer.observe(layer,{subtree:true,childList:true,attributes:true,characterData:true});observe();
+  }));
+  const photograph=displayed.then(async observed=>({observed,image:await page.screenshot()}));
+  const dialogue=page.waitForResponse(r=>r.url().endsWith('/api/dialogue')&&r.request().method()==='POST');
+  await page.keyboard.press('KeyE');
+  const [spoken,evidence]=await Promise.all([dialogue,photograph]);expect(spoken.ok()).toBe(true);
+  const utterance=await spoken.json();expect(utterance.text.length).toBeGreaterThan(0);
+  expect(evidence.observed.text).toBe(utterance.text);expect(evidence.observed.visible).toBe(true);
+  expect(evidence.observed.y).toBeGreaterThanOrEqual(12);expect(evidence.observed.x).toBeGreaterThanOrEqual(12);
+  expect(evidence.observed.x+evidence.observed.width).toBeLessThanOrEqual(1440-12);
+  expect(evidence.observed.y+evidence.observed.height).toBeLessThanOrEqual(900-12);
+  await info.attach('npc-visible-dialogue-at-contact',{body:evidence.image,contentType:'image/png'});
+  await expect.poll(async()=>{const s=await saved(request);return s.revision>revision&&s.snapshot.homeNpcs?.some(n=>n.id==='ren'&&n.lastDialogue===utterance.text);},{timeout:45_000}).toBe(true);
+  const accepted=await saved(request);
+  const firstPerson=await readView(),firstShadow=firstPerson.shadow;
+  expect(firstShadow.mode).toBe('firstPerson');expect(firstShadow.halfExtent).toBe(24);
+  expect(firstPerson.body).toBe(true);
+  const discovered=firstPerson.discovered;
+  await page.keyboard.press('KeyG');
+  let observerView=firstPerson;
+  await expect.poll(async()=>{observerView=await readView();return [observerView.mode,observerView.body];}).toEqual(['god',false]);
+  // Camera-only observer pan. Shadow focus may move but discovery/player state must not.
+  const godBefore=observerView.shadow;
+  try{await page.keyboard.down('KeyD');await page.waitForTimeout(800);}finally{await page.keyboard.up('KeyD');}
+  const panned=await readView(),godAfter=panned.shadow;
+  expect(godAfter.mode).toBe('god');expect(godAfter.mapSize).toBe(2048);
+  expect(godAfter.halfExtent).toBeLessThanOrEqual(96);expect(godAfter.focus).not.toEqual(godBefore.focus);
+  expect(panned.discovered).toBe(discovered);expect(panned.body).toBe(false);
+  expect(panned.player).toEqual(contact);
+  await info.attach('observer-shadow-context',{body:await page.screenshot(),contentType:'image/png'});
+  await page.keyboard.press('KeyG');
+  await expect.poll(async()=>{const view=await readView();return [view.mode,view.body];}).toEqual(['firstPerson',true]);
+  await page.reload();
+  await expect.poll(async()=>(await soles(page)).length,{timeout:45_000}).toBeGreaterThanOrEqual(10);
+  await startFirstPerson(page);
+  const reloaded=await readView(),restored=reloaded.player;
+  expect(restored.x).toBeCloseTo(contact.x,3);expect(restored.z).toBeCloseTo(contact.z,3);
+  expect(reloaded.actors.find(a=>a.id==='ren')!.minimumPlayerSeparation).toBe(separation);
+  expect(reloaded.actors.find(a=>a.id==='ren')!.position).toEqual(actor.position);
+  expect(reloaded.buildings).toEqual(initial.buildings); // Neither frontage nor body moves on reload.
+  expect((await saved(request)).snapshot.homeNpcs?.find(n=>n.id==='ren')?.lastDialogue).toBe(utterance.text);
+  await lookForObject(page,'莲',0,.22);
+  await info.attach('npc-reloaded-contact-shadow',{body:await page.screenshot(),contentType:'image/png'});
+  await info.attach('npc-contact-shadow-save-record',{body:Buffer.from(JSON.stringify({before,contact,restored,actor,firstShadow,godBefore,godAfter,acceptedRevision:accepted.revision,utterance,bubble:evidence.observed,buildingsBefore:initial.buildings,buildingsAfter:reloaded.buildings},null,2)),contentType:'application/json'});
+  expect(errors).toEqual([]);
+});
+
+test('bounded NPC conversation reaches the stationary player without getting stuck outside its head clearance',async({page,request},info)=>{
+  test.setTimeout(180_000);
+  const revision=await seed(request,{x:-9,z:-7.5});
+  let proposed=false;
+  await page.route('**/api/decision',async route=>{
+    const input=route.request().postDataJSON();
+    const canTalk=input.npc.id==='ren'&&input.allowedActions.includes('talk')&&input.world.nearbyNpcs.some((n:{id:string})=>n.id==='player');
+    if(canTalk&&!proposed){
+      proposed=true;
+      await route.fulfill({json:{source:'test-bounded-talk',action:'talk',targetNpcId:'player',socialIntent:'smalltalk',stateShift:'stable',commitment:1,confidence:1,reasonCode:'contact-talk'} satisfies DecisionResponse});
+    }else await route.fulfill({json:{source:'test-bounded-idle',action:'idle',stateShift:'stable',commitment:1,confidence:1,reasonCode:'contact-idle'} satisfies DecisionResponse});
+  });
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
+  // Observe the real server exchange; no direct action/position mutation or NPC removal.
+  const dialogue=page.waitForResponse(r=>r.url().endsWith('/api/dialogue')&&r.request().method()==='POST'&&r.request().postDataJSON()?.speaker.id==='ren',{timeout:90_000});
+  await page.goto('/',{waitUntil:'domcontentloaded'});await startFirstPerson(page);
+  const response=await dialogue;expect(response.ok()).toBe(true);expect(proposed).toBe(true);
+  const utterance=await response.json();expect(utterance.text.length).toBeGreaterThan(0);
+  const view=await status(page).evaluate(el=>{
+    const d=(el as HTMLElement).dataset;
+    return {player:{x:Number(d.playerX),z:Number(d.playerZ)},actors:JSON.parse(d.characterSoles??'[]') as (SoleView&{minimumPlayerSeparation:number})[]};
+  });
+  expect(view.player).toEqual({x:-9,z:-7.5});
+  const ren=view.actors.find(a=>a.id==='ren')!;
+  const distance=Math.hypot(ren.position.x-view.player.x,ren.position.z-view.player.z);
+  expect(ren.position.z+11).toBeGreaterThan(1.2);expect(distance).toBeLessThanOrEqual(2.2);
+  expect(distance).toBeGreaterThanOrEqual(ren.minimumPlayerSeparation);
+  await expect.poll(async()=>{const s=await saved(request);return s.revision>revision&&s.snapshot.homeNpcs?.some(n=>n.id==='ren'&&n.lastDialogue===utterance.text);},{timeout:45_000}).toBe(true);
+  const accepted=await saved(request);
+  await lookForObject(page,'莲',0,.22);
+  await info.attach('npc-completed-player-approach',{body:await page.screenshot(),contentType:'image/png'});
+  await info.attach('npc-autonomous-approach-save',{body:Buffer.from(JSON.stringify({view,distance,utterance,revision:accepted.revision,npc:accepted.snapshot.homeNpcs?.find(n=>n.id==='ren')},null,2)),contentType:'application/json'});
+  expect(errors).toEqual([]);
 });

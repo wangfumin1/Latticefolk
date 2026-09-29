@@ -12,7 +12,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 
 ## Funciones actuales
 
-- La recuperación visual incorpora árboles existentes a escala adulta y anclados por el tronco, apoyo de las plantas animadas de los pies y materiales no metálicos de cultivo con originales conservados. La validación de toda la escena, poses sentadas/dormidas y recorridos completos sigue pendiente. Véase el [alcance](environment-presentation.md).
+- La recuperación visual incorpora árboles existentes a escala adulta y anclados por el tronco, apoyo de las plantas animadas de los pies, sombras acotadas, separación jugador/cabeza y materiales no metálicos de cultivo con originales conservados. La validación de toda la escena, poses sentadas/dormidas y recorridos completos sigue pendiente. Véase el [alcance](environment-presentation.md).
 - Pueblo 3D con Three.js, primera persona y God View como observador externo.
 - Unas 20 acciones acotadas para NPC.
 - Sistema unificado `WorldObject + capabilities` para edificios, pozo, mercado, almacenamiento, carros, árboles, rocas, flores y herramientas.

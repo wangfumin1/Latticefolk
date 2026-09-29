@@ -12,6 +12,9 @@ import { planFineChunk } from './world/materialization';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
 import { CharacterSoles } from './scene/characterSoles';
+import { SunShadowView } from './scene/sunShadow';
+import { characterOverlay } from './scene/characterOverlay';
+import { characterContactRadius, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
 import { fitTreeModel, treePhysics, treeVisualHeight } from './scene/treePresentation';
 import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -174,6 +177,7 @@ interface WildlifeRuntime {
 }
 interface NpcRuntime {
   state: NpcState;
+  characterAsset: string;
   mesh: THREE.Group;
   path: Vec2[];
   pathIndex: number;
@@ -201,6 +205,8 @@ class TownGame {
   orbit: OrbitControls;
   clock = new THREE.Clock();
   sun = new THREE.DirectionalLight(0xffffff, 1.5);
+  sunShadow = new SunShadowView(this.sun);
+  shadowFocus = new THREE.Vector3();
   ambient = new THREE.HemisphereLight(0xbfe8ff, 0x557044, 1.25);
   physics = new FinePhysicsAuthority();
   npcs = new Map<string,NpcRuntime>();
@@ -304,8 +310,7 @@ class TownGame {
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
     this.coarseWorld = new CoarseWorldRuntime(this.scene);
-    this.sun.position.set(12,22,8); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048,2048);
+    this.scene.add(this.sun.target);
     this.setupWorld();
     this.setupSelectionOverlays();
     this.setupNpcs();
@@ -679,7 +684,7 @@ class TownGame {
       this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
-      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
+      this.npcs.set(id,{state,characterAsset:characterAsset[id],mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
     }
     for(const a of this.npcs.values()) {
       for(const b of this.npcs.values()) if(a!==b) a.state.relationships[b.state.id]={affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)};
@@ -979,6 +984,9 @@ class TownGame {
       this.updateWildlife(dt);
       if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
     }
+    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
+    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
+    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
     this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
@@ -994,7 +1002,7 @@ class TownGame {
       const moveInput=()=>({
         id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
         displacement:{x:move.x,z:move.z},radius:.30,
-        dynamic:this.physicsDynamicColliders('player')
+        dynamic:this.physicsDynamicColliders('player',true)
       });
       let resolved=this.physics.moveKinematic(moveInput());
       const movableHit=resolved.dynamicHits.find(id=>id.startsWith('object:'));
@@ -1180,6 +1188,12 @@ class TownGame {
     for(const saved of snapshot.homeObjects||[]){
       const runtime=this.objects.get(saved.id);
       if(!runtime)continue;
+      if(runtime.state.kind==='building'){
+        // Saved building position is its frontage, never the visible body's center.
+        // Keep the layout-owned model/collider/trigger, restoring mutable state only.
+        runtime.state=restoreBuildingForLayout(runtime.state,saved);
+        continue;
+      }
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
       normalizeWorldObjectRigidBody(runtime.state);
@@ -1462,7 +1476,7 @@ class TownGame {
     const speechEl=document.createElement('div');speechEl.className='speech hidden';ui.speechLayer.appendChild(speechEl);
     const nameEl=document.createElement('div');nameEl.className='npc-name hidden';ui.speechLayer.appendChild(nameEl);
     const agent:NpcRuntime={
-      state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
+      state,characterAsset,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
       pendingDecision:false,speechEl,nameEl
     };
     this.npcs.set(state.id,agent);
@@ -2744,6 +2758,12 @@ class TownGame {
   }
 
   moveNpc(agent:NpcRuntime,dt:number) {
+    // A player conversation reaches its legal range before source head clearance.
+    // Do not wait for the old generic final-waypoint 1.55 m collision threshold.
+    if(reachedPlayerConversation(this.cameraMode==='firstPerson',agent.task?.action,agent.task?.targetNpcId,
+      Math.hypot(agent.mesh.position.x-this.playerPosition.x,agent.mesh.position.z-this.playerPosition.z))){
+      agent.path=[];agent.pathIndex=0;return;
+    }
     if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
@@ -2754,7 +2774,7 @@ class TownGame {
       position:{x:pos.x,z:pos.z},
       displacement:{x:dx/d*step,z:dz/d*step},
       radius:.32,
-      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`,true)
     });
     pos.x=resolved.position.x;pos.z=resolved.position.z;
     if(resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
@@ -2892,7 +2912,7 @@ class TownGame {
         if(this.cameraMode!=='firstPerson'){
           agent.task=undefined;agent.path=[];agent.pathIndex=0;agent.state.currentAction='idle';agent.nextDecisionAt=now()+900+Math.random()*900;return;
         }
-        const pp=this.playerPosition; if(dist(agent.state.position,pp)>2.2){agent.path=this.findPath(agent.state.position,pp);return;}
+        const pp=this.playerPosition; if(dist(agent.state.position,pp)>PLAYER_CONVERSATION_REACH){agent.path=this.findPath(agent.state.position,pp);return;}
         this.npcTalkPlayerAuto(agent,task.intent||'smalltalk'); this.playActivity(agent,'Wave',1400);agent.task=undefined; return;
       }
       const other=this.npcs.get(task.targetNpcId||''); if(other&&dist(agent.state.position,other.state.position)>2.2){agent.path=this.findPath(agent.state.position,other.state.position);return;}
@@ -3362,13 +3382,22 @@ class TownGame {
       id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
       height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
     }));
+    const homeBuildings=[...this.objects.values()].filter(object=>object.state.kind==='building'&&!object.state.chunkId).map(object=>({
+      id:object.state.id,center:{x:object.mesh.position.x,z:object.mesh.position.z},frontage:object.state.position,
+      blockedAtCenter:this.physics.isBlocked(object.mesh.position.x,object.mesh.position.z,.3),
+      ownTrigger:this.physics.overlappingTriggers(object.state.position).some(trigger=>trigger.id===`object-trigger:${object.state.id}`)
+    }));
+    ui.world.dataset.homeBuildingAnchors=JSON.stringify(homeBuildings);
     const soleEvidence=[...this.npcs.values()].filter(agent=>agent.soles).map(agent=>({
-      id:agent.state.id,animation:agent.activeAnimation,vertices:agent.soles!.vertexCount,
+      id:agent.state.id,asset:agent.characterAsset,minimumPlayerSeparation:npcPlayerSeparation(agent.characterAsset),
+      animation:agent.activeAnimation,vertices:agent.soles!.vertexCount,
       ground:this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z),
       sole:agent.soles!.minimumWorldY(),position:agent.state.position
     }));
     ui.world.dataset.treePresentation=JSON.stringify(treeEvidence);
     ui.world.dataset.characterSoles=JSON.stringify(soleEvidence);
+    ui.world.dataset.shadowView=JSON.stringify(this.sunShadow.diagnostics());
+    ui.world.dataset.playerBodyPresent=String(this.physicsDynamicColliders().some(body=>body.id==='player'));
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3430,13 +3459,22 @@ class TownGame {
   }
 
   updateSpeech() {
-    const v=new THREE.Vector3();
+    const viewport={width:innerWidth,height:innerHeight};
     for(const a of this.npcs.values()){
-      v.set(a.mesh.position.x,2.9,a.mesh.position.z).project(this.camera);
-      const visible=v.z<=1&&v.z>=-1&&Math.abs(v.x)<1.15&&Math.abs(v.y)<1.15;
-      if(this.cameraMode==='god'&&visible){a.nameEl.classList.remove('hidden');a.nameEl.textContent=`${a.state.name} · ${a.state.currentAction}`;a.nameEl.style.left=`${(v.x*.5+.5)*innerWidth}px`;a.nameEl.style.top=`${(-v.y*.5+.5)*innerHeight}px`;}else a.nameEl.classList.add('hidden');
-      const s=a.speech;if(!s||now()>s.until||!visible){a.speechEl.classList.add('hidden');continue;}
-      a.speechEl.classList.remove('hidden');a.speechEl.textContent=s.text;a.speechEl.style.left=`${(v.x*.5+.5)*innerWidth}px`;a.speechEl.style.top=`${(-v.y*.5+.5)*innerHeight-20}px`;
+      if(this.cameraMode==='god'){
+        a.nameEl.classList.remove('hidden');
+        a.nameEl.textContent=`${a.state.name} · ${a.state.currentAction}`;
+        const anchor=characterOverlay(this.camera,a.mesh.position,viewport,{width:a.nameEl.offsetWidth,height:a.nameEl.offsetHeight},1.82,1);
+        if(anchor){a.nameEl.style.left=`${anchor.left}px`;a.nameEl.style.top=`${anchor.top}px`;}
+        else a.nameEl.classList.add('hidden');
+      }else a.nameEl.classList.add('hidden');
+      const speech=a.speech;
+      if(!speech||now()>speech.until){a.speechEl.classList.add('hidden');continue;}
+      a.speechEl.classList.remove('hidden');
+      a.speechEl.textContent=speech.text;
+      const anchor=characterOverlay(this.camera,a.mesh.position,viewport,{width:a.speechEl.offsetWidth,height:a.speechEl.offsetHeight});
+      if(anchor){a.speechEl.style.left=`${anchor.left}px`;a.speechEl.style.top=`${anchor.top}px`;}
+      else a.speechEl.classList.add('hidden');
     }
   }
 
@@ -3673,14 +3711,18 @@ class TownGame {
     return clamp(.20+state.traits.size*.10,.24,.48);
   }
 
-  physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
+  physicsDynamicColliders(excludeId?:string,personalSpace=false):DynamicCollider[] {
     const colliders:DynamicCollider[]=[];
+    const movingNpc=personalSpace&&excludeId?.startsWith('npc:')?this.npcs.get(excludeId.slice(4)):undefined;
+    const mover=personalSpace?(excludeId==='player'?'player':movingNpc?'npc':undefined):undefined;
     if(this.cameraMode==='firstPerson'){
-      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,radius:.30});
+      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,
+        radius:characterContactRadius('player',undefined,mover,movingNpc?.characterAsset)});
     }
     for(const agent of this.npcs.values()){
       if(agent.removed)continue;
-      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,radius:.32});
+      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,
+        radius:characterContactRadius('npc',agent.characterAsset,mover)});
     }
     for(const animal of this.wildlife.values()){
       if(animal.removed)continue;
