@@ -1,0 +1,38 @@
+name: Interactive workspace transfer
+
+on:
+  push:
+    branches: [quality/69-bakery-visual]
+    paths: [.github/workflows/interactive-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install existing project dependencies
+        run: npm install --no-audit --no-fund
+      - name: Export tracked source and installed dependencies only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar HEAD > /tmp/latticefolk-workspace.tar
+          tar --append --file=/tmp/latticefolk-workspace.tar node_modules
+          gzip /tmp/latticefolk-workspace.tar
+          git rev-parse HEAD > /tmp/workspace-commit.txt
+          sha256sum /tmp/latticefolk-workspace.tar.gz > /tmp/workspace-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interactive-workspace-${{ github.run_id }}
+          path: |
+            /tmp/latticefolk-workspace.tar.gz
+            /tmp/workspace-commit.txt
+            /tmp/workspace-sha256.txt
+          retention-days: 1
