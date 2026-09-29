@@ -57,7 +57,8 @@ Latticefolk includes selected CC0 crop GLBs from Kenney under `public/assets/ken
 - Creator/source: Kenney — https://kenney.nl/
 - License: **CC0 1.0 Universal / Public Domain Dedication**
 - Pinned reproducible mirror: `shorepine/kenney@3694c6879e487c108f55677be7dd2ca75b07cc3b`
-- Included byte-for-byte: `crops_dirtDoubleRow.glb`, `crops_wheatStageB.glb`.
+- Unchanged originals: `crops_dirtDoubleRow.source.glb`, `crops_wheatStageB.source.glb` (upstream names omit `.source`).
+- Served GLBs are derived by hash-pinned offline preparation that changes only four material metallic factors from 1 to 0. Geometry, binary buffers, source colors and all other material properties are unchanged; see `scripts/lib/nature-materials.mjs`.
 
 
 ## Firefly in the Dusk — Cast Iron Stove

@@ -36,6 +36,8 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 
 ## Current highlights
 
+- **Source-grounded scene recovery**: adult-scale trunk-anchored trees, current skinned-sole support and hash-pinned dielectric crop materials. Full scene/pose/journey recovery remains in progress; see [presentation scope](docs/environment-presentation.md).
+
 - **Playable Three.js town** with first-person controls and an out-of-world God View.
 - **20 bounded NPC actions** including work, harvest, craft, trade, gift, delivery, water collection, patrol, visits, sleep, and exploration.
 - **Unified interactive world objects**: buildings, wells, market stalls, workstations, storage, carts, trees, rocks, flowers, tools, beds, and more expose explicit capabilities instead of being decorative-only.

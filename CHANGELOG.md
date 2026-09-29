@@ -8,6 +8,10 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Source-grounded Phase B presentation now fits existing tree assets at adult scale, anchors them by actual basal vertices and derives trunk collision/interaction reach without using the crown as an air wall. Home, decoration and streamed trees share the calibration; IDs, generated RNG draws, saved anchors and chop rules remain intact.
+- Character visual support now samples current skinned foot vertices after each mixer update instead of periodically guessing from whole-body bounds. Four source rigs have full grounded-clip/crossfade regressions; unused block NPC/player-avatar construction is removed. This is not seated/sleeping pose or personal-space acceptance.
+- Crop sources are retained and hash-pinned. Offline preparation corrects only four mistakenly metallic soil/wheat factors; all geometry, source colors and other material data remain unchanged. Wheat roots now align with the sourced soil top. Native tree/reload and actual-skin browser contracts supplement the unchanged cart/God/tree and furniture gates.
+
 - Playable recovery adds a sourced CC0 wood-fired baking oven for the stable home `oven` and generated bakeries. Offline hash-pinned preparation selects the author's complete oven without altering geometry/materials or adding doors; actual resolved bounds define collision and the surrounding interaction trigger. Recipe, ingredient consumption, NPC work targets and save schemas stay unchanged.
 - Separate oven asset/physics/production regressions and native-input home/generated baking/save/reload browser contracts retain the existing eight-target furniture gate and distinguish controlled fixtures from full exploration/free play.
 - Already sourced tree/crate/mine/explicit-asset paths no longer construct discarded visible primitive placeholders. Generic drop/water/terrain/coarse paths remain tracked separately; this is not a whole-scene primitive-free claim.

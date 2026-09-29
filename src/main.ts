@@ -11,6 +11,8 @@ import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
+import { CharacterSoles } from './scene/characterSoles';
+import { fitTreeModel, treePhysics, treeVisualHeight } from './scene/treePresentation';
 import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
@@ -187,7 +189,7 @@ interface NpcRuntime {
   activeAnimation?: string;
   activityAnimation?: string;
   activityAnimationUntil?: number;
-  nextGroundAlignAt: number;
+  soles?: CharacterSoles;
   removed?: boolean;
 }
 
@@ -238,7 +240,6 @@ class TownGame {
   firstPersonRotation = new THREE.Euler(0,0,0,'YXZ');
   godPointer = new THREE.Vector2(0,0);
   pointerDown?: {x:number;y:number};
-  playerMarker = new THREE.Group();
   // The player is a world participant only in first-person mode. God mode is an out-of-world observer.
   selectionRing = new THREE.Mesh(
     new THREE.RingGeometry(.72,.92,32),
@@ -306,7 +307,7 @@ class TownGame {
     this.sun.position.set(12,22,8); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048,2048);
     this.setupWorld();
-    this.setupPlayerMarker();
+    this.setupSelectionOverlays();
     this.setupNpcs();
     void this.loadVisualAssets();
     this.bindInput();
@@ -426,9 +427,10 @@ class TownGame {
     const g = new THREE.Group();
     // The sourced tree is the only visual, including while it is loading.
     g.position.set(x,0,z); this.scene.add(g);
-    this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
-    this.attachVisualTarget({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
+    this.attachVisualTarget({group:g,asset:variant,height:treeVisualHeight(variant),rotationY:(x+z)*.17,
+      onResolved:model=>this.physics.registerStatic(treePhysics(model,`tree-decoration:${x}:${z}`,undefined,false).collider)
+    });
   }
 
   addAssetObject(
@@ -451,7 +453,12 @@ class TownGame {
     this.registerWorldObjectPhysics(state);
     this.attachVisualTarget({
       group:g,asset,height:assetHeight,rotationY,offsetZ,targetWidth,targetDepth,fit,
-      onResolved:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
+      onResolved:state.kind==='tree'?model=>{
+        const physical=treePhysics(model,`object:${state.id}`,state.chunkId);
+        this.physics.registerStatic(physical.collider);
+        if(physical.trigger)this.physics.registerTrigger(physical.trigger);
+        g.userData.treePhysics=physical;
+      }:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
     });
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
@@ -494,7 +501,7 @@ class TownGame {
     const rows=[-1.25,-.42,.42,1.25];
     for(const x of rows)for(const z of [-.72,0,.72]){
       const crop=new THREE.Group();
-      crop.position.set(x,.08,z);
+      crop.position.set(x,.12,z); // The sourced soil's top, not four centimetres below it.
       root.add(crop);
       this.attachVisualTarget({group:crop,asset:'farmWheat',height:.72});
     }
@@ -515,7 +522,10 @@ class TownGame {
       if(state.tags.includes('guard'))return {asset:'weaponStandAsset',height:1.25,width:1.4,depth:1.0,fit:'exactBounds',syncStatic:true};
       return {asset:'workbenchAsset',height:1.0,width:2.0,depth:1.0,fit:'exactBounds',syncStatic:true};
     }
-    if(state.kind==='tree')return {asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13};
+    if(state.kind==='tree'){
+      const asset=state.id.endsWith('2')?'tree3':'tree2';
+      return {asset,height:treeVisualHeight(asset),rotationY:state.position.x*.13};
+    }
     if(state.kind==='crate')return {asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2};
     return undefined;
   }
@@ -532,7 +542,8 @@ class TownGame {
         2.0
       );
     }
-    if(assetOverride)return this.addAssetObject(state,assetOverride,assetHeight||2,rotationY);
+    if(assetOverride)return this.addAssetObject(state,assetOverride,
+      state.kind==='tree'?treeVisualHeight(assetOverride,assetHeight):assetHeight||2,rotationY);
     const semanticSpec=this.semanticAssetSpec(state);
     if(semanticSpec){
       return this.addAssetObject(
@@ -631,16 +642,8 @@ class TownGame {
   }
 
 
-  setupPlayerMarker() {
-    const body=new THREE.Mesh(new THREE.BoxGeometry(.7,1.05,.38),new THREE.MeshStandardMaterial({color:0x4d89c8,roughness:.8}));body.position.y=1.2;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.6),new THREE.MeshStandardMaterial({color:0xe7b894,roughness:.9}));head.position.y=2.02;
-    const leg1=new THREE.Mesh(new THREE.BoxGeometry(.25,.75,.28),new THREE.MeshStandardMaterial({color:0x2d3542,roughness:.9}));leg1.position.set(-.19,.38,0);
-    const leg2=leg1.clone();leg2.position.x=.19;
-    this.playerMarker.add(body,head,leg1,leg2);
-    // Do not materialize a player avatar while observing from god mode.
-    this.playerMarker.visible=false;
-    this.playerMarker.userData={entityType:'player',entityId:'player'};
-    this.scene.add(this.playerMarker);
+  setupSelectionOverlays() {
+    // Selection/path overlays are not player entities or formal scene models.
     this.selectionRing.rotation.x=-Math.PI/2;this.selectionRing.position.y=.035;this.selectionRing.visible=false;this.scene.add(this.selectionRing);
     this.pathLine.visible=false;this.pathLine.frustumCulled=false;this.scene.add(this.pathLine);
   }
@@ -670,34 +673,18 @@ class TownGame {
           role==='guard'?[{kind:'bread',count:1}]:[],
         relationships:{},memories:[],currentAction:'idle',goal:'过好今天并照顾自己的需要',lastDecisionAt:0
       };
-      const mesh=this.makeBlockPerson(role); mesh.position.set(x,this.groundHeightAt(x,z),z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
+      const mesh=new THREE.Group(); mesh.position.set(x,this.groundHeightAt(x,z),z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
       const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1',haru:'male2',mei:'female2',toma:'male1',aki:'female1'};
       // Cube World characters already face the local +Z direction used by moveNpc.
       this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
-      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0});
+      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
     }
     for(const a of this.npcs.values()) {
       for(const b of this.npcs.values()) if(a!==b) a.state.relationships[b.state.id]={affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)};
       a.state.relationships.player={affinity:50,trust:50,familiarity:5};
     }
-  }
-
-  makeBlockPerson(role:NpcRole) {
-    const colors:Record<NpcRole,number>={farmer:0x6d9d58,baker:0xd7a06b,shopkeeper:0x5a9ca5,guard:0x6675a4,maker:0x9b718d,resident:0xb58a65};
-    const g=new THREE.Group();
-    const mat=new THREE.MeshStandardMaterial({color:colors[role],roughness:.8});
-    const skin=new THREE.MeshStandardMaterial({color:0xe7b894,roughness:.9});
-    const dark=new THREE.MeshStandardMaterial({color:0x3b342f,roughness:.9});
-    const body=new THREE.Mesh(new THREE.BoxGeometry(.75,1,.38),mat); body.position.y=1.2;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.62,.62,.62),skin); head.position.y=2.02;
-    const leg1=new THREE.Mesh(new THREE.BoxGeometry(.27,.75,.3),dark); leg1.position.set(-.2,.38,0);
-    const leg2=leg1.clone(); leg2.position.x=.2;
-    const arm1=new THREE.Mesh(new THREE.BoxGeometry(.22,.85,.28),skin); arm1.position.set(-.52,1.2,0);
-    const arm2=arm1.clone(); arm2.position.x=.52;
-    g.add(body,head,leg1,leg2,arm1,arm2); for(const m of g.children as THREE.Mesh[]) m.castShadow=true;
-    return g;
   }
 
   async loadVisualAssets() {
@@ -770,8 +757,10 @@ class TownGame {
     const tpl=this.assets.get(target.asset);if(!tpl)return;
     const isCharacter=target.asset.startsWith('female')||target.asset.startsWith('male');
     const model=(isCharacter?cloneSkeleton(tpl.scene):tpl.scene.clone(true)) as THREE.Object3D;
-    target.resolvedSize=this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
-    model.rotation.y=target.rotationY||0;
+    const isTree=/^tree[123]$/.test(target.asset);
+    target.resolvedSize=isTree?fitTreeModel(model,target.height,target.rotationY||0)
+      :this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
+    if(!isTree)model.rotation.y=target.rotationY||0;
     model.position.z+=target.offsetZ??0;
     target.group.clear();
     target.group.add(model);
@@ -779,9 +768,12 @@ class TownGame {
     if(isCharacter){
       const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
       if(agent&&tpl.animations.length){
+        agent.soles=new CharacterSoles(model);
         agent.mixer=new THREE.AnimationMixer(model);
         agent.actions=new Map(tpl.animations.map(clip=>[clip.name,agent.mixer!.clipAction(clip)]));
         this.setNpcAnimation(agent,'Idle');
+        agent.mixer.update(0);
+        this.alignNpcVisualToGround(agent);
       }
     }
   }
@@ -895,7 +887,6 @@ class TownGame {
     this.camera.lookAt(this.orbit.target);
     this.orbit.update();
     // God mode is observer-only: no player entity is exposed to NPC perception or targeting.
-    this.playerMarker.visible=false;
     this.cancelPlayerTargeting();
     this.suspendPlayerWildlifeFollowPaths();
     ui.crosshair.classList.add('hidden');
@@ -908,7 +899,6 @@ class TownGame {
     this.cameraMode='firstPerson';
     this.perceptionEpoch++;
     this.orbit.enabled=false;
-    this.playerMarker.visible=false;
     this.camera.position.set(this.playerPosition.x,1.7,this.playerPosition.z);
     this.camera.rotation.copy(this.firstPersonRotation);
     ui.crosshair.classList.remove('hidden');
@@ -1183,7 +1173,7 @@ class TownGame {
         runtime.state.position.z
       );
       runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
-      runtime.nextGroundAlignAt=0;
+      this.alignNpcVisualToGround(runtime);
       runtime.nextDecisionAt=now()+700+Math.random()*1800;
     }
 
@@ -1464,7 +1454,7 @@ class TownGame {
   }
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
-    const mesh=this.makeBlockPerson(state.role);
+    const mesh=new THREE.Group();
     mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     mesh.userData={entityType:'npc',entityId:state.id};
     this.scene.add(mesh);
@@ -1473,7 +1463,7 @@ class TownGame {
     const nameEl=document.createElement('div');nameEl.className='npc-name hidden';ui.speechLayer.appendChild(nameEl);
     const agent:NpcRuntime={
       state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
-      pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0
+      pendingDecision:false,speechEl,nameEl
     };
     this.npcs.set(state.id,agent);
 
@@ -2746,10 +2736,7 @@ class TownGame {
       const locomotion=(agent.state.currentAction==='patrol'||agent.state.currentAction==='explore')?'Run':'Walk';
       this.setNpcAnimation(agent,activityActive?(agent.activityAnimation||'Idle'):(isMoving?locomotion:'Idle'));
       agent.mixer?.update(dt);
-      if(agent.mixer&&now()>=agent.nextGroundAlignAt){
-        this.alignNpcVisualToGround(agent);
-        agent.nextGroundAlignAt=now()+120;
-      }
+      if(agent.mixer)this.alignNpcVisualToGround(agent);
       if(agent.task && agent.path.length===0) this.completeTask(agent);
       if(!this.aiPaused&&!agent.pendingDecision&&this.inFlight<this.maxInFlight&&now()>=agent.nextDecisionAt&&!agent.task) this.requestDecision(agent);
       n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;
@@ -3371,6 +3358,17 @@ class TownGame {
         ...object.mesh.userData.ovenPhysics};
     });
     ui.world.dataset.bakingOvens=JSON.stringify(ovens);
+    const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
+      id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
+      height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
+    }));
+    const soleEvidence=[...this.npcs.values()].filter(agent=>agent.soles).map(agent=>({
+      id:agent.state.id,animation:agent.activeAnimation,vertices:agent.soles!.vertexCount,
+      ground:this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z),
+      sole:agent.soles!.minimumWorldY(),position:agent.state.position
+    }));
+    ui.world.dataset.treePresentation=JSON.stringify(treeEvidence);
+    ui.world.dataset.characterSoles=JSON.stringify(soleEvidence);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3668,13 +3666,7 @@ class TownGame {
   alignNpcVisualToGround(agent:NpcRuntime) {
     const ground=this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z);
     agent.mesh.position.y=ground;
-    const model=agent.mesh.children[0];
-    if(!model)return;
-    const box=new THREE.Box3().setFromObject(model,true);
-    const error=box.min.y-ground;
-    if(!Number.isFinite(error)||Math.abs(error)>.35)return;
-    model.position.y-=error;
-    model.updateMatrixWorld(true);
+    agent.soles?.ground(ground);
   }
 
   wildlifePhysicsRadius(state:WildlifeState) {

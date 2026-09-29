@@ -29,3 +29,13 @@ try {
   console.error(`[assets] baking oven: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }
+
+try {
+  const { prepareNatureMaterials } = await import('./lib/nature-materials.mjs');
+  const root = new URL('../public/assets/kenney/nature/', import.meta.url);
+  const prepared = prepareNatureMaterials(root);
+  console.log(`[assets] Kenney soil/wheat ${prepared ? 'prepared' : 'verified'}: four dielectric materials, original colors and geometry`);
+} catch (error) {
+  console.error(`[assets] nature materials: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+}
