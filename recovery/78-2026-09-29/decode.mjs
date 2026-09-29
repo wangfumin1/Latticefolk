@@ -1,0 +1,23 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {brotliDecompressSync} from 'node:zlib';
+const directory=path.dirname(fileURLToPath(import.meta.url));
+const manifest=JSON.parse(fs.readFileSync(path.join(directory,'manifest.json'),'utf8'));
+if(manifest.format!=='latticefolk-recovery-v2'||manifest.archiveOnly!==true||manifest.compression!=='brotli')throw new Error('Unknown archive');
+const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
+const parts=manifest.parts.map((entry,index)=>{
+  if(entry.path!==`repair.${String(index).padStart(2,'0')}.b64`)throw new Error('Unexpected archive path');
+  const bytes=fs.readFileSync(path.join(directory,entry.path));
+  const blob=createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+  if(blob!==entry.gitBlob)throw new Error(`Invalid part ${entry.path}`);
+  return bytes;
+});
+const compressed=Buffer.from(Buffer.concat(parts).toString('ascii'),'base64');
+if(sha256(compressed)!==manifest.compressedSHA256)throw new Error('Compressed payload mismatch');
+const patch=brotliDecompressSync(compressed,{maxOutputLength:1024*1024});
+if(sha256(patch)!==manifest.patchSHA256)throw new Error('Patch mismatch');
+const destination=path.resolve(process.argv[2]??'latticefolk-78-recovered.patch');
+fs.writeFileSync(destination,patch,{flag:'wx'});
+console.log(JSON.stringify({patch:destination,sha256:manifest.patchSHA256,baseHead:manifest.baseHead,baseTree:manifest.baseTree,resultTree:manifest.resultTree,applied:false},null,2));

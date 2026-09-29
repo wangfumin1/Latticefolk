@@ -1,0 +1,81 @@
+{
+  "format": "latticefolk-recovery-v2",
+  "archiveOnly": true,
+  "compression": "brotli",
+  "baseHead": "6512ec77dbd62780fae72a01dd9b1f812ffe5f18",
+  "baseTree": "d8f8f9114e1d23b240d1355e9773d330bdd767d3",
+  "resultTree": "b682a99556ce0ed185d571c4cf23475251427c9d",
+  "patchSHA256": "1b4b91f5ea1ea50e3c7d6956edbf53eaac874a4060c4ef6b7c105a2e392195a1",
+  "compressedSHA256": "a2ed2ea302e583c439f9b2da913b1569813276f6c0c79e0bcd3237981706f86d",
+  "patchApply": [
+    "--index",
+    "--unidiff-zero",
+    "--whitespace=error-all"
+  ],
+  "parts": [
+    {
+      "path": "repair.00.b64",
+      "gitBlob": "07ff6d6a97ad4fb504b0dbe62c2540a9abab16d8"
+    },
+    {
+      "path": "repair.01.b64",
+      "gitBlob": "74513ea4cba42d583a2bdb30aafab622af27b24a"
+    },
+    {
+      "path": "repair.02.b64",
+      "gitBlob": "e466feba842a66ec815023d3bad622c6ff3a5d05"
+    },
+    {
+      "path": "repair.03.b64",
+      "gitBlob": "60d48cd9d13acfea6c6fc715ab0f5959ad136c86"
+    },
+    {
+      "path": "repair.04.b64",
+      "gitBlob": "cb6b0c49ed628d0948a7c9f7a6fa1d64a765bad6"
+    },
+    {
+      "path": "repair.05.b64",
+      "gitBlob": "09d040b48ff572ec67c4af27fcbd2dd8ec1d37a1"
+    },
+    {
+      "path": "repair.06.b64",
+      "gitBlob": "8979394bf8e9f4c263571da63f7c607fd13d2d9f"
+    },
+    {
+      "path": "repair.07.b64",
+      "gitBlob": "f5130f8bf04562e4ab06664634b41cce1e8cde21"
+    },
+    {
+      "path": "repair.08.b64",
+      "gitBlob": "e52a0aa837dd3fa87ea9cfda0c0119644af2b4da"
+    },
+    {
+      "path": "repair.09.b64",
+      "gitBlob": "6849da15fd3aca91f9ef4c0072aa8777203ac31c"
+    },
+    {
+      "path": "repair.10.b64",
+      "gitBlob": "644bbc25190ce988383c8d2ff50479568a1024d0"
+    },
+    {
+      "path": "repair.11.b64",
+      "gitBlob": "0189ff68091820ebe704eaf5a0c20a155cc2748f"
+    },
+    {
+      "path": "repair.12.b64",
+      "gitBlob": "64e53a8b1c57f260b7139587798ad451c649c355"
+    },
+    {
+      "path": "repair.13.b64",
+      "gitBlob": "a0e98dac24093f95a9deb38d53ce4fe052ac373d"
+    },
+    {
+      "path": "repair.14.b64",
+      "gitBlob": "91186575b597c1ad83e7798e1ac1ed9b9dfe9283"
+    },
+    {
+      "path": "repair.15.b64",
+      "gitBlob": "a8693f8122c673b27f7b20ea687bd1b09e36ba48"
+    }
+  ]
+}
