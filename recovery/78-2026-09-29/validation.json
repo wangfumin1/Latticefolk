@@ -1,0 +1,57 @@
+{
+  "kind": "local-validation-not-github-ci",
+  "repository": "wangfumin1/Latticefolk",
+  "canonicalPR": 78,
+  "canonicalHead": "6512ec77dbd62780fae72a01dd9b1f812ffe5f18",
+  "sourceTree": "b682a99556ce0ed185d571c4cf23475251427c9d",
+  "localHead": "066b5cdbc0b3acafa6dde1a05cfc8cb794ad2d92",
+  "sourceDigest": "348778a8fd8515f6089d01b8e93389f9cdc8d20bf4c74311408a10be1474f63e",
+  "startedAt": "2026-09-29T15:45:18.994Z",
+  "finishedAt": "2026-09-29T16:09:57.863Z",
+  "unitTests": 303,
+  "typecheck": "passed",
+  "build": "passed",
+  "e2eTypecheck": "passed",
+  "browser": {
+    "passed": 16,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "allRetryZero": true,
+    "durationMs": 1456691.058
+  },
+  "sourceUnchanged": true,
+  "regularPlayerSQLiteWalShmExistedAndUnchanged": true,
+  "node": "v22.16.0",
+  "browserEngine": "Chromium 153 / ANGLE SwiftShader / WebGL2 / Xvfb",
+  "newActionsRuns": 0,
+  "remoteImplementationApplied": false,
+  "merged": false,
+  "evidenceSHA256": {
+    "result.json": "8d10c90d01a91ba07e0a96638ae4fb3020af28b8783c9432e66abe07efabc086",
+    "source-manifest.json": "6d9a3603adc4ceb4faee57015236b9fd021f463fb9de6e4f760feb82d0d4a564",
+    "check.log": "f4b6f23a2acc0f8307ca4c821e653e381b7fd4b01dd5b4217745bbef5fca910a",
+    "browser.log": "8c0d55fb5c4f62bf3639d789431439b842d87e04981df061ee79d39245253615",
+    "playwright.json": "1d7d50cdcc58381e15da0487067f4179d29a7cb44c8bf23dcff51dca88123c0b"
+  },
+  "reviewedScreenshots": [
+    "home-oven-baked-result.png",
+    "generated-bakery-approach-overview.png",
+    "npc-moving-pose-context.png",
+    "npc-visible-dialogue-at-contact.png",
+    "observer-shadow-context.png",
+    "tree-trunk-contact-closeup.png",
+    "farm-harvest-target.png",
+    "visible-opaque-well.png",
+    "baker-working-beside-visible-oven.png",
+    "first-person-cart-pushed.png",
+    "coarse-request-transition-rejected.png"
+  ],
+  "remaining": [
+    "Apply the exact decoded implementation to the same canonical PR after fresh reconciliation.",
+    "Fresh-head remote CI and independent main verification remain unfulfilled; quota exhaustion is not a waiver.",
+    "No whole-Phase-B, seated/sleeping/IK, full exploration, user-GPU performance or unscripted play acceptance.",
+    "Reviewed images still expose terrain seams, coarse boxes, mixed-language HUD and pale crop appearance.",
+    "Stance image partially crops the NPC; restored facing is checked by actual state assertions, not inferred from that image."
+  ]
+}
