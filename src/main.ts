@@ -10,6 +10,7 @@ import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from '.
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
 import { craftAtWorkstation } from './world/production';
+import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
@@ -132,6 +133,7 @@ interface VisualTarget {
   asset: string;
   height: number;
   rotationY?: number;
+  offsetZ?: number;
   targetWidth?: number;
   targetDepth?: number;
   fit?: 'uniform'|'exactBounds';
@@ -421,9 +423,8 @@ class TownGame {
 
   addTreeDecoration(x:number,z:number) {
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.BoxGeometry(.65,2,.65),new THREE.MeshStandardMaterial({color:0x725033})); trunk.position.y=1;
-    const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2,2.2,2.2),new THREE.MeshStandardMaterial({color:0x4f8e4b})); crown.position.y=2.65; crown.castShadow=true;
-    g.add(trunk,crown); g.position.set(x,0,z); this.scene.add(g);
+    // The sourced tree is the only visual, including while it is loading.
+    g.position.set(x,0,z); this.scene.add(g);
     this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
     this.attachVisualTarget({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
@@ -437,7 +438,8 @@ class TownGame {
     targetWidth?:number,
     targetDepth?:number,
     fit:VisualTarget['fit']='uniform',
-    syncStaticCollider=false
+    syncStaticCollider=false,
+    offsetZ=0
   ) {
     const g=new THREE.Group();
     g.position.set(state.position.x,0,state.position.z);
@@ -447,7 +449,7 @@ class TownGame {
     this.objects.set(state.id,{state,mesh:g});
     this.registerWorldObjectPhysics(state);
     this.attachVisualTarget({
-      group:g,asset,height:assetHeight,rotationY,targetWidth,targetDepth,fit,
+      group:g,asset,height:assetHeight,rotationY,offsetZ,targetWidth,targetDepth,fit,
       onResolved:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
     });
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
@@ -459,6 +461,14 @@ class TownGame {
     visual.updateMatrixWorld(true);
     const box=new THREE.Box3().setFromObject(visual);
     if(box.isEmpty())return;
+    if(isBakingOven(state)){
+      const bounds={minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z};
+      const {collider,trigger}=bakingOvenPhysics(state,bounds);
+      this.physics.registerStatic(collider);
+      this.physics.registerTrigger(trigger);
+      visual.userData.ovenPhysics={collider,trigger};
+      return;
+    }
     this.physics.registerStatic({
       id:`object:${state.id}`,
       minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z,
@@ -492,17 +502,20 @@ class TownGame {
   }
 
   semanticAssetSpec(state:WorldObjectState):{
-    asset:string;height:number;rotationY?:number;width?:number;depth?:number;fit?:VisualTarget['fit'];syncStatic?:boolean
+    asset:string;height:number;rotationY?:number;offsetZ?:number;width?:number;depth?:number;fit?:VisualTarget['fit'];syncStatic?:boolean
   }|undefined {
     if(state.kind==='bench')return {asset:'benchAsset',height:.82,width:2.0,depth:.70,fit:'exactBounds',syncStatic:true};
     if(state.kind==='bed')return {asset:'bedAsset',height:.78,rotationY:Math.PI/2,width:1.0,depth:2.0,fit:'exactBounds',syncStatic:true};
     if(state.kind==='food_stall')return {asset:'stallAsset',height:2.6,width:2.3,depth:1.2,fit:'exactBounds',syncStatic:true};
     if(state.kind==='workstation'){
-      if(state.id==='mine'||state.tags.includes('mine'))return undefined;
-      if(state.tags.includes('baker')||state.tags.includes('oven'))return undefined;
+      if(state.id==='mine'||state.tags.includes('mine'))return {asset:'mineAsset',height:4.5,rotationY:Math.PI};
+      const oven=bakingOvenVisualSpec(state);
+      if(oven)return oven;
       if(state.tags.includes('guard'))return {asset:'weaponStandAsset',height:1.25,width:1.4,depth:1.0,fit:'exactBounds',syncStatic:true};
       return {asset:'workbenchAsset',height:1.0,width:2.0,depth:1.0,fit:'exactBounds',syncStatic:true};
     }
+    if(state.kind==='tree')return {asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13};
+    if(state.kind==='crate')return {asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2};
     return undefined;
   }
 
@@ -518,11 +531,12 @@ class TownGame {
         2.0
       );
     }
-    const semanticSpec=assetOverride?undefined:this.semanticAssetSpec(state);
+    if(assetOverride)return this.addAssetObject(state,assetOverride,assetHeight||2,rotationY);
+    const semanticSpec=this.semanticAssetSpec(state);
     if(semanticSpec){
       return this.addAssetObject(
         state,semanticSpec.asset,semanticSpec.height,semanticSpec.rotationY??rotationY,
-        semanticSpec.width,semanticSpec.depth,semanticSpec.fit,semanticSpec.syncStatic
+        semanticSpec.width,semanticSpec.depth,semanticSpec.fit,semanticSpec.syncStatic,semanticSpec.offsetZ
       );
     }
     const g = new THREE.Group();
@@ -530,19 +544,6 @@ class TownGame {
     switch(state.kind) {
       case 'water_patch':
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
-      case 'bench':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.25,.65),new THREE.MeshStandardMaterial({color:0x79563c})); mesh.position.y=.65; break;
-      case 'bed':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.35,1),new THREE.MeshStandardMaterial({color:0xddd2bd})); mesh.position.y=.35; break;
-      case 'food_stall':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.3,1.2),new THREE.MeshStandardMaterial({color:0xb86442})); mesh.position.y=.65; break;
-      case 'workstation':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(2,1,.9),new THREE.MeshStandardMaterial({color:0x766044})); mesh.position.y=.5; break;
-      case 'tree': {
-        const trunk = new THREE.Mesh(new THREE.BoxGeometry(.55,1.8,.55),new THREE.MeshStandardMaterial({color:0x765238})); trunk.position.y=.9;
-        const crown = new THREE.Mesh(new THREE.BoxGeometry(1.8,1.8,1.8),new THREE.MeshStandardMaterial({color:0x4f9448})); crown.position.y=2.2;
-        g.add(trunk,crown); mesh=crown; break;
-      }
       default:
         mesh = new THREE.Mesh(new THREE.BoxGeometry(.85,.85,.85),new THREE.MeshStandardMaterial({color:state.item==='wood'?0x795234:0xb48b55})); mesh.position.y=.43;
     }
@@ -554,10 +555,6 @@ class TownGame {
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
     this.registerWorldObjectPhysics(state);
-    if(assetOverride)this.attachVisualTarget({group:g,asset:assetOverride,height:assetHeight||2,rotationY});
-    else if(state.kind==='tree') this.attachVisualTarget({group:g,asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13});
-    else if(state.kind==='crate') this.attachVisualTarget({group:g,asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2});
-    else if(state.id==='mine') this.attachVisualTarget({group:g,asset:'mineAsset',height:4.5,rotationY:Math.PI});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
   }
@@ -727,7 +724,8 @@ class TownGame {
       workbenchAsset:'fantasy-props-standard/Workbench.gltf',
       weaponStandAsset:'fantasy-props-standard/WeaponStand.gltf',
       farmSoil:'/assets/kenney/nature/crops_dirtDoubleRow.glb',
-      farmWheat:'/assets/kenney/nature/crops_wheatStageB.glb'
+      farmWheat:'/assets/kenney/nature/crops_wheatStageB.glb',
+      [BAKING_OVEN_ASSET]:'/assets/firefly-in-the-dusk/cast-iron-stove/CastIronStove.gltf'
     };
     const assetEntries=Object.entries(defs);
     const loaded = await Promise.allSettled(assetEntries.map(async ([key,file])=>{
@@ -773,6 +771,7 @@ class TownGame {
     const model=(isCharacter?cloneSkeleton(tpl.scene):tpl.scene.clone(true)) as THREE.Object3D;
     target.resolvedSize=this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
     model.rotation.y=target.rotationY||0;
+    model.position.z+=target.offsetZ??0;
     target.group.clear();
     target.group.add(model);
     target.onResolved?.(model);
@@ -3358,6 +3357,19 @@ class TownGame {
       });
       return count;
     },0);
+    // Read-only evidence, separate from the eight already accepted furniture targets.
+    // Resolved bounds are diagnostics, not a substitute for first-person screenshot review.
+    const ovens=[...this.objects.values()].filter(object=>isBakingOven(object.state)).map(object=>{
+      const target=this.visualTargets.find(candidate=>candidate.group===object.mesh&&candidate.asset===BAKING_OVEN_ASSET);
+      let meshes=0,primitives=0;
+      object.mesh.traverse(child=>{
+        const mesh=child as THREE.Mesh;
+        if(mesh.isMesh){meshes++;if(['BoxGeometry','CylinderGeometry','ConeGeometry'].includes(mesh.geometry.type))primitives++;}
+      });
+      return {id:object.state.id,asset:target?.asset,resolved:Boolean(target?.resolvedSize),meshes,primitives,
+        ...object.mesh.userData.ovenPhysics};
+    });
+    ui.world.dataset.bakingOvens=JSON.stringify(ovens);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
