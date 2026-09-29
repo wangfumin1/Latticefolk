@@ -1,0 +1,40 @@
+name: Interactive worktree export
+on:
+  push:
+    branches: [quality/69-environment-visual]
+    paths: [.github/workflows/interactive-worktree.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.repository == 'wangfumin1/Latticefolk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare isolated source and dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/worktree" "$RUNNER_TEMP/export"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/worktree"
+          git rev-parse HEAD > "$RUNNER_TEMP/worktree/EXPORT_COMMIT.txt"
+          cd "$RUNNER_TEMP/worktree"
+          npm install --no-audit --no-fund
+          npm run assets:prepare
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/browser" npx playwright install --only-shell chromium
+          tar -czf "$RUNNER_TEMP/export/worktree.tgz" -C "$RUNNER_TEMP/worktree" .
+          tar -czf "$RUNNER_TEMP/export/browser.tgz" -C "$RUNNER_TEMP/browser" .
+          cd "$RUNNER_TEMP/export"
+          sha256sum worktree.tgz browser.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interactive-worktree-${{ github.run_id }}
+          path: ${{ runner.temp }}/export/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
