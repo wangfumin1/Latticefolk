@@ -9,30 +9,22 @@ permissions:
   contents: read
 
 jobs:
-  workspace:
+  source-asset:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install existing project dependencies
-        run: npm install --no-audit --no-fund
-      - name: Export tracked source and installed dependencies only
+      - name: Download original author release and provenance
         shell: bash
         run: |
           set -euo pipefail
-          git archive --format=tar HEAD > /tmp/latticefolk-workspace.tar
-          tar --append --file=/tmp/latticefolk-workspace.tar node_modules
-          gzip /tmp/latticefolk-workspace.tar
-          git rev-parse HEAD > /tmp/workspace-commit.txt
-          sha256sum /tmp/latticefolk-workspace.tar.gz > /tmp/workspace-sha256.txt
+          mkdir /tmp/oven-source
+          curl --fail --location --max-time 60 --retry 0 'https://opengameart.org/sites/default/files/cast_iron_stove_gltf.zip' -o /tmp/oven-source/cast_iron_stove_gltf.zip
+          curl --fail --location --max-time 60 --retry 0 'https://opengameart.org/content/cast-iron-stove' -o /tmp/oven-source/author-page.html
+          cd /tmp/oven-source
+          sha256sum cast_iron_stove_gltf.zip author-page.html > SHA256SUMS
+          unzip -l cast_iron_stove_gltf.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: interactive-workspace-${{ github.run_id }}
-          path: |
-            /tmp/latticefolk-workspace.tar.gz
-            /tmp/workspace-commit.txt
-            /tmp/workspace-sha256.txt
+          name: original-cc0-oven-${{ github.run_id }}
+          path: /tmp/oven-source/
           retention-days: 1
