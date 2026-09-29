@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
+          fetch-depth: 4
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -59,6 +59,7 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/implementation"
           npm install --no-audit --no-fund
+          npm run assets:prepare
           npm run check 2>&1 | tee "$RUNNER_TEMP/tree-evidence/check.log"
           node_modules/.bin/tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution Bundler --esModuleInterop --skipLibCheck --types node e2e/*.spec.ts
       - name: Verify exact bytes and create Git tree objects only
