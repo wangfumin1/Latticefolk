@@ -11,3 +11,4 @@ This file records scene assets added to Latticefolk. Detailed notices remain in 
 | `public/assets/quaternius/fantasy-props-standard/WeaponStand.*` | WeaponStand | same | CC0 1.0 | same |
 | `public/assets/kenney/nature/crops_dirtDoubleRow.glb` | crops_dirtDoubleRow | Kenney, pinned mirror `shorepine/kenney@3694c6879e487c108f55677be7dd2ca75b07cc3b` | CC0 1.0 | none; byte-for-byte copy |
 | `public/assets/kenney/nature/crops_wheatStageB.glb` | crops_wheatStageB | same | CC0 1.0 | none; byte-for-byte copy |
+| `public/assets/quaternius/medieval-village/Well.source.fbx` | Well.fbx | Quaternius Medieval Village Pack; original vendored Git blob `9c7a673008eec4c916ff0e56245542b11a657b34` | CC0 | Unchanged source. Dev/build derive `Well.fbx` with five opaque-material transparency vectors corrected; geometry/vertex data unchanged. See [asset preparation](docs/asset-preparation.md). |

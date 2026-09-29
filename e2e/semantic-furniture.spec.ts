@@ -1,8 +1,9 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
+import { lookForObject } from './helpers/relative-look.js';
 
 // Fixtures set a legal saved starting position before boot. All subsequent targeting,
-// menu selection and consequences use the unmodified playable client and real input.
+// menu selection and consequences use the unmodified playable client and input handlers.
 const cases = [
   { name: 'bench-rest', title: '西侧长椅', position: {x:-4,z:4.05}, yaw: 0, pitch: .72, action: 2, count: 3, toast: '休息了一会儿', minutes: 15 },
   { name: 'bed-sleep', title: '公共休息铺', position: {x:7,z:7.9}, yaw: Math.PI, pitch: .72, action: 2, count: 3, toast: '睡了一小时', minutes: 60 },
@@ -55,19 +56,8 @@ for (const scenario of cases) {
     await expect(status).toHaveAttribute('data-persistence-conflict','false');
     await expect.poll(async()=>Number(await status.getAttribute('data-persistence-revision'))).toBeGreaterThanOrEqual(seedAck.revision);
 
-    const start = page.locator('#startBtn');
-    const buttonBounds = await start.boundingBox();
-    expect(buttonBounds).not.toBeNull();
-    await start.click();
-    await expect.poll(()=>page.evaluate(()=>document.pointerLockElement?.tagName)).toBe('CANVAS');
-    // PointerLockControls consumes relative mouse movement at 0.002 radians/pixel.
-    // Keep the physical player fixed and turn the view through Playwright mouse input.
-    await page.mouse.move(
-      buttonBounds!.x+buttonBounds!.width/2+scenario.yaw/.002,
-      buttonBounds!.y+buttonBounds!.height/2+scenario.pitch/.002,
-      {steps:4}
-    );
-    await expect(page.locator('#prompt')).toContainText(scenario.title,{timeout:15_000});
+    await page.locator('#startBtn').click();
+    await lookForObject(page,scenario.title,scenario.yaw,scenario.pitch);
     await testInfo.attach(`${scenario.name}-target`,{body:await page.screenshot(),contentType:'image/png'});
     await page.keyboard.press('KeyE');
     await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
