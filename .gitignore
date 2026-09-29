@@ -15,3 +15,6 @@ data/*.sqlite
 data/*.sqlite-*
 test-results/
 playwright-report/
+# Reproducible material adaptation of the unchanged licensed Well.source.fbx.
+public/assets/quaternius/medieval-village/Well.fbx
+public/assets/quaternius/medieval-village/Well.fbx.tmp-*

@@ -47,6 +47,10 @@ Issue #69 is the temporary active parent frontier by explicit user direction. It
 
 Phase A merged in #70. Phase B begins by establishing the shared building scale contract: licensed visuals are normalized to the same semantic width/depth/height used for gameplay, rotated physical bounds follow the visible footprint, and building construction no longer creates primitive wall/roof/window/door geometry while assets load. This does not yet claim the well, furniture, tree occlusion, terrain seam or coarse proxy debt is fixed.
 
+## #69 Phase B semantic furniture recovery
+
+The furniture slice replaces the confirmed floating/primitive bench, public bed, food stall, maker/mill workstations, guard work point and farm plot with licensed CC0 source assets. Browser acceptance counts the exercised center-town semantic visual targets and rejects Box/Cylinder/Cone geometry under those objects after load/reload. The bakery oven remains explicitly open rather than being disguised with an unrelated model; tree, terrain-seam and coarse-proxy work follow in order.
+
 ## Visual and E2E baseline
 
 Main CI #1312 artifact `10909675686` was downloaded, and `god-view.png` and `first-person-tool-contact.png` were actually opened. The scene is rendered, but the well reads as a square basin and representative furniture remains primitive-like; the tree canopy heavily occludes the tool-contact view. Building-to-person proportions still need calibrated model/world bounds using a roughly 1.7m reference, not a categorical judgment from perspective alone. No currently rendered duplicate door was established by those screenshots.

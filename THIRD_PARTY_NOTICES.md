@@ -39,3 +39,22 @@ Latticefolk includes the `Well.fbx` prop from Quaternius' Medieval Village Pack.
 - Use in Latticefolk: interactive town well visual asset
 
 The asset is redistributed with this repository under its original CC0 terms.
+
+## Quaternius — Fantasy Props MegaKit [Standard]
+
+Latticefolk includes selected CC0 geometry from **Fantasy Props MegaKit [Standard]** by Quaternius under `public/assets/quaternius/fantasy-props-standard/`.
+
+- Official source: https://quaternius.com/packs/fantasypropsmegakit.html
+- License: **CC0 1.0 Universal / Public Domain Dedication**
+- Pinned reproducible mirror: `agentkaerf/FreeModels@db3df04d1e4714298a09510b26fb6de6645138a2`
+- Included: Bench, Bed_Twin1, Stall_Empty, Workbench, WeaponStand.
+- Latticefolk preserves the original geometry/buffer bytes. To avoid vendoring the pack's large shared texture atlases for these five props, the local glTF descriptors retain the original material slots with compact flat PBR material factors.
+
+## Kenney — Nature Kit crop assets
+
+Latticefolk includes selected CC0 crop GLBs from Kenney under `public/assets/kenney/nature/`.
+
+- Creator/source: Kenney — https://kenney.nl/
+- License: **CC0 1.0 Universal / Public Domain Dedication**
+- Pinned reproducible mirror: `shorepine/kenney@3694c6879e487c108f55677be7dd2ca75b07cc3b`
+- Included byte-for-byte: `crops_dirtDoubleRow.glb`, `crops_wheatStageB.glb`.

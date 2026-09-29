@@ -2,6 +2,10 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  // The playable scenarios share one server-side SQLite world. Separate files must not
+  // reset or write that world concurrently; isolate storage before increasing workers.
+  workers: 1,
+  fullyParallel: false,
   timeout: 60_000,
   expect: { timeout: 15_000 },
   reporter: [

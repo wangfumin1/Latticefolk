@@ -1,6 +1,14 @@
-Quaternius Medieval Village Pack
-Source: https://quaternius.com/packs/medievalvillage.html
-Original public download: https://drive.google.com/drive/folders/18T92VcNldHG0ugWo1u0hSJGDLua-n7o5
-Asset used: Props/FBX/Well.fbx
-License: CC0 / public domain dedication as distributed with the pack
-Author: Quaternius
+Quaternius — Medieval Village Pack
+Original creator: Quaternius
+Official source: https://quaternius.com/packs/medievalvillage.html
+License: CC0 / public domain dedication
+
+Well.source.fbx is the unmodified previously vendored Well.fbx.
+Source Git blob: 9c7a673008eec4c916ff0e56245542b11a657b34
+Source SHA-256: 4a634278d8db32dc46c180de54b29132c0d9ac17d6ab12bf55ccf56120966595
+
+scripts/prepare-scene-assets.mjs creates the runtime Well.fbx locally before dev/build.
+Only the five opaque material TransparentColor vectors are changed from (1,1,1) to (0,0,0).
+This corrects the legacy export interpreted as opacity=0 by Three.js FBXLoader.
+Geometry, source vertex data, transforms, colors and license are unchanged.
+Runtime SHA-256: e8af9aefa25f001c24756826343ae960ade4feab3b774cccdf700ec82a1c2b0f

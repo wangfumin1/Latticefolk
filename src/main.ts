@@ -136,6 +136,7 @@ interface VisualTarget {
   targetDepth?: number;
   fit?: 'uniform'|'exactBounds';
   resolvedSize?: {x:number;y:number;z:number};
+  onResolved?: (model:THREE.Object3D)=>void;
 }
 interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
@@ -353,7 +354,7 @@ class TownGame {
     this.addObject({id:'oven',kind:'workstation',name:'面包炉',position:{x:-10,z:-13},tags:['work','baker','bread'],usable:true,pickupable:false});
     this.addObject({id:'market',kind:'food_stall',name:'集市摊位',position:{x:8,z:-11},tags:['food','trade','market'],usable:true,pickupable:false,item:'bread'});
     this.addObject({id:'maker_table',kind:'workstation',name:'工坊工作台',position:{x:-20,z:7},tags:['work','maker','wood'],usable:true,pickupable:false});
-    this.addObject({id:'guard_post',kind:'workstation',name:'巡逻岗亭',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
+    this.addObject({id:'guard_post',kind:'workstation',name:'守卫装备架',position:{x:20,z:7},tags:['work','guard','safety'],usable:true,pickupable:false});
     this.addObject({id:'bed_n',kind:'bed',name:'公共休息铺',position:{x:7,z:9},tags:['rest','sleep'],usable:true,pickupable:false});
     this.addAssetObject({id:'cart_town',kind:'cart',name:'镇内货运推车',position:{x:0,z:4.7},tags:['transport','storage','trade','movable'],usable:true,pickupable:false,rigidBodyArchetype:'cart',storage:[],capabilities:['inspect','load','unload']},'cart',1.35,Math.PI/2,2.0,2.0);
     this.addObject({id:'crate_wood',kind:'crate',name:'木料箱',position:{x:-15,z:7},tags:['wood','supply'],usable:false,pickupable:true,item:'wood'});
@@ -428,7 +429,16 @@ class TownGame {
     this.attachVisualTarget({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
   }
 
-  addAssetObject(state:WorldObjectState,asset:string,assetHeight:number,rotationY=0,targetWidth?:number,targetDepth?:number) {
+  addAssetObject(
+    state:WorldObjectState,
+    asset:string,
+    assetHeight:number,
+    rotationY=0,
+    targetWidth?:number,
+    targetDepth?:number,
+    fit:VisualTarget['fit']='uniform',
+    syncStaticCollider=false
+  ) {
     const g=new THREE.Group();
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'object',entityId:state.id};
@@ -436,12 +446,68 @@ class TownGame {
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
     this.registerWorldObjectPhysics(state);
-    this.attachVisualTarget({group:g,asset,height:assetHeight,rotationY,targetWidth,targetDepth});
+    this.attachVisualTarget({
+      group:g,asset,height:assetHeight,rotationY,targetWidth,targetDepth,fit,
+      onResolved:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
+    });
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
   }
 
+  syncStaticObjectCollider(state:WorldObjectState,visual:THREE.Object3D) {
+    if(state.pickupable||worldObjectRigidBody(state)||state.kind==='farm_plot'||state.kind==='water_patch')return;
+    visual.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(visual);
+    if(box.isEmpty())return;
+    this.physics.registerStatic({
+      id:`object:${state.id}`,
+      minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z,
+      chunkId:state.chunkId
+    });
+  }
+
+  addFarmPlotObject(state:WorldObjectState) {
+    const root=new THREE.Group();
+    root.position.set(state.position.x,0,state.position.z);
+    root.userData={entityType:'object',entityId:state.id};
+    this.scene.add(root);
+    state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
+    this.objects.set(state.id,{state,mesh:root});
+    this.registerWorldObjectPhysics(state);
+
+    const soil=new THREE.Group();
+    root.add(soil);
+    this.attachVisualTarget({
+      group:soil,asset:'farmSoil',height:.12,targetWidth:4,targetDepth:2.7,fit:'exactBounds'
+    });
+    const rows=[-1.25,-.42,.42,1.25];
+    for(const x of rows)for(const z of [-.72,0,.72]){
+      const crop=new THREE.Group();
+      crop.position.set(x,.08,z);
+      root.add(crop);
+      this.attachVisualTarget({group:crop,asset:'farmWheat',height:.72});
+    }
+    if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(root);
+    return root;
+  }
+
+  semanticAssetSpec(state:WorldObjectState):{
+    asset:string;height:number;rotationY?:number;width?:number;depth?:number;fit?:VisualTarget['fit'];syncStatic?:boolean
+  }|undefined {
+    if(state.kind==='bench')return {asset:'benchAsset',height:.82,width:2.0,depth:.70,fit:'exactBounds',syncStatic:true};
+    if(state.kind==='bed')return {asset:'bedAsset',height:.78,rotationY:Math.PI/2,width:1.0,depth:2.0,fit:'exactBounds',syncStatic:true};
+    if(state.kind==='food_stall')return {asset:'stallAsset',height:2.6,width:2.3,depth:1.2,fit:'exactBounds',syncStatic:true};
+    if(state.kind==='workstation'){
+      if(state.id==='mine'||state.tags.includes('mine'))return undefined;
+      if(state.tags.includes('baker')||state.tags.includes('oven'))return undefined;
+      if(state.tags.includes('guard'))return {asset:'weaponStandAsset',height:1.25,width:1.4,depth:1.0,fit:'exactBounds',syncStatic:true};
+      return {asset:'workbenchAsset',height:1.0,width:2.0,depth:1.0,fit:'exactBounds',syncStatic:true};
+    }
+    return undefined;
+  }
+
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
+    if(state.kind==='farm_plot')return this.addFarmPlotObject(state);
     if(state.kind==='well'){
       return this.addAssetObject(
         state,
@@ -450,6 +516,13 @@ class TownGame {
         rotationY,
         2.0,
         2.0
+      );
+    }
+    const semanticSpec=assetOverride?undefined:this.semanticAssetSpec(state);
+    if(semanticSpec){
+      return this.addAssetObject(
+        state,semanticSpec.asset,semanticSpec.height,semanticSpec.rotationY??rotationY,
+        semanticSpec.width,semanticSpec.depth,semanticSpec.fit,semanticSpec.syncStatic
       );
     }
     const g = new THREE.Group();
@@ -461,8 +534,6 @@ class TownGame {
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.25,.65),new THREE.MeshStandardMaterial({color:0x79563c})); mesh.position.y=.65; break;
       case 'bed':
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2,.35,1),new THREE.MeshStandardMaterial({color:0xddd2bd})); mesh.position.y=.35; break;
-      case 'farm_plot':
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(4,.12,2.7),new THREE.MeshStandardMaterial({color:0x654a2d})); mesh.position.y=.06; break;
       case 'food_stall':
         mesh = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.3,1.2),new THREE.MeshStandardMaterial({color:0xb86442})); mesh.position.y=.65; break;
       case 'workstation':
@@ -505,10 +576,10 @@ class TownGame {
 
     const halfExtents:Partial<Record<WorldObjectState['kind'],[number,number]>>={
       well:[.70,1.0],
-      bench:[.90,.34],
-      bed:[.92,.46],
-      food_stall:[1.08,.54],
-      workstation:[.92,.44],
+      bench:[1.0,.35],
+      bed:[1.0,.50],
+      food_stall:[1.15,.60],
+      workstation:[1.0,.50],
       tree:[.34,.34],
       crate:[.38,.38],
       rock:[.44,.44],
@@ -649,15 +720,23 @@ class TownGame {
       crate_rts:'ultimate-fantasy-rts/Crate.gltf',
       barrel:'ultimate-fantasy-rts/Barrel.gltf',
       mineAsset:'ultimate-fantasy-rts/Mine.gltf',
-      wellAsset:'medieval-village/Well.fbx'
+      wellAsset:'medieval-village/Well.fbx',
+      benchAsset:'fantasy-props-standard/Bench.gltf',
+      bedAsset:'fantasy-props-standard/Bed_Twin1.gltf',
+      stallAsset:'fantasy-props-standard/Stall_Empty.gltf',
+      workbenchAsset:'fantasy-props-standard/Workbench.gltf',
+      weaponStandAsset:'fantasy-props-standard/WeaponStand.gltf',
+      farmSoil:'/assets/kenney/nature/crops_dirtDoubleRow.glb',
+      farmWheat:'/assets/kenney/nature/crops_wheatStageB.glb'
     };
     const assetEntries=Object.entries(defs);
     const loaded = await Promise.allSettled(assetEntries.map(async ([key,file])=>{
+      const assetUrl=file.startsWith('/')?file:`${this.assetRoot}/${file}`;
       if(file.toLowerCase().endsWith('.fbx')){
-        const scene=await this.fbxLoader.loadAsync(`${this.assetRoot}/${file}`);
+        const scene=await this.fbxLoader.loadAsync(assetUrl);
         this.assets.set(key,{scene,animations:scene.animations||[]});
       }else{
-        const gltf=await this.gltfLoader.loadAsync(`${this.assetRoot}/${file}`);
+        const gltf=await this.gltfLoader.loadAsync(assetUrl);
         this.assets.set(key,{scene:gltf.scene,animations:gltf.animations});
       }
     }));
@@ -696,6 +775,7 @@ class TownGame {
     model.rotation.y=target.rotationY||0;
     target.group.clear();
     target.group.add(model);
+    target.onResolved?.(model);
     if(isCharacter){
       const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
       if(agent&&tpl.animations.length){
@@ -3252,7 +3332,11 @@ class TownGame {
       :0;
     const npcGroundingMaxError=[...this.npcs.values()].reduce((max,agent)=>agent.removed?max:Math.max(max,Math.abs(agent.mesh.position.y-this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z))),0);
     const wildlifeGroundingMaxError=[...this.wildlife.values()].reduce((max,animal)=>animal.removed?max:Math.max(max,Math.abs(animal.mesh.position.y-this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z))),0);
-    const buildingTargets=this.visualTargets.filter(target=>target.fit==='exactBounds'&&target.resolvedSize&&target.targetWidth&&target.targetDepth);
+    const buildingTargets=this.visualTargets.filter(target=>{
+      const id=String(target.group.userData.entityId||'');
+      return this.objects.get(id)?.state.kind==='building'
+        &&target.fit==='exactBounds'&&target.resolvedSize&&target.targetWidth&&target.targetDepth;
+    });
     const buildingMinHeight=buildingTargets.length?Math.min(...buildingTargets.map(target=>target.resolvedSize!.y)):0;
     const buildingMaxBoundsError=buildingTargets.reduce((max,target)=>Math.max(
       max,
@@ -3262,6 +3346,18 @@ class TownGame {
     ),0);
     const wellTarget=this.visualTargets.find(target=>target.asset==='wellAsset'&&target.resolvedSize);
     const wellVisualSize=wellTarget?.resolvedSize;
+    const semanticLicensedIds=['bench_w','bench_e','farm_plot','market','maker_table','guard_post','bed_n','mill'];
+    const semanticLicensedObjects=semanticLicensedIds.map(id=>this.objects.get(id)).filter((object):object is RuntimeObject=>Boolean(object));
+    const semanticLicensedResolved=semanticLicensedObjects.filter(object=>{
+      let meshes=0;object.mesh.traverse(child=>{if((child as THREE.Mesh).isMesh)meshes++;});return meshes>0;
+    }).length;
+    const semanticPrimitiveMeshes=semanticLicensedObjects.reduce((count,object)=>{
+      object.mesh.traverse(child=>{
+        const mesh=child as THREE.Mesh;
+        if(mesh.isMesh&&(mesh.geometry?.type==='BoxGeometry'||mesh.geometry?.type==='CylinderGeometry'||mesh.geometry?.type==='ConeGeometry'))count++;
+      });
+      return count;
+    },0);
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3282,6 +3378,9 @@ class TownGame {
     ui.world.dataset.wellVisualWidth=wellVisualSize?.x.toFixed(4)??'NaN';
     ui.world.dataset.wellVisualHeight=wellVisualSize?.y.toFixed(4)??'NaN';
     ui.world.dataset.wellVisualDepth=wellVisualSize?.z.toFixed(4)??'NaN';
+    ui.world.dataset.semanticLicensedTargets=String(semanticLicensedObjects.length);
+    ui.world.dataset.semanticLicensedResolved=String(semanticLicensedResolved);
+    ui.world.dataset.semanticPrimitiveMeshes=String(semanticPrimitiveMeshes);
     ui.world.dataset.movableBodies=String(movableBodies.length);
     ui.world.dataset.cartX=townCart?.state.position.x.toFixed(4)??'NaN';
     ui.world.dataset.cartZ=townCart?.state.position.z.toFixed(4)??'NaN';

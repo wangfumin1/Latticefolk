@@ -8,9 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "assets:prepare": "node scripts/prepare-scene-assets.mjs",
+    "predev": "npm run assets:prepare",
     "dev": "concurrently -k -n server,web \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
+    "predev:web": "npm run assets:prepare",
     "dev:web": "vite",
+    "prebuild": "npm run assets:prepare",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",

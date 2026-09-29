@@ -8,6 +8,9 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Playable recovery Phase B replaces center-town and generated bench/bed/market/workbench/guard-equipment/farm primitives with sourced CC0 semantic visuals from Quaternius Fantasy Props and Kenney crops. Solid furniture collision is reconciled from resolved visual bounds; farm plots are composed from sourced soil/crop models only.
+- Third-party scene provenance now has a dedicated `THIRD_PARTY_ASSETS.md` manifest in addition to detailed notices and per-folder source records.
+
 - Playable recovery Phase B calibrates the existing CC0 Medieval Village well to its real tall-roof proportions (about 1.3 m × 2.0 m footprint and 2.5 m overall height), shares that scale across home/generated settlements, aligns its static collider, and routes wells through the licensed asset-only path without constructing a visible cylinder placeholder.
 
 - Playable recovery Phase B starts from one 1.82 m human reference: sourced building assets now fit their declared semantic width/depth/height exactly, building collision AABBs include visual rotation, generated markets no longer use a sub-human 3 m target, and building creation no longer constructs temporary primitive walls/roofs/windows/doors before the licensed asset resolves.

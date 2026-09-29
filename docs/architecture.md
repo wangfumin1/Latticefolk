@@ -22,6 +22,13 @@ DecisionProvider
   └─ jev (optional TypeSafe System One adapter)
 ```
 
+
+## Semantic prop visuals
+
+A semantic WorldObject may exist before its visual asset is available, but a player-visible fallback mesh is not authoritative presentation. Furniture and settlement props that have approved visual mappings create an empty semantic group, register deterministic interaction/physics state, and then resolve a licensed asset into that group. If the asset fails, the object stays visually absent and diagnostics report the failure instead of substituting an assistant-authored box or cylinder.
+
+Solid licensed furniture re-registers its static AABB from the resolved world-space visual bounds. Farm plots remain non-blocking semantic interaction areas and visually compose only sourced Kenney soil/crop models. Model identity is selected from semantic kind/tags: maker/mill workstations use a workbench, guard work points use a weapon stand and are named accordingly, while bakery/oven objects remain intentionally unresolved until a semantically correct bread-oven asset is approved.
+
 ## Core invariant
 
 A decision provider is not authoritative over the world. It cannot teleport an NPC, invent inventory, bypass collisions, or directly mutate numeric state. It selects high-level intent from legal candidates; the simulation validates and executes the result.
