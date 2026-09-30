@@ -14,7 +14,9 @@ import { craftAtWorkstation } from './world/production';
 import { CharacterSoles } from './scene/characterSoles';
 import { SunShadowView } from './scene/sunShadow';
 import { characterOverlay } from './scene/characterOverlay';
-import { characterContactRadius, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
+import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
+import { stepNpcYield, type NpcYieldPlan } from './world/npcYield';
+import { bakingWorkApproach, type NpcWorkApproach } from './world/npcWorkApproach';
 import { fitTreeModel, treePhysics, treeVisualHeight } from './scene/treePresentation';
 import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
@@ -146,7 +148,7 @@ interface VisualTarget {
   resolvedSize?: {x:number;y:number;z:number};
   onResolved?: (model:THREE.Object3D)=>void;
 }
-interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
+interface ActionTask { approach?: NpcWorkApproach; action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
 interface FineChunkRuntime {
   chunkId:string;
@@ -194,6 +196,7 @@ interface NpcRuntime {
   activityAnimation?: string;
   activityAnimationUntil?: number;
   soles?: CharacterSoles;
+  yieldPlan?: NpcYieldPlan;
   removed?: boolean;
 }
 
@@ -243,6 +246,8 @@ class TownGame {
   cameraMode: 'firstPerson'|'god' = 'firstPerson';
   perceptionEpoch = 0;
   playerPosition: Vec2 = {x:0,z:7};
+  playerTravel?: Vec2;
+  playerBlockedNpcs = new Set<string>();
   firstPersonRotation = new THREE.Euler(0,0,0,'YXZ');
   godPointer = new THREE.Vector2(0,0);
   pointerDown?: {x:number;y:number};
@@ -975,6 +980,7 @@ class TownGame {
   animate = () => {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
+    this.playerTravel=undefined;this.playerBlockedNpcs.clear();
     if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
     if(this.persistenceReady){
       this.updateTime(dt);
@@ -1002,13 +1008,16 @@ class TownGame {
       const moveInput=()=>({
         id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
         displacement:{x:move.x,z:move.z},radius:.30,
-        dynamic:this.physicsDynamicColliders('player',true)
+        dynamic:this.physicsDynamicColliders('player'),
+        constraints:[...this.npcs.values()].filter(a=>!a.removed).map(a=>playerHeadConstraint(`npc:${a.state.id}`,a.characterAsset,a.mesh.position,a.mesh.rotation.y))
       });
       let resolved=this.physics.moveKinematic(moveInput());
       const movableHit=resolved.dynamicHits.find(id=>id.startsWith('object:'));
       if(movableHit&&this.tryPushMovableObject(movableHit.slice('object:'.length),{x:move.x,z:move.z})){
         resolved=this.physics.moveKinematic(moveInput());
       }
+      this.playerTravel={x:move.x,z:move.z};
+      for(const id of resolved.dynamicHits)if(id.startsWith('npc:'))this.playerBlockedNpcs.add(id);
       this.camera.position.x=resolved.position.x;
       this.camera.position.z=resolved.position.z;
     }
@@ -1180,7 +1189,8 @@ class TownGame {
         this.groundHeightAt(runtime.state.position.x,runtime.state.position.z),
         runtime.state.position.z
       );
-      runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
+      runtime.mesh.rotation.y=runtime.state.heading??0;
+      runtime.yieldPlan=undefined;runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
       this.alignNpcVisualToGround(runtime);
       runtime.nextDecisionAt=now()+700+Math.random()*1800;
     }
@@ -1470,6 +1480,7 @@ class TownGame {
   spawnFineNpc(state:NpcState,characterAsset:string) {
     const mesh=new THREE.Group();
     mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
+    mesh.rotation.y=state.heading??0;
     mesh.userData={entityType:'npc',entityId:state.id};
     this.scene.add(mesh);
 
@@ -2753,7 +2764,7 @@ class TownGame {
       if(agent.mixer)this.alignNpcVisualToGround(agent);
       if(agent.task && agent.path.length===0) this.completeTask(agent);
       if(!this.aiPaused&&!agent.pendingDecision&&this.inFlight<this.maxInFlight&&now()>=agent.nextDecisionAt&&!agent.task) this.requestDecision(agent);
-      n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;
+      n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;n.heading=agent.mesh.rotation.y;
     }
   }
 
@@ -2762,25 +2773,37 @@ class TownGame {
     // Do not wait for the old generic final-waypoint 1.55 m collision threshold.
     if(reachedPlayerConversation(this.cameraMode==='firstPerson',agent.task?.action,agent.task?.targetNpcId,
       Math.hypot(agent.mesh.position.x-this.playerPosition.x,agent.mesh.position.z-this.playerPosition.z))){
-      agent.path=[];agent.pathIndex=0;return;
+      agent.path=[];agent.pathIndex=0;agent.yieldPlan=undefined;return;
     }
-    if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
+    if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;agent.yieldPlan=undefined;return;}
+    const yielded=stepNpcYield(this.physics,{
+      id:`npc:${agent.state.id}`,asset:agent.characterAsset,position:agent.mesh.position,yaw:agent.mesh.rotation.y,
+      player:this.cameraMode==='firstPerson'?this.playerPosition:undefined,travel:this.playerTravel,
+      activePath:true,blockedPlayer:this.playerBlockedNpcs.has(`npc:${agent.state.id}`),plan:agent.yieldPlan,
+      dt,dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+    });
+    agent.yieldPlan=yielded?.plan;
+    if(yielded){agent.mesh.position.x=yielded.position.x;agent.mesh.position.z=yielded.position.z;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
     const speed=1.65;
     const step=Math.min(d,speed*dt);
+    const desiredHeading=Math.atan2(dx,dz);
+    const heading=this.cameraMode==='firstPerson'
+      ?safeNpcHeading(agent.characterAsset,pos,agent.mesh.rotation.y,desiredHeading,this.playerPosition):desiredHeading;
     const resolved=this.physics.moveKinematic({
       id:`npc:${agent.state.id}`,
       position:{x:pos.x,z:pos.z},
       displacement:{x:dx/d*step,z:dz/d*step},
       radius:.32,
-      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`,true)
+      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`),
+      constraints:this.cameraMode==='firstPerson'?[npcHeadConstraint(agent.characterAsset,this.playerPosition,heading)]:[]
     });
     pos.x=resolved.position.x;pos.z=resolved.position.z;
-    if(resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
+    if(!agent.task?.approach&&resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
       agent.path=[];agent.pathIndex=0;
     }
-    agent.mesh.rotation.y=Math.atan2(dx,dz);
+    agent.mesh.rotation.y=heading;
   }
 
   async requestDecision(agent:NpcRuntime) {
@@ -2871,7 +2894,29 @@ class TownGame {
     if(d.action==='trade'&&!d.targetObjectId&&this.closestNpc(agent)){const target=this.closestNpc(agent);if(target){task.targetNpcId=target.state.id;agent.path=this.findPath(agent.state.position,target.state.position);return;}}
     if(d.action==='drop_item'){this.dropNpcItem(agent);agent.task=undefined;return;}
     if(d.action==='eat' && agent.state.inventory.some(i=>['apple','bread'].includes(i.kind)&&i.count>0)){this.npcEat(agent);agent.task=undefined;return;}
-    const obj=this.objectForAction(agent,d.action,d.targetObjectId); if(!obj){agent.task=undefined;agent.nextDecisionAt=now()+2500;return;} task.targetObjectId=obj.state.id;agent.path=this.findPath(agent.state.position,obj.state.position);
+    const obj=this.objectForAction(agent,d.action,d.targetObjectId); if(!obj){agent.task=undefined;agent.nextDecisionAt=now()+2500;return;} task.targetObjectId=obj.state.id;this.planNpcObjectPath(agent,task,obj);
+  }
+
+  planNpcObjectPath(agent:NpcRuntime,task:ActionTask,obj:RuntimeObject) {
+    const current={x:agent.mesh.position.x,z:agent.mesh.position.z};
+    const isOvenWork=isBakingOven(obj.state)&&(task.action==='work'||task.action==='craft');
+    if(isOvenWork){
+      task.approach=bakingWorkApproach(agent.characterAsset,obj.state.position,obj.mesh.userData.ovenPhysics?.collider,
+        (point,radius)=>this.physics.isBlocked(point.x,point.z,radius));
+      // No loaded/reachable facility stance means no work outcome, not crafting at
+      // an arbitrary nearby point merely because pathfinding returned an empty path.
+      if(!task.approach){agent.task=undefined;agent.path=[];agent.pathIndex=0;return;}
+    }
+    const destination=task.approach??obj.state.position;
+    const path=this.findPath(current,destination);
+    if(task.approach){
+      const sameCell=Math.round(current.x)===Math.round(destination.x)&&Math.round(current.z)===Math.round(destination.z);
+      if(!path.length&&!sameCell){agent.task=undefined;agent.path=[];agent.pathIndex=0;return;}
+      // Retain the original grid planner, then approach the precise resolved stance.
+      // Do not teleport the actor or stop at the old 1.55 m generic collision threshold.
+      if(dist(current,destination)>.12)path.push({x:destination.x,z:destination.z});
+    }
+    agent.path=path;agent.pathIndex=0;
   }
 
   applyStateShift(agent:NpcRuntime,shift:DecisionResponse['stateShift']) {
@@ -2928,6 +2973,12 @@ class TownGame {
     if(task.action==='patrol'){agent.state.energy=clamp(agent.state.energy-2,0,100);agent.state.money+=1;this.remember(agent,'完成了一段巡逻路线。',1);this.playActivity(agent,'Yes',900);agent.task=undefined;return;}
     if(task.action==='explore'){this.remember(agent,`探索到了 ${agent.state.position.x.toFixed(0)},${agent.state.position.z.toFixed(0)} 一带。`,1);agent.state.mood=agent.state.mood==='neutral'?'curious':agent.state.mood;this.playActivity(agent,'Yes',900);agent.task=undefined;return;}
     const obj=task.targetObjectId?this.objects.get(task.targetObjectId):undefined;
+    if(obj&&isBakingOven(obj.state)&&(task.action==='work'||task.action==='craft')){
+      if(!task.approach||dist(agent.mesh.position,task.approach)>.14){this.planNpcObjectPath(agent,task,obj);return;}
+      agent.mesh.rotation.y=this.cameraMode==='firstPerson'
+        ?safeNpcHeading(agent.characterAsset,agent.mesh.position,agent.mesh.rotation.y,task.approach.yaw,this.playerPosition)
+        :task.approach.yaw;
+    }
     if(obj&&dist(agent.state.position,obj.state.position)>2.3){agent.path=this.findPath(agent.state.position,obj.state.position);return;}
     switch(task.action){
       case 'work': this.npcWork(agent,obj);this.playActivity(agent,'Punch',1500);break;
@@ -3390,6 +3441,8 @@ class TownGame {
     ui.world.dataset.homeBuildingAnchors=JSON.stringify(homeBuildings);
     const soleEvidence=[...this.npcs.values()].filter(agent=>agent.soles).map(agent=>({
       id:agent.state.id,asset:agent.characterAsset,minimumPlayerSeparation:npcPlayerSeparation(agent.characterAsset),
+      headYaw:agent.mesh.rotation.y,workApproach:agent.task?.approach,activePath:agent.pathIndex<agent.path.length,headEnvelope:characterHeadEnvelope(agent.characterAsset),
+      playerHeadClearance:this.cameraMode==='firstPerson'?playerHeadClearance(agent.characterAsset,agent.mesh.position,agent.mesh.rotation.y,this.playerPosition):null,
       animation:agent.activeAnimation,vertices:agent.soles!.vertexCount,
       ground:this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z),
       sole:agent.soles!.minimumWorldY(),position:agent.state.position
@@ -3711,18 +3764,16 @@ class TownGame {
     return clamp(.20+state.traits.size*.10,.24,.48);
   }
 
-  physicsDynamicColliders(excludeId?:string,personalSpace=false):DynamicCollider[] {
+  physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
     const colliders:DynamicCollider[]=[];
-    const movingNpc=personalSpace&&excludeId?.startsWith('npc:')?this.npcs.get(excludeId.slice(4)):undefined;
-    const mover=personalSpace?(excludeId==='player'?'player':movingNpc?'npc':undefined):undefined;
     if(this.cameraMode==='firstPerson'){
       colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,
-        radius:characterContactRadius('player',undefined,mover,movingNpc?.characterAsset)});
+        radius:PLAYER_BODY_RADIUS});
     }
     for(const agent of this.npcs.values()){
       if(agent.removed)continue;
       colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,
-        radius:characterContactRadius('npc',agent.characterAsset,mover)});
+        radius:NPC_BODY_RADIUS});
     }
     for(const animal of this.wildlife.values()){
       if(animal.removed)continue;

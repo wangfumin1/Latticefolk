@@ -78,3 +78,8 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 ## 貢献・ライセンス
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) を参照してください。コードは [MIT](../LICENSE)。同梱アセットのライセンスは [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) に記録しています。引用情報は [CITATION.cff](../CITATION.cff) にあります。
+
+
+GitHub Actions を使わないローカル検証は `npm run validate:local` です。実行前のソースとハッシュ、実行後のブラウザー証跡を保持し、通常のセーブとは別の E2E データベースを使用します。[検証範囲](local-validation.md)。
+
+パン職人は物理的な移動で炉の外側の作業位置に到達してから生産します。NPC の向きはバージョン 1 セーブの任意項目として保持され、旧セーブでは従来の +Z を使用します。テーブル移行やリセットは不要です。

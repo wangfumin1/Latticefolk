@@ -201,3 +201,11 @@ The first dedicated fine physics authority adds no persistence schema. Static co
 Per-frame contact state, collision hits and kinematic displacement are transient. Wildlife controller speed/heading remain transient as before. Persisted entity position continues to be the authoritative rematerialization point, while unloaded chunks evolve through coarse simulation and therefore have no sleeping fine body that needs serialization.
 
 God View creates no player physics body. This is a runtime semantic guarantee, not persisted state: after switching to God View, NPC/wildlife collision snapshots simply omit the player, consistent with player absence from perception and targeting.
+
+### Local browser test isolation
+
+Playwright's managed server explicitly uses `data/latticefolk.e2e.sqlite` rather than `data/latticefolk.sqlite`, even when the parent shell supplies `WORLD_DB_PATH`. Browser fixtures intentionally reset the test world and must never erase the regular player's world. The serial worker and `reuseExistingServer:false` policies remain; normal `npm run dev`/`run.bat` persistence is unchanged. `npm run validate:local` additionally preserves source hashes and the executed reports without using Actions.
+
+### NPC facing and version-1 compatibility
+
+`NpcState.heading?: number` is an additive, finite simulation-owned facing angle used by the oriented player/NPC contact boundary. Each fine NPC update records its actual facing; center-town restoration and fine-chunk spawning restore it alongside position. Omitted legacy headings default to zero (+Z), without changing IDs, resources, `workAt`, save version or existing SQLite tables. A supplied nonfinite/non-number heading is rejected by the snapshot validator before any revision/table mutation. NPC facing is distinct from transient wildlife controller heading and from the transient NPC yield/path/stance plan, which are not serialized. The baker stance browser regression checks that a normal reload cannot reorient hair into the saved player position.

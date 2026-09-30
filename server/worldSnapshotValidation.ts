@@ -202,6 +202,7 @@ const validateNpc=(v:Validator,value:unknown,path:string,expectedChunk:string|un
   v.string(obj.name,`${path}.name`,{max:256});
   v.enum(obj.role,`${path}.role`,NPC_ROLES);
   validateVec2(v,obj.position,`${path}.position`);
+  if(obj.heading!==undefined)v.number(obj.heading,`${path}.heading`);
   validateVec2(v,obj.home,`${path}.home`);
   if(obj.workAt!==undefined)v.string(obj.workAt,`${path}.workAt`,{max:256});
   v.enum(obj.mood,`${path}.mood`,MOODS);

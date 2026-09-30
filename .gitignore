@@ -21,3 +21,6 @@ public/assets/quaternius/medieval-village/Well.fbx.tmp-*
 
 # Derived from the immutable author descriptor by assets:prepare
 /public/assets/firefly-in-the-dusk/cast-iron-stove/CastIronStove.gltf
+
+# Local source-frozen validation evidence (not GitHub Actions artifacts).
+/.local-validation/

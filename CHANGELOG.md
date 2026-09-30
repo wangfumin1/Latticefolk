@@ -8,6 +8,13 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Baking NPCs must physically reach a collider-derived exterior work stance before production; solid-center/empty-path planning no longer authorizes crafting in the front aisle. Persist optional finite NPC facing through version-1 home/fine saves so oriented contact does not change on reload. Legacy omitted facing remains +Z, with no table migration or reset.
+
+- Active-path NPCs now resolve a reproduced player/head traffic deadlock with a source-projected, speed-bounded lateral yield through the existing physics authority. Idle NPCs remain stationary; walls, other bodies, original task destinations, provider budgets and observer semantics are retained.
+
+- Reproducible `validate:local` runs prepare assets and preserve a complete source/hash snapshot before full checks and browser evidence, detect source changes during execution, and use no GitHub Actions. Browser fixtures now reset only `data/latticefolk.e2e.sqlite`, not the player's normal save.
+- Source-oriented player/NPC head constraints replace the overly large radial clearance that blocked the original oven lane. Both motion directions, rounded corners, safe turning and legacy outward recovery retain original tool/cart/static body geometry. Browser motion and revision/transition checkpoints remove observation races without increasing deadlines, retrying tests or changing fixture routes.
+
 - Home-building reload now treats the saved WorldObject position as frontage rather than moving the visible building body onto it. The existing layout restore preserves storage/identity, fixed model centers, collision and triggers, with a twelve-building native save/reload regression; no save-schema change.
 - The same Phase B environment node now replaces the sun's tiny default shadow volume with bounded, texel-stable player/observer shadow coverage and source-calibrated player/NPC head clearance. Symmetric motion separation leaves static traversal, tools, carts and NPC/NPC body contacts unchanged. NPC-initiated talk/visit also finishes at its existing 2.2 m interaction reach instead of waiting inside the new head envelope. Source-height, ground-relative dialogue anchors keep the measured speech bubble on screen at legal contact distance; native approach/dialogue/save/reload and observer-pan coverage retains the existing cases. This is not full scene/pose/performance acceptance.
 

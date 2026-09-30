@@ -1,21 +1,29 @@
 import { expect, type Page } from '@playwright/test';
 
 // Headless pointer lock does not reliably convert out-of-viewport absolute mouse
-// coordinates to the requested deltas. Dispatch relative DOM mouse input through
-// PointerLockControls' normal listener; never mutate a camera or game action directly.
-// Native click acquires pointer lock, and E/menu clicks remain native Playwright input.
+// coordinates to deltas. Use the ordinary PointerLockControls event listener, never
+// camera/game state writes. Native Start/E/menu input is unchanged.
 export async function lookForObject(page:Page,title:string,yaw:number,pitch:number) {
   await expect.poll(()=>page.evaluate(()=>document.pointerLockElement?.tagName)).toBe('CANVAS');
-  const canvas=page.locator('#game canvas');
-  await canvas.dispatchEvent('mousemove',{movementX:yaw/.002,movementY:0});
-  for(const adjustment of [0,.10,-.10,.20,-.20]){
-    const downward=Math.max(.1,Math.min(1.4,pitch+adjustment));
-    // Calibrate using the controller's ordinary pitch limit, then look back up to the
-    // intended elevation. This also accommodates the initial OrbitControls look angle.
-    await canvas.dispatchEvent('mousemove',{movementX:0,movementY:2000});
-    await canvas.dispatchEvent('mousemove',{movementX:0,movementY:(downward-Math.PI/2)/.002});
-    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-    if((await page.locator('#prompt').innerText()).includes(title))return;
-  }
-  await expect(page.locator('#prompt')).toContainText(title,{timeout:5_000});
+  // Keep the same yaw, five pitch candidates, pitch limits and two rendered frames.
+  // The retained failure trace showed multi-second selector/dispatch round trips;
+  // batching the input/read checkpoint removes that overhead, not an assertion.
+  const found=await page.evaluate(async({title,yaw,pitch})=>{
+    const canvas=document.querySelector('#game canvas');
+    if(!canvas||document.pointerLockElement!==canvas)throw new Error('Relative look requires the real locked game canvas');
+    const look=(x:number,y:number)=>{
+      const event=new MouseEvent('mousemove',{bubbles:true});
+      Object.defineProperties(event,{movementX:{value:x},movementY:{value:y}});
+      canvas.dispatchEvent(event);
+    };
+    look(yaw/.002,0);
+    for(const adjustment of [0,.10,-.10,.20,-.20]){
+      const downward=Math.max(.1,Math.min(1.4,pitch+adjustment));
+      look(0,2000);look(0,(downward-Math.PI/2)/.002);
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+      if(document.querySelector<HTMLElement>('#prompt')?.innerText.includes(title))return true;
+    }
+    return false;
+  },{title,yaw,pitch});
+  if(!found)await expect(page.locator('#prompt')).toContainText(title,{timeout:5_000});
 }

@@ -98,6 +98,8 @@ export interface NpcState {
   name: string;
   role: NpcRole;
   position: Vec2;
+  /** Authoritative facing for oriented contact; omitted legacy version-1 saves face +Z. */
+  heading?: number;
   home: Vec2;
   workAt?: string;
   mood: Mood;

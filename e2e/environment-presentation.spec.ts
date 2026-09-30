@@ -3,6 +3,7 @@ import type { WorldPersistenceSnapshot, DecisionResponse } from '../src/types.js
 import type { StaticCollider,PhysicsTrigger } from '../src/world/finePhysics.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
+import { waitForPlayerZBelow } from './helpers/frame-position.js';
 
 interface TreeView {id:string;height:number;position:{x:number;z:number};collider:StaticCollider;trigger:PhysicsTrigger;}
 interface SoleView {id:string;animation:string;vertices:number;ground:number;sole:number;position:{x:number;z:number};}
@@ -47,7 +48,7 @@ test('adult sourced tree has reachable trunk contact, visible approach and conse
     const before=await player(page);
     try{
       await page.keyboard.down('KeyW');
-      await expect.poll(async()=>(await player(page)).z,{timeout:20_000,intervals:[120]}).toBeLessThan(tree.collider.maxZ+.43);
+      await waitForPlayerZBelow(page,tree.collider.maxZ+.43,20_000);
       await page.waitForTimeout(450);
     }finally{await page.keyboard.up('KeyW');}
     const contact=await player(page);
@@ -90,24 +91,31 @@ test('rendered NPC soles remain supported through ordinary idle and moving simul
   await startFirstPerson(page);
   // Decision pause does not freeze paths/animations. Track the nearest source actor
   // through ordinary relative-look input rather than photographing an empty fixed view.
-  const canvas=page.locator('#game canvas');
   let heading=0;
   const frameActor=async()=>{
-    const origin=await player(page);
-    const actors=await soles(page);
-    const actor=actors.sort((a,b)=>Math.hypot(a.position.x-origin.x,a.position.z-origin.z)-Math.hypot(b.position.x-origin.x,b.position.z-origin.z))[0];
-    expect(actor).toBeTruthy();
-    const dx=actor.position.x-origin.x,dz=actor.position.z-origin.z;
-    const distance=Math.hypot(dx,dz);
-    expect(distance).toBeLessThan(12);
-    const nextHeading=Math.atan2(dx,-dz);
-    const turn=Math.atan2(Math.sin(nextHeading-heading),Math.cos(nextHeading-heading));
-    await canvas.dispatchEvent('mousemove',{movementX:turn/.002,movementY:0});heading=nextHeading;
-    const pitch=Math.atan2(1.7-.9,distance);
-    await canvas.dispatchEvent('mousemove',{movementX:0,movementY:2000});
-    await canvas.dispatchEvent('mousemove',{movementX:0,movementY:(pitch-Math.PI/2)/.002});
-    await page.evaluate(()=>new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))));
-    return {actor,origin,heading,pitch};
+    const framed=await page.evaluate(async heading=>{
+      const data=document.querySelector<HTMLElement>('#worldStatus')!.dataset;
+      const origin={x:Number(data.playerX),z:Number(data.playerZ)};
+      const actors=JSON.parse(data.characterSoles??'[]') as SoleView[];
+      const actor=actors.sort((a,b)=>Math.hypot(a.position.x-origin.x,a.position.z-origin.z)-Math.hypot(b.position.x-origin.x,b.position.z-origin.z))[0];
+      if(!actor)throw new Error('No current sourced actor to frame');
+      const dx=actor.position.x-origin.x,dz=actor.position.z-origin.z,distance=Math.hypot(dx,dz);
+      if(!(distance<12))throw new Error(`Source actor is out of framing range: ${distance}`);
+      const nextHeading=Math.atan2(dx,-dz);
+      const turn=Math.atan2(Math.sin(nextHeading-heading),Math.cos(nextHeading-heading));
+      const pitch=Math.atan2(1.7-.9,distance),canvas=document.querySelector('#game canvas')!;
+      const look=(x:number,y:number)=>{
+        const event=new MouseEvent('mousemove',{bubbles:true});
+        Object.defineProperties(event,{movementX:{value:x},movementY:{value:y}});
+        canvas.dispatchEvent(event);
+      };
+      look(turn/.002,0);look(0,2000);look(0,(pitch-Math.PI/2)/.002);
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+      return {actor,origin,heading:nextHeading,pitch,distance};
+    },heading);
+    heading=framed.heading;
+    expect(framed.actor).toBeTruthy();expect(framed.distance).toBeLessThan(12);
+    return framed;
   };
   const pausedFraming=await frameActor();
   await info.attach('npc-decision-paused-support-context',{body:await page.screenshot(),contentType:'image/png'});
@@ -135,11 +143,11 @@ test('native approach respects source head clearance while dialogue and observer
   const revision=await seed(request,{x:-9,z:-7.5});
   // One read-only DOM snapshot per checkpoint avoids mixing frames and spending
   // the transient speech lifetime on repeated protocol round trips.
-  const readView=()=>status(page).evaluate(el=>{
-    const d=(el as HTMLElement).dataset;
+  const readView=()=>page.evaluate(()=>{
+    const d=document.querySelector<HTMLElement>('#worldStatus')!.dataset;
     return {player:{x:Number(d.playerX),z:Number(d.playerZ)},mode:d.cameraMode,
       body:d.playerBodyPresent==='true',discovered:d.discoveredChunks,
-      actors:JSON.parse(d.characterSoles??'[]') as (SoleView&{minimumPlayerSeparation:number})[],
+      actors:JSON.parse(d.characterSoles??'[]') as (SoleView&{minimumPlayerSeparation:number;headYaw:number;headEnvelope:unknown;playerHeadClearance:number|null})[],
       buildings:JSON.parse(d.homeBuildingAnchors??'[]') as {id:string;center:{x:number;z:number};frontage:{x:number;z:number};blockedAtCenter:boolean;ownTrigger:boolean}[],
       shadow:JSON.parse(d.shadowView??'{}') as {mode:string;halfExtent:number;mapSize:number;focus:number[]}};
   });
@@ -156,7 +164,9 @@ test('native approach respects source head clearance while dialogue and observer
   await startFirstPerson(page);
   const initial=await readView();
   const actor=initial.actors.find(a=>a.id==='ren')!;expect(actor.position).toEqual({x:-9,z:-11});
-  const separation=actor.minimumPlayerSeparation;expect(separation).toBeCloseTo(1.75,8);
+  const separation=actor.minimumPlayerSeparation;expect(separation).toBeCloseTo(1.05,8);
+  expect(actor.headEnvelope).toEqual({minX:-1.30,maxX:1.35,minZ:-1.15,maxZ:.75});
+  expect(actor.headYaw).toBe(0);
   const before=initial.player;
   expect(initial.buildings.length).toBe(12);
   const bakery=initial.buildings.find(b=>b.id==='building_面包房')!;
@@ -164,7 +174,7 @@ test('native approach respects source head clearance while dialogue and observer
   for(const building of initial.buildings){expect(building.blockedAtCenter).toBe(true);expect(building.ownTrigger).toBe(true);}
   try{
     await page.keyboard.down('KeyW');
-    await expect.poll(async()=>(await player(page)).z-actor.position.z,{timeout:20_000}).toBeLessThan(separation+.25);
+    await waitForPlayerZBelow(page,actor.position.z+separation+.25,20_000);
     await page.waitForTimeout(500);
   }finally{await page.keyboard.up('KeyW');}
   const contacted=await readView(),contact=contacted.player;
@@ -172,6 +182,7 @@ test('native approach respects source head clearance while dialogue and observer
   expect(contact.z-actor.position.z).toBeGreaterThanOrEqual(separation-.0001);
   expect(before.z-contact.z).toBeGreaterThan(1.4);
   expect(contacted.actors.find(a=>a.id==='ren')!.position).toEqual(actor.position);
+  expect(contacted.actors.find(a=>a.id==='ren')!.playerHeadClearance).toBeGreaterThanOrEqual(-.0001);
   await lookForObject(page,'莲',0,.22);
   await info.attach('npc-native-head-clearance',{body:await page.screenshot(),contentType:'image/png'});
   // Observe the rendered bubble atomically before E. Sequential CDP visibility and

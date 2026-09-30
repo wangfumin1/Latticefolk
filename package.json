@@ -20,7 +20,8 @@
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "start": "NODE_ENV=production tsx server/index.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "validate:local": "node scripts/validate-local.mjs"
   },
   "keywords": [
     "autonomous-agents",

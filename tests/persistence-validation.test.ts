@@ -362,3 +362,22 @@ test('pre-revision version-1 SQLite data gains revision zero without resetting t
     fs.rmSync(dir,{recursive:true,force:true});
   }
 });
+
+
+test('additive NPC heading persists for home/fine characters and rejects nonfinite orientation',()=>{
+  const store=new WorldPersistence(':memory:');
+  try {
+    const legacy=validSnapshot();saveCurrent(store,legacy);
+    assert.equal(store.load()!.homeNpcs![0].heading,undefined);
+    const current=validSnapshot();current.homeNpcs![0].heading=-1.83;current.fineChunks[0].npcStates[0].heading=2.1;
+    saveCurrent(store,current);
+    assert.equal(store.load()!.homeNpcs![0].heading,-1.83);
+    assert.equal(store.load()!.fineChunks[0].npcStates[0].heading,2.1);
+    const revision=store.revision();
+    for(const heading of [NaN,Infinity,-Infinity,'east',null]) {
+      const invalid=structuredClone(current);(invalid.homeNpcs![0] as unknown as {heading:unknown}).heading=heading;
+      assert.throws(()=>saveCurrent(store,invalid),WorldSnapshotValidationError);
+      assert.equal(store.revision(),revision);assert.equal(store.load()!.homeNpcs![0].heading,-1.83);
+    }
+  } finally {store.close();}
+});

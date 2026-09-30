@@ -100,3 +100,8 @@ API Key 只应存在于服务端环境变量。
 ## 致谢与许可
 
 感谢 Three.js、Quaternius、TypeSafe/Jev 以及所有贡献者。源码采用 [MIT](../LICENSE)；随仓库分发的第三方素材许可详见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。研究或演示引用可使用 [CITATION.cff](../CITATION.cff)。
+
+
+不使用 GitHub Actions 的本地验证：`npm run validate:local`。执行前保存完整源码与哈希，执行后保留浏览器证据；E2E 使用独立数据库，不重置玩家正常存档。详见[本地验证边界](local-validation.md)。
+
+烘焙 NPC 先通过正常寻路与碰撞走到模型外的工作站位再生产；版本 1 存档兼容新增可选朝向，避免重载后头部碰撞方向改变。旧存档缺省朝向仍为 +Z，无需迁移或重置。

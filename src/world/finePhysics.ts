@@ -66,12 +66,20 @@ export interface SegmentContactHit {
   point:PhysicsPoint;
 }
 
+/** Additional deterministic motion-only boundaries; tools and static body queries do not use these. */
+export interface KinematicConstraint {
+  id:string;
+  /** Signed clearance at a candidate mover center. Must be pure; negative means overlap. */
+  clearance:(position:PhysicsPoint)=>number;
+}
+
 export interface KinematicMoveInput {
   id:string;
   position:PhysicsPoint;
   displacement:PhysicsPoint;
   radius:number;
   dynamic?:readonly DynamicCollider[];
+  constraints?:readonly KinematicConstraint[];
   maxSubstep?:number;
   /** Maximum traversable ground angle in radians. Defaults to 45 degrees. */
   maxSlope?:number;
@@ -282,6 +290,16 @@ export class FinePhysicsAuthority {
           if(candidateDistanceSq>currentDistanceSq+1e-9)continue;
         }
         dynamics.push(other.id);
+      }
+      for(const constraint of input.constraints||[]){
+        if(constraint.id===input.id)continue;
+        const candidate=constraint.clearance({x:cx,z:cz});
+        if(Number.isFinite(candidate)&&candidate>=-1e-9)continue;
+        const current=constraint.clearance({x,z});
+        // Recover an overlapping legacy save by ordinary outward motion only.
+        // A nonfinite boundary fails closed rather than admitting unverified movement.
+        if(Number.isFinite(current)&&Number.isFinite(candidate)&&current<0&&candidate>current+1e-9)continue;
+        dynamics.push(constraint.id);
       }
       const terrain:string[]=[];
       const currentGround=this.groundContactAt(x,z),candidateGround=this.groundContactAt(cx,cz);
