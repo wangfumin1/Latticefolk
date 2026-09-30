@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as THREE from 'three';
-import { normalizeNatureMaterials, prepareNatureMaterials, NATURE_SOURCE_HASHES } from '../scripts/lib/nature-materials.mjs';
+import { normalizeNatureMaterials, prepareNatureMaterials, NATURE_SOURCE_HASHES, NATURE_SOURCE_MATERIAL_COUNTS } from '../scripts/lib/nature-materials.mjs';
 import { sourceGltf } from './helpers/source-gltf.js';
 
 const root=new URL('../public/assets/kenney/nature/',import.meta.url);
@@ -14,14 +14,14 @@ function glb(bytes:Buffer){
   return {json:JSON.parse(bytes.subarray(20,20+length).toString('utf8')),bin:bytes.subarray(20+length)};
 }
 for(const name of Object.keys(NATURE_SOURCE_HASHES)){
-  test(`${name} fixes only the four reviewed metallic factors and preserves all source data`,async()=>{
+  test(`${name} fixes only the reviewed metallic factors and preserves all source data`,async()=>{
     const bytes=fs.readFileSync(new URL(`${name}.source.glb`,root));
     const source=glb(bytes);
     const output=normalizeNatureMaterials(bytes,name);
     assert.equal(output.readUInt32LE(8),output.length);
     const normalized=glb(output);
     assert.deepEqual(normalized.bin,source.bin,'unchanged vertices, normals, indices and UV buffer');
-    assert.equal(normalized.json.materials.length,2);
+    assert.equal(normalized.json.materials.length,NATURE_SOURCE_MATERIAL_COUNTS[name as keyof typeof NATURE_SOURCE_MATERIAL_COUNTS]);
     for(const material of normalized.json.materials){
       assert.equal(material.pbrMetallicRoughness.metallicFactor,0);
       material.pbrMetallicRoughness.metallicFactor=1;
@@ -38,7 +38,7 @@ for(const name of Object.keys(NATURE_SOURCE_HASHES)){
         assert.equal((material as THREE.MeshStandardMaterial).metalness,0);count++;
       }
     });
-    assert.equal(count,2);
+    assert.equal(count,NATURE_SOURCE_MATERIAL_COUNTS[name as keyof typeof NATURE_SOURCE_MATERIAL_COUNTS]);
   });
 }
 
@@ -47,7 +47,7 @@ test('nature material preparation is idempotent and preserves output when the so
   const target=pathToFileURL(`${dir}${path.sep}`);
   try {
     for(const name of Object.keys(NATURE_SOURCE_HASHES))fs.copyFileSync(new URL(`${name}.source.glb`,root),new URL(`${name}.source.glb`,target));
-    assert.equal(prepareNatureMaterials(target),2);assert.equal(prepareNatureMaterials(target),0);
+    assert.equal(prepareNatureMaterials(target),Object.keys(NATURE_SOURCE_HASHES).length);assert.equal(prepareNatureMaterials(target),0);
     const before=fs.readFileSync(new URL('crops_dirtDoubleRow.glb',target));
     fs.appendFileSync(new URL('crops_dirtDoubleRow.source.glb',target),'corrupt');
     assert.throws(()=>prepareNatureMaterials(target),/Unrecognized/);
