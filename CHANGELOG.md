@@ -8,6 +8,9 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- One-shot dropped parcels now use the existing licensed crate with an explicit localized payload label, debit only after successful registration, restore dynamic home/fine identity and ownership, detach after player/NPC pickup, and never participate in authored resource respawn. Full-save acknowledgements prevent a compact final beacon from committing only one side of an unacknowledged fine transfer; absolute zero player coordinates remain valid. See [portable objects](docs/portable-objects.md).
+- Oldest-due selection fills only the existing free NPC request slots so repeatedly idle home actors do not monopolize first decisions for streamed residents. Concurrency, provider budgets, backoff and observer perception epochs are unchanged. Parcel browser fixtures normalize saved coarse state and verify source-derived physical route preconditions before native input, rather than starting inside tree collision or changing live coordinates.
+
 - Baking NPCs must physically reach a collider-derived exterior work stance before production; solid-center/empty-path planning no longer authorizes crafting in the front aisle. Persist optional finite NPC facing through version-1 home/fine saves so oriented contact does not change on reload. Legacy omitted facing remains +Z, with no table migration or reset.
 
 - Active-path NPCs now resolve a reproduced player/head traffic deadlock with a source-projected, speed-bounded lateral yield through the existing physics authority. Idle NPCs remain stationary; walls, other bodies, original task destinations, provider budgets and observer semantics are retained.

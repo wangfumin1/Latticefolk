@@ -1,0 +1,33 @@
+# Portable objects and one-shot parcels
+
+A `dropped_item` is custody of existing inventory, not a renewable resource node. `portableObjects.ts` owns the synchronous inventory rules; `PortableObjectRuntime` adapts them to the live object, physics, visual and chunk indexes. `TownGame` delegates drop, pickup, restore, fold-back and save acknowledgement to those contracts. Decision providers still choose bounded intentions through the existing endpoint and budget system; they never edit inventory or persistence rows.
+
+## Representation and conservation
+
+Parcels reuse the already-vendored Quaternius `ultimate-fantasy-rts/Crate.gltf` through `crate_rts`, at 0.4 m height. The model represents a container, not a loaf, water vessel or other enclosed item. The localized label explicitly says Parcel/包裹/小包/Paquete and shows the existing item name and quantity. No source geometry, material, license, loader fallback or extra visible door is added. Original asset preparation and provenance remain in force.
+
+Dropping first validates a source inventory slot and constructs a stable-ID parcel with an explicit count. The runtime registers its object, visual target, interaction trigger and source-chunk ownership before debiting one source unit. A registration exception rolls back the partial parcel; it must not create free stock. A live fine NPC keeps its source simulation's `chunkId`, even where the physical drop offset is near a boundary.
+
+Player and NPC pickups validate the live entity and recipient before either side changes. NPCs must be within 2.3 m; players must be in first-person mode and overlap the ordinary interaction trigger. A consumed parcel is detached from all live object/visual/chunk indexes and cannot be picked through a stale menu or competing actor reference. It has no capacity or respawn timer. Existing authored pickup sources retain their original 45-second rule; that rule never applies to inventory drops. Plant/wildlife resource queries do not treat a sealed parcel as exposed vegetation or a water patch.
+
+Fine fold-back counts a parcel's item with the same food/wood/prosperity metrics as that item in NPC inventory. Moving custody between those two representations must not produce a coarse resource delta by itself. This is a parcel-custody rule, not a claim that every production, migration or economy path has been audited.
+
+## Version-1 saves and final checkpoints
+
+Available legacy drops without an explicit count normalize to one item; consumed legacy timer rows are not resurrected. Dynamic home parcels are reconstructed even when no authored runtime object has that ID. Fine parcels are restored with their existing owner and registered with the materialized chunk. An old far parcel misfiled under home objects moves only into an already visited fine snapshot, or waits until ordinary first-person materialization creates a real owner. Restore does not discover chunks or fabricate replacement history. Zero and negative player coordinates remain valid absolute positions.
+
+Full saves use the existing revision CAS. `ItemTransferCheckpoint` records which fine-item changes were included when a full snapshot was captured, and acknowledges only that captured generation after a valid server revision response. A later transfer is not made durable by an older acknowledgement.
+
+The compact unload/final-beacon snapshot omits fine rows. While a fine transfer is unacknowledged, sending it could save a player's reward without removing the durable fine parcel. The runtime therefore skips that partial checkpoint and retains the last complete durable transaction. This does not promise to synchronously flush all history during unload: an unacknowledged transfer may roll back on reload, but its two sides must not be committed separately. Once the full save is acknowledged, the existing compact-checkpoint path is available again. Home-only transfers are present on both sides of the compact home snapshot.
+
+## Decision service and browser preconditions
+
+Free NPC request slots are filled by oldest due time, with stable ID ordering for ties. Removed, busy, not-yet-due and task-owning actors are excluded. The existing concurrency limit, idle backoff, provider endpoint, budget checks and perception epoch remain unchanged. Home-first map iteration previously allowed repeatedly idle home actors to delay a streamed resident's first decision beyond the parcel test's 45-second wait; changing service order does not grant extra calls or guarantee a wall-clock response deadline.
+
+A fine browser fixture must normalize the coarse state exactly as `restoreKnownChunks` does before deriving resident positions. Plant initialization changes the number of generated natural objects and thus subsequent deterministic random draws. The parcel route fixture then checks the unchanged source-derived tree trunk bounds, ordinary rock colliders, NPC bodies and source-head envelopes. It chooses an existing water-carrying resident whose original donor-relative starting point and A/D round trip are physically valid. It does not move/delete generated actors or objects, disable collision, teleport the player, or choose new coordinates after a failed live movement. Rejected candidates and the resolved trunk bounds are attached to the executed browser report. A regression retains the first resident's known tree_11 overlap so that an invalid setup cannot silently return.
+
+## Verification scope
+
+`tests/portable-objects.test.ts` covers all item kinds, competing pickup, legacy normalization, inventory validation, authored respawn isolation, fold-back equality, absolute-coordinate restore, acknowledgement ordering and SQLite reopen. `tests/portable-object-runtime.test.ts` exercises actual registration/removal adapters, source ownership, rollback, God View and stale references. Source-geometry tests verify the unchanged licensed parcel model. Decision-order and fixture tests cover the two observed first-parcel failure causes.
+
+`e2e/portable-objects.spec.ts` uses the real scene and ordinary input for home pickup, zero-coordinate reload, fine unload/revisit/player pickup, a held full-save/final-beacon transaction and bounded NPC drop/pickup. Waiting through the former respawn interval uses real elapsed time. Fixtures may seed legal persistent starting state and return bounded provider proposals; they never invoke gameplay actions or write live positions. Each accepted result must identify the exact source snapshot and preserve original logs, JSON/HTML reports, trace and screenshots. Earlier unit totals or unrelated browser successes do not validate a later candidate. These targeted journeys are not full-world exploration, all Phase B/C/D acceptance or unscripted free play.

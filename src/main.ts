@@ -11,6 +11,10 @@ import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
+import { PortableObjectRuntime } from './world/portableObjectRuntime';
+import { dueNpcDecisions } from './world/npcDecisionScheduling';
+import { advancePickupRespawn, droppedItemCount, portableItemMetrics, restoredPlayerPosition } from './world/portableObjects';
+import { droppedParcelLabel, droppedParcelSpec } from './scene/droppedParcel';
 import { CharacterSoles } from './scene/characterSoles';
 import { SunShadowView } from './scene/sunShadow';
 import { characterOverlay } from './scene/characterOverlay';
@@ -289,6 +293,7 @@ class TownGame {
   movableDirty = false;
   movableSaveTimer?: number;
   movableSaveRetryMs = 1500;
+  readonly portables = new PortableObjectRuntime(this);
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -541,6 +546,8 @@ class TownGame {
   }
 
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
+    const parcel=droppedParcelSpec(state);
+    if(parcel)return this.addAssetObject(state,parcel.asset,parcel.height);
     if(state.kind==='farm_plot')return this.addFarmPlotObject(state);
     if(state.kind==='well'){
       return this.addAssetObject(
@@ -567,7 +574,7 @@ class TownGame {
       case 'water_patch':
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
       default:
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(.85,.85,.85),new THREE.MeshStandardMaterial({color:state.item==='wood'?0x795234:0xb48b55})); mesh.position.y=.43;
+        throw new Error(`Missing sourced semantic visual: ${state.kind} (${state.id})`);
     }
     if (!g.children.length) g.add(mesh);
     for(const child of g.children) { child.castShadow=true; child.receiveShadow=true; }
@@ -1147,7 +1154,7 @@ class TownGame {
     this.minuteOfDay=Math.max(0,Number(snapshot.meta.minuteOfDay)||0);
     this.weather=String(snapshot.meta.weather||'clear');
     this.playerInventory={...this.playerInventory,...snapshot.meta.playerInventory};
-    this.playerPosition={x:Number(snapshot.meta.playerPosition?.x||0),z:Number(snapshot.meta.playerPosition?.z||7)};
+    this.playerPosition=restoredPlayerPosition(snapshot.meta.playerPosition);
     this.camera.position.x=this.playerPosition.x;
     this.camera.position.z=this.playerPosition.z;
 
@@ -1196,6 +1203,7 @@ class TownGame {
     }
 
     for(const saved of snapshot.homeObjects||[]){
+      if(this.portables.restoreHome(saved))continue;
       const runtime=this.objects.get(saved.id);
       if(!runtime)continue;
       if(runtime.state.kind==='building'){
@@ -1229,6 +1237,7 @@ class TownGame {
       lastSaveSucceeded=false;
       try{
         this.flushWildlifeHabitatExposure();
+        const itemTransferVersion=this.portables.checkpoint.capture();
         const snapshot=this.buildWorldSnapshot();
         const expectedRevision=this.persistenceRevision;
         const response=await fetch('/api/world/state',{
@@ -1252,6 +1261,7 @@ class TownGame {
           throw new Error('Invalid persistence revision acknowledgement');
         }
         this.persistenceRevision=revision;
+        this.portables.checkpoint.acknowledge(itemTransferVersion);
         lastSaveSucceeded=true;
       }catch(error){
         this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
@@ -1299,7 +1309,8 @@ class TownGame {
   }
 
   flushWorldBeacon() {
-    if(!this.persistenceReady||this.persistenceConflict)return;
+    // Do not persist only the reward side of an unacknowledged fine parcel transfer.
+    if(!this.persistenceReady||this.persistenceConflict||this.portables.checkpoint.pending)return;
     try{
       const snapshot=this.buildFinalWorldSnapshot();
       const payload=JSON.stringify({snapshot,expectedRevision:this.persistenceRevision});
@@ -1368,10 +1379,12 @@ class TownGame {
       const saved=cachedObjects.get(p.state.id);
       const state=structuredClone(saved||p.state);
       state.chunkId=chunk.id;
-      if(state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
+      if(state.kind!=='dropped_item'&&state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
       this.addObject(state,p.asset,p.height,p.rotationY||0);
       runtime.objectIds.push(state.id);
     }
+
+    this.portables.restoreFine(cached?.objectStates||[],chunk.id);
 
     for(const p of plan.residents){
       const saved=cachedNpcs.get(p.id);
@@ -1621,6 +1634,10 @@ class TownGame {
     let food=0,wood=0,ecology=0,prosperity=0,shrub=0,fruit=0,crop=0;
     for(const id of runtime.objectIds){
       const o=this.objects.get(id)?.state;if(!o)continue;
+      if(o.kind==='dropped_item'){
+        if(o.item){const value=portableItemMetrics(o.item,droppedItemCount(o));food+=value.food;wood+=value.wood;prosperity+=value.prosperity;}
+        continue;
+      }
       const amount=Math.max(0,o.resourceAmount||0);
       if(o.item==='apple'||o.item==='grain'||o.item==='bread'||o.item==='flour')food+=amount;
       if(o.kind==='farm_plot')crop+=amount;
@@ -1638,9 +1655,8 @@ class TownGame {
       const n=this.npcs.get(id)?.state;if(!n)continue;
       prosperity+=n.money;
       for(const slot of n.inventory){
-        if(['apple','grain','bread'].includes(slot.kind))food+=slot.count;
-        if(slot.kind==='wood')wood+=slot.count;
-        prosperity+=slot.kind==='tool'?slot.count*2:slot.count*.1;
+        const value=portableItemMetrics(slot.kind,slot.count);
+        food+=value.food;wood+=value.wood;prosperity+=value.prosperity;
       }
     }
     return {food,wood,ecology,prosperity,shrub,fruit,crop};
@@ -1763,7 +1779,7 @@ class TownGame {
     const seasonFactor=season==='spring'?1.35:season==='summer'?1.0:season==='autumn'?.72:.24;
     const weatherFactor=this.weather==='rain'?1.35:this.weather==='cloudy'?1.05:.9;
     for(const o of this.objects.values()){
-      if(o.state.respawnAt && t>=o.state.respawnAt){o.state.respawnAt=undefined;o.state.pickupable=true;o.mesh.visible=true;}
+      if(advancePickupRespawn(o.state,t))o.mesh.visible=true;
       const s=o.state;
       if(s.resourceCapacity===undefined||s.resourceAmount===undefined||s.resourceAmount>=s.resourceCapacity)continue;
       let rate=0;
@@ -1984,7 +2000,7 @@ class TownGame {
       diseasePressure:source?.wildlifeDisease?.speciesPressure[animal.state.species]??source?.wildlife?.find(x=>x.species===animal.state.species)?.diseaseLoad??0
     };
     const nearbyResources=[...this.objects.values()]
-      .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
+      .filter(o=>o.state.kind!=='dropped_item'&&o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
       .map(o=>({id:o.state.id,tags:o.state.tags,distance:dist(animal.state.position,o.state.position),resourceAmount:o.state.resourceAmount}))
       .sort((a,b)=>a.distance-b.distance).slice(0,16);
     const nearbyWildlife=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed)
@@ -2047,8 +2063,11 @@ class TownGame {
     let target:Vec2|undefined;
 
     if(decision.action==='drink'||decision.action==='graze'||decision.action==='forage'){
-      const object=(decision.targetObjectId&&this.objects.get(decision.targetObjectId))||this.findWildlifeResource(animal,decision.action);
-      if(object){s.targetObjectId=object.state.id;target=object.state.position;}
+      const chosen=decision.targetObjectId?this.objects.get(decision.targetObjectId):undefined;
+      const object=chosen&&chosen.state.kind!=='dropped_item'&&chosen.mesh.visible
+        ?chosen:this.findWildlifeResource(animal,decision.action);
+      s.targetObjectId=object?.state.id;
+      if(object)target=object.state.position;
     }else if(decision.action==='hunt'||decision.action==='seek_mate'){
       const other=(decision.targetWildlifeId&&this.wildlife.get(decision.targetWildlifeId))||this.findWildlifeTarget(animal,decision.action);
       if(other){s.targetWildlifeId=other.state.id;target=other.state.position;}
@@ -2082,7 +2101,7 @@ class TownGame {
   }
 
   findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
-    const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
+    const candidates=[...this.objects.values()].filter(o=>o.state.kind!=='dropped_item'&&o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
     const forageTags=wildlifeSpeciesProfile(animal.state.species).forageTags;
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const wanted=(o:RuntimeObject)=>{
@@ -2117,6 +2136,11 @@ class TownGame {
     const s=animal.state;
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(s.phenotype,s.id));
     const object=s.targetObjectId?this.objects.get(s.targetObjectId):undefined;
+    // Sealed inventory parcels are not exposed plants or water. A stale provider
+    // target must not consume fractional parcel stock or grant a free need outcome.
+    if(object?.state.kind==='dropped_item'&&['drink','graze','forage'].includes(s.currentAction)){
+      s.targetObjectId=undefined;s.currentAction='rest';animal.actionResolved=true;return;
+    }
     const other=s.targetWildlifeId?this.wildlife.get(s.targetWildlifeId):undefined;
     switch(s.currentAction){
       case 'drink':
@@ -2763,8 +2787,12 @@ class TownGame {
       agent.mixer?.update(dt);
       if(agent.mixer)this.alignNpcVisualToGround(agent);
       if(agent.task && agent.path.length===0) this.completeTask(agent);
-      if(!this.aiPaused&&!agent.pendingDecision&&this.inFlight<this.maxInFlight&&now()>=agent.nextDecisionAt&&!agent.task) this.requestDecision(agent);
       n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;n.heading=agent.mesh.rotation.y;
+    }
+    if(!this.aiPaused){
+      for(const agent of dueNpcDecisions(this.npcs.values(),now(),this.maxInFlight-this.inFlight)){
+        void this.requestDecision(agent);
+      }
     }
   }
 
@@ -3084,7 +3112,7 @@ class TownGame {
   }
 
   pickupForNpc(agent:NpcRuntime,obj:RuntimeObject) {
-    if(!obj.state.pickupable||!obj.state.item)return; this.addInventory(agent.state.inventory,obj.state.item,1);obj.state.pickupable=false;obj.state.respawnAt=Date.now()+45_000;obj.mesh.visible=false;this.event(`${agent.state.name} 拾取了 ${obj.state.name}。`);
+    this.portables.pickupForNpc(agent,obj);
   }
 
   useObjectNpc(agent:NpcRuntime,obj:RuntimeObject) {
@@ -3096,10 +3124,7 @@ class TownGame {
   }
 
   dropNpcItem(agent:NpcRuntime) {
-    const item=agent.state.inventory.find(i=>i.count>0);if(!item)return;item.count--;
-    const id=`drop_${agent.state.id}_${Date.now()}`; const p={x:agent.state.position.x+.7,z:agent.state.position.z+.4};
-    this.addObject({id,kind:'dropped_item',name:`掉落的${this.itemName(item.kind)}`,position:p,tags:['dropped',item.kind],usable:false,pickupable:true,item:item.kind});
-    this.event(`${agent.state.name} 放下了 ${this.itemName(item.kind)}。`);
+    this.portables.drop(agent);
   }
 
   async npcConversation(a:NpcRuntime,b:NpcRuntime,intent:SocialIntent) {
@@ -3281,6 +3306,9 @@ class TownGame {
 
   executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
     const s=o.state;
+    // A menu may outlive its target or a camera-mode change. Revalidate at execution.
+    if(this.cameraMode!=='firstPerson'||this.objects.get(s.id)!==o||!o.mesh.visible||!this.playerOverlapsObjectTrigger(s.id))return;
+    if(!(s.capabilities?.length?s.capabilities:this.defaultCapabilities(s)).includes(action))return;
     const takeFirst=()=>{
       const order:ItemKind[]=['flower','apple','grain','flour','wood','plank','stone','water','tool','bread'];
       return order.find(k=>this.playerInventory[k]>0);
@@ -3288,8 +3316,11 @@ class TownGame {
     switch(action){
       case 'inspect':
         this.toast(`${s.name} · ${s.tags.join(' / ')}`);break;
-      case 'pickup':
-        if(s.item){this.playerInventory[s.item]++;s.pickupable=false;s.respawnAt=Date.now()+45_000;o.mesh.visible=false;this.toast(`获得：${this.itemName(s.item)}`);this.event(`玩家拾取了 ${s.name}。`);}break;
+      case 'pickup': {
+        const received=this.portables.pickupForPlayer(o);
+        if(received){this.toast(`${this.itemName(received.kind)} ×${received.count}`);this.event(`玩家拾取了 ${s.name}。`);}
+        break;
+      }
       case 'draw_water':
         this.playerInventory.water++;this.toast('打了一份井水');this.event('玩家从水井取水。');break;
       case 'drink':
@@ -3429,6 +3460,7 @@ class TownGame {
         ...object.mesh.userData.ovenPhysics};
     });
     ui.world.dataset.bakingOvens=JSON.stringify(ovens);
+    ui.world.dataset.portableObjects=JSON.stringify(this.portables.diagnostics());
     const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
       id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
       height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
@@ -3743,6 +3775,7 @@ class TownGame {
   toast(text:string){ui.toast.textContent=text;ui.toast.classList.add('show');setTimeout(()=>ui.toast.classList.remove('show'),2200);}
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
+  parcelLabel(kind:ItemKind,count:number){return droppedParcelLabel(this.locale,this.itemName(kind),count);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 
   playerOverlapsObjectTrigger(objectId:string) {
