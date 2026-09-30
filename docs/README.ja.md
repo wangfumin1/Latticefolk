@@ -12,6 +12,7 @@ Latticefolk は「会話できる NPC デモ」だけを目指していません
 
 ## 現在の主な機能
 
+- シーン復旧では既存の樹木の成木スケール・幹アンカー、現在のスキニングによる足裏支持、有界の接触影とプレイヤー・頭部間隔、原本を保持した作物の非金属マテリアル補正を追加しています。全シーン、座位・睡眠姿勢、全体のプレイ経路の検証は未完了です。[対象範囲](environment-presentation.md)。
 - Three.js の一人称 3D 町と、世界外観察者としての God View。
 - 約 20 種類の bounded NPC action。
 - 建物、井戸、市場、収納、荷車、木、岩、花、道具などを統一した `WorldObject + capabilities` 方式で操作。
@@ -77,3 +78,8 @@ God View も世界外の観察者であり、NPC の知覚対象には入りま�
 ## 貢献・ライセンス
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) を参照してください。コードは [MIT](../LICENSE)。同梱アセットのライセンスは [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) に記録しています。引用情報は [CITATION.cff](../CITATION.cff) にあります。
+
+
+GitHub Actions を使わないローカル検証は `npm run validate:local` です。実行前のソースとハッシュ、実行後のブラウザー証跡を保持し、通常のセーブとは別の E2E データベースを使用します。[検証範囲](local-validation.md)。
+
+パン職人は物理的な移動で炉の外側の作業位置に到達してから生産します。NPC の向きはバージョン 1 セーブの任意項目として保持され、旧セーブでは従来の +Z を使用します。テーブル移行やリセットは不要です。

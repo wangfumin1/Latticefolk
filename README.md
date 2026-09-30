@@ -36,6 +36,8 @@ The project is deliberately **not tied to Jev**. Jev / TypeSafe System One is th
 
 ## Current highlights
 
+- **Source-grounded scene recovery**: adult-scale trunk-anchored trees, current skinned-sole support, bounded contact-shadow coverage, source-calibrated player/head clearance and hash-pinned dielectric crop materials. Full scene/pose/journey recovery remains in progress; see [presentation scope](docs/environment-presentation.md).
+
 - **Playable Three.js town** with first-person controls and an out-of-world God View.
 - **20 bounded NPC actions** including work, harvest, craft, trade, gift, delivery, water collection, patrol, visits, sleep, and exploration.
 - **Unified interactive world objects**: buildings, wells, market stalls, workstations, storage, carts, trees, rocks, flowers, tools, beds, and more expose explicit capabilities instead of being decorative-only.
@@ -250,3 +252,8 @@ If Latticefolk is useful in research, demos, teaching, or derivative simulation 
 ## License
 
 Source code is licensed under [MIT](LICENSE). Bundled third-party assets retain their original licenses; currently redistributed Quaternius assets used by the demo are CC0 and documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+
+Local source-frozen verification without GitHub Actions: `npm run validate:local`. It retains complete source and browser evidence under `.local-validation/` and uses a dedicated E2E database. See [validation boundaries](docs/local-validation.md).
+
+Bakers now approach a source-derived exterior oven stance before producing; optional NPC facing is retained through compatible version-1 saves so oriented contact survives reload.

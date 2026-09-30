@@ -4,6 +4,7 @@ import type { StaticCollider, PhysicsTrigger } from '../src/world/finePhysics.js
 import { planFineChunk } from '../src/world/materialization.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
+import { waitForPlayerZBelow } from './helpers/frame-position.js';
 
 interface OvenEvidence {id:string;asset:string;resolved:boolean;meshes:number;primitives:number;collider:StaticCollider;trigger:PhysicsTrigger}
 async function ovens(page:Page):Promise<OvenEvidence[]> {
@@ -56,7 +57,7 @@ for(const scenario of cases){
       // pass through it. A wrong heading or an obstructing NPC is a failing precondition.
       try {
         await page.keyboard.down('KeyW');
-        await expect.poll(async()=>(await position(page)).z,{timeout:20_000,intervals:[120]}).toBeLessThan(oven.collider.maxZ+.43);
+        await waitForPlayerZBelow(page,oven.collider.maxZ+.43,20_000);
         await page.waitForTimeout(450);
       } finally {await page.keyboard.up('KeyW');}
       const contact=await position(page);

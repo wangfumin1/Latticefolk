@@ -441,7 +441,10 @@ test('revision CAS rejects a delayed stale browser writer and stale final beacon
     // us one in-flight browser write to hold while another authority advances the CAS revision.
     await moveWithKeys(page,['ShiftLeft','KeyW'],650);
     await expect.poll(()=>delayedCaptured,{timeout:20_000}).toBe(true);
-    expect(delayedExpectedRevision).toBe(synchronizedRevision);
+    // Autosave may advance between the earlier synchronization and interception.
+    // While this request is held, the exact CAS token must agree with BOTH live authorities.
+    expect(delayedExpectedRevision).toBeGreaterThanOrEqual(synchronizedRevision);
+    expect(delayedExpectedRevision).toBe(await worldStatusNumber(page,'data-persistence-revision'));
     const staleRevision=delayedExpectedRevision;
 
     const beforeAuthority=await serverPersistence(request);
@@ -535,12 +538,16 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   let releaseHeld=()=>{};
   const heldGate=new Promise<void>(resolve=>{releaseHeld=resolve;});
   let heldCompleted=false;
+  let notifyCaptured=()=>{};
+  const captured=new Promise<void>(resolve=>{notifyCaptured=resolve;});
+  let capturedAt=0;
   await page.route('**/api/world/chunks/decide',async route=>{
     if(heldRequest){
       await route.continue();
       return;
     }
     heldRequest=JSON.parse(route.request().postData()||'{}') as ChunkDecisionRequestForE2E;
+    capturedAt=Date.now();notifyCaptured();
     await heldGate;
     const payload={
       source:'e2e-stale-transition',
@@ -561,11 +568,15 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   try{
     // A settled coarse world may legally choose the production 30s cadence.
     // Wait beyond that cadence instead of treating a healthy quiet period as a missing request.
-    await expect.poll(()=>Boolean(heldRequest),{timeout:45_000}).toBe(true);
-    const before=await runtime(page);
-
+    let captureTimer:ReturnType<typeof setTimeout>|undefined;
+    try {
+      await Promise.race([captured,new Promise<never>((_,reject)=>{captureTimer=setTimeout(()=>reject(new Error('No coarse request within 45000 ms')),45_000);})]);
+    } finally {clearTimeout(captureTimer);}
     const transition=await page.evaluate(async()=>{
       const status=()=>document.querySelector<HTMLElement>('#worldStatus');
+      const data=status()!.dataset;
+      const before={coarseRequestTimeouts:Number(data.coarseRequestTimeouts),coarseDecidedChunks:Number(data.coarseDecidedChunks),coarseLastBatchSize:Number(data.coarseLastBatchSize)};
+      const startedAt=performance.now();
       const materialized=()=>Number(status()?.dataset.materializedChunks??'NaN');
       const key=(type:'keydown'|'keyup',code:string)=>window.dispatchEvent(new KeyboardEvent(type,{code,bubbles:true}));
       const until=async(predicate:()=>boolean,timeoutMs:number)=>{
@@ -576,16 +587,17 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
         }
         return true;
       };
-      key('keydown','ShiftLeft');
-      key('keydown','KeyD');
-      const entered=await until(()=>materialized()>0,2_500);
-      key('keyup','KeyD');
-      key('keydown','KeyA');
-      const exited=entered&&await until(()=>materialized()===0,2_500);
-      key('keyup','KeyA');
-      key('keyup','ShiftLeft');
-      return {entered,exited,materialized:materialized()};
+      try {
+        key('keydown','ShiftLeft');key('keydown','KeyD');
+        const entered=await until(()=>materialized()>0,2_500);
+        key('keyup','KeyD');key('keydown','KeyA');
+        const exited=entered&&await until(()=>materialized()===0,2_500);
+        return {before,entered,exited,materialized:materialized(),startedAt,finishedAt:performance.now()};
+      } finally {key('keyup','KeyD');key('keyup','KeyA');key('keyup','ShiftLeft');}
     });
+    releaseHeld(); // Do not spend the production 8-second request lifetime on more CDP calls.
+    const before=transition.before;
+    await testInfo.attach('coarse-native-transition-timing',{body:Buffer.from(JSON.stringify({capturedAt,releasedAt:Date.now(),transition},null,2)),contentType:'application/json'});
     expect(transition.entered).toBe(true);
     expect(transition.exited).toBe(true);
     expect(transition.materialized).toBe(0);

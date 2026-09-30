@@ -90,3 +90,14 @@ test('old saved building frontage follows current layout without losing stored r
   assert.throws(()=>restoreBuildingForLayout(current,{...saved,id:'other'}),/Mismatched building/);
   assert.throws(()=>restoreBuildingForLayout({...current,kind:'crate'},saved),/Mismatched building/);
 });
+
+test('home building restoration keeps layout frontage independent of the unmoved body anchor',()=>{
+  const center={x:-10,z:-18},frontage={x:-10+Math.sin(-.08)*5.65,z:-18+Math.cos(-.08)*5.65};
+  const current:WorldObjectState={id:'building_面包房',kind:'building',name:'面包房',position:frontage,
+    tags:['building','baker'],usable:true,pickupable:false,capabilities:['inspect','visit','store','take'],storage:[]};
+  const saved={...structuredClone(current),position:{x:123,z:456},storage:[{kind:'flour' as const,count:7}]};
+  const restored=restoreBuildingForLayout(current,saved);
+  assert.equal(restored.chunkId,undefined);assert.deepEqual(restored.position,frontage);
+  assert.notDeepEqual(restored.position,center,'semantic frontage must never be used as the building body center');
+  assert.deepEqual(restored.storage,[{kind:'flour',count:7}]);assert.equal(restored.id,current.id);
+});

@@ -21,3 +21,9 @@ Preparation stays offline and idempotent and fails closed on any altered depende
 ## Known remaining presentation debt
 
 The oven implementation does not close the rest of Phase B. Furniture coverage does not establish scene-wide elimination of primitive paths, tree occlusion recovery, continuous terrain presentation, or a completed free-play pass. Those acceptance items remain under #69.
+
+## Kenney crop materials
+
+The two existing Nature Kit exports store four soil/stalk/grain materials as fully metallic (`metallicFactor = 1`). Their immutable bytes are preserved as `crops_dirtDoubleRow.source.glb` and `crops_wheatStageB.source.glb`. `scripts/lib/nature-materials.mjs` checks SHA-256 before rewriting only those four factors to zero in the served GLBs. It preserves the entire BIN chunk, source colors, geometry, normals, UVs, nodes and remaining JSON properties. This is a reviewed, source-specific dielectric adaptation, not a generic runtime material override or a shadow-disabling workaround.
+
+`tests/nature-materials.test.ts` verifies exact source/derived structural equivalence apart from the four factors, actual GLTFLoader metalness, idempotence and tamper rejection. Existing well and oven preparation is retained unchanged. Real crop close-ups remain part of the harvest browser gate; see [environment presentation](environment-presentation.md) for the acceptance scope and remaining shadow/pose work.

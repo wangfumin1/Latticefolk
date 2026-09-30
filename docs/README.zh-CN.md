@@ -14,6 +14,7 @@ Latticefolk 的目标不是做“会聊天的 NPC 演示”，而是让决策模
 
 ## 当前已经实现
 
+- 场景恢复已补入现成树木的成年尺度/树干锚点、当前蒙皮脚底支撑、有界接触阴影、玩家与角色头部间距和保留原件的作物非金属材质修正；全场景、坐卧姿态及完整旅程仍未验收完成。详见[表现层范围](environment-presentation.md)。
 - Three.js 第一人称 3D 小镇与真正的观察者上帝视角。
 - 约 20 种有界 NPC 行为，行为会真实改变库存、金钱、关系和需求。
 - 统一 `WorldObject + capabilities` 交互体系：房屋、水井、市场、箱桶、推车、树木、岩石、花、工具、床、工作台等都属于真实世界对象，而不是单纯装饰。
@@ -99,3 +100,8 @@ API Key 只应存在于服务端环境变量。
 ## 致谢与许可
 
 感谢 Three.js、Quaternius、TypeSafe/Jev 以及所有贡献者。源码采用 [MIT](../LICENSE)；随仓库分发的第三方素材许可详见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。研究或演示引用可使用 [CITATION.cff](../CITATION.cff)。
+
+
+不使用 GitHub Actions 的本地验证：`npm run validate:local`。执行前保存完整源码与哈希，执行后保留浏览器证据；E2E 使用独立数据库，不重置玩家正常存档。详见[本地验证边界](local-validation.md)。
+
+烘焙 NPC 先通过正常寻路与碰撞走到模型外的工作站位再生产；版本 1 存档兼容新增可选朝向，避免重载后头部碰撞方向改变。旧存档缺省朝向仍为 +Z，无需迁移或重置。

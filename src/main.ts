@@ -11,6 +11,17 @@ import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
+import { PortableObjectRuntime } from './world/portableObjectRuntime';
+import { dueNpcDecisions } from './world/npcDecisionScheduling';
+import { advancePickupRespawn, droppedItemCount, portableItemMetrics, restoredPlayerPosition } from './world/portableObjects';
+import { droppedParcelLabel, droppedParcelSpec } from './scene/droppedParcel';
+import { CharacterSoles } from './scene/characterSoles';
+import { SunShadowView } from './scene/sunShadow';
+import { characterOverlay } from './scene/characterOverlay';
+import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
+import { stepNpcYield, type NpcYieldPlan } from './world/npcYield';
+import { bakingWorkApproach, type NpcWorkApproach } from './world/npcWorkApproach';
+import { fitTreeModel, treePhysics, treeVisualHeight } from './scene/treePresentation';
 import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOven } from './scene/bakingOven';
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
@@ -141,7 +152,7 @@ interface VisualTarget {
   resolvedSize?: {x:number;y:number;z:number};
   onResolved?: (model:THREE.Object3D)=>void;
 }
-interface ActionTask { action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
+interface ActionTask { approach?: NpcWorkApproach; action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
 interface FineChunkRuntime {
   chunkId:string;
@@ -172,6 +183,7 @@ interface WildlifeRuntime {
 }
 interface NpcRuntime {
   state: NpcState;
+  characterAsset: string;
   mesh: THREE.Group;
   path: Vec2[];
   pathIndex: number;
@@ -187,7 +199,8 @@ interface NpcRuntime {
   activeAnimation?: string;
   activityAnimation?: string;
   activityAnimationUntil?: number;
-  nextGroundAlignAt: number;
+  soles?: CharacterSoles;
+  yieldPlan?: NpcYieldPlan;
   removed?: boolean;
 }
 
@@ -199,6 +212,8 @@ class TownGame {
   orbit: OrbitControls;
   clock = new THREE.Clock();
   sun = new THREE.DirectionalLight(0xffffff, 1.5);
+  sunShadow = new SunShadowView(this.sun);
+  shadowFocus = new THREE.Vector3();
   ambient = new THREE.HemisphereLight(0xbfe8ff, 0x557044, 1.25);
   physics = new FinePhysicsAuthority();
   npcs = new Map<string,NpcRuntime>();
@@ -235,10 +250,11 @@ class TownGame {
   cameraMode: 'firstPerson'|'god' = 'firstPerson';
   perceptionEpoch = 0;
   playerPosition: Vec2 = {x:0,z:7};
+  playerTravel?: Vec2;
+  playerBlockedNpcs = new Set<string>();
   firstPersonRotation = new THREE.Euler(0,0,0,'YXZ');
   godPointer = new THREE.Vector2(0,0);
   pointerDown?: {x:number;y:number};
-  playerMarker = new THREE.Group();
   // The player is a world participant only in first-person mode. God mode is an out-of-world observer.
   selectionRing = new THREE.Mesh(
     new THREE.RingGeometry(.72,.92,32),
@@ -277,6 +293,7 @@ class TownGame {
   movableDirty = false;
   movableSaveTimer?: number;
   movableSaveRetryMs = 1500;
+  readonly portables = new PortableObjectRuntime(this);
 
   constructor() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -303,10 +320,9 @@ class TownGame {
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
     this.coarseWorld = new CoarseWorldRuntime(this.scene);
-    this.sun.position.set(12,22,8); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048,2048);
+    this.scene.add(this.sun.target);
     this.setupWorld();
-    this.setupPlayerMarker();
+    this.setupSelectionOverlays();
     this.setupNpcs();
     void this.loadVisualAssets();
     this.bindInput();
@@ -426,9 +442,10 @@ class TownGame {
     const g = new THREE.Group();
     // The sourced tree is the only visual, including while it is loading.
     g.position.set(x,0,z); this.scene.add(g);
-    this.physics.registerStatic({id:`tree-decoration:${x}:${z}`,minX:x-.36,maxX:x+.36,minZ:z-.36,maxZ:z+.36});
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
-    this.attachVisualTarget({group:g,asset:variant,height:3.8,rotationY:(x+z)*.17});
+    this.attachVisualTarget({group:g,asset:variant,height:treeVisualHeight(variant),rotationY:(x+z)*.17,
+      onResolved:model=>this.physics.registerStatic(treePhysics(model,`tree-decoration:${x}:${z}`,undefined,false).collider)
+    });
   }
 
   addAssetObject(
@@ -451,7 +468,12 @@ class TownGame {
     this.registerWorldObjectPhysics(state);
     this.attachVisualTarget({
       group:g,asset,height:assetHeight,rotationY,offsetZ,targetWidth,targetDepth,fit,
-      onResolved:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
+      onResolved:state.kind==='tree'?model=>{
+        const physical=treePhysics(model,`object:${state.id}`,state.chunkId);
+        this.physics.registerStatic(physical.collider);
+        if(physical.trigger)this.physics.registerTrigger(physical.trigger);
+        g.userData.treePhysics=physical;
+      }:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
     });
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
@@ -494,7 +516,7 @@ class TownGame {
     const rows=[-1.25,-.42,.42,1.25];
     for(const x of rows)for(const z of [-.72,0,.72]){
       const crop=new THREE.Group();
-      crop.position.set(x,.08,z);
+      crop.position.set(x,.12,z); // The sourced soil's top, not four centimetres below it.
       root.add(crop);
       this.attachVisualTarget({group:crop,asset:'farmWheat',height:.72});
     }
@@ -515,12 +537,17 @@ class TownGame {
       if(state.tags.includes('guard'))return {asset:'weaponStandAsset',height:1.25,width:1.4,depth:1.0,fit:'exactBounds',syncStatic:true};
       return {asset:'workbenchAsset',height:1.0,width:2.0,depth:1.0,fit:'exactBounds',syncStatic:true};
     }
-    if(state.kind==='tree')return {asset:state.id.endsWith('2')?'tree3':'tree2',height:3.5,rotationY:state.position.x*.13};
+    if(state.kind==='tree'){
+      const asset=state.id.endsWith('2')?'tree3':'tree2';
+      return {asset,height:treeVisualHeight(asset),rotationY:state.position.x*.13};
+    }
     if(state.kind==='crate')return {asset:state.id==='barrel_food'?'barrel':'crate_rts',height:state.id==='barrel_food'?1.15:1.05,rotationY:Math.PI/2};
     return undefined;
   }
 
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
+    const parcel=droppedParcelSpec(state);
+    if(parcel)return this.addAssetObject(state,parcel.asset,parcel.height);
     if(state.kind==='farm_plot')return this.addFarmPlotObject(state);
     if(state.kind==='well'){
       return this.addAssetObject(
@@ -532,7 +559,8 @@ class TownGame {
         2.0
       );
     }
-    if(assetOverride)return this.addAssetObject(state,assetOverride,assetHeight||2,rotationY);
+    if(assetOverride)return this.addAssetObject(state,assetOverride,
+      state.kind==='tree'?treeVisualHeight(assetOverride,assetHeight):assetHeight||2,rotationY);
     const semanticSpec=this.semanticAssetSpec(state);
     if(semanticSpec){
       return this.addAssetObject(
@@ -546,7 +574,7 @@ class TownGame {
       case 'water_patch':
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
       default:
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(.85,.85,.85),new THREE.MeshStandardMaterial({color:state.item==='wood'?0x795234:0xb48b55})); mesh.position.y=.43;
+        throw new Error(`Missing sourced semantic visual: ${state.kind} (${state.id})`);
     }
     if (!g.children.length) g.add(mesh);
     for(const child of g.children) { child.castShadow=true; child.receiveShadow=true; }
@@ -631,16 +659,8 @@ class TownGame {
   }
 
 
-  setupPlayerMarker() {
-    const body=new THREE.Mesh(new THREE.BoxGeometry(.7,1.05,.38),new THREE.MeshStandardMaterial({color:0x4d89c8,roughness:.8}));body.position.y=1.2;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.6),new THREE.MeshStandardMaterial({color:0xe7b894,roughness:.9}));head.position.y=2.02;
-    const leg1=new THREE.Mesh(new THREE.BoxGeometry(.25,.75,.28),new THREE.MeshStandardMaterial({color:0x2d3542,roughness:.9}));leg1.position.set(-.19,.38,0);
-    const leg2=leg1.clone();leg2.position.x=.19;
-    this.playerMarker.add(body,head,leg1,leg2);
-    // Do not materialize a player avatar while observing from god mode.
-    this.playerMarker.visible=false;
-    this.playerMarker.userData={entityType:'player',entityId:'player'};
-    this.scene.add(this.playerMarker);
+  setupSelectionOverlays() {
+    // Selection/path overlays are not player entities or formal scene models.
     this.selectionRing.rotation.x=-Math.PI/2;this.selectionRing.position.y=.035;this.selectionRing.visible=false;this.scene.add(this.selectionRing);
     this.pathLine.visible=false;this.pathLine.frustumCulled=false;this.scene.add(this.pathLine);
   }
@@ -670,34 +690,18 @@ class TownGame {
           role==='guard'?[{kind:'bread',count:1}]:[],
         relationships:{},memories:[],currentAction:'idle',goal:'过好今天并照顾自己的需要',lastDecisionAt:0
       };
-      const mesh=this.makeBlockPerson(role); mesh.position.set(x,this.groundHeightAt(x,z),z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
+      const mesh=new THREE.Group(); mesh.position.set(x,this.groundHeightAt(x,z),z); mesh.userData={entityType:'npc',entityId:id}; this.scene.add(mesh);
       const characterAsset:Record<string,string>={mina:'female1',ren:'female2',sora:'male1',kai:'male2',yui:'female1',nao:'male1',haru:'male2',mei:'female2',toma:'male1',aki:'female1'};
       // Cube World characters already face the local +Z direction used by moveNpc.
       this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
-      this.npcs.set(id,{state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0});
+      this.npcs.set(id,{state,characterAsset:characterAsset[id],mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
     }
     for(const a of this.npcs.values()) {
       for(const b of this.npcs.values()) if(a!==b) a.state.relationships[b.state.id]={affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)};
       a.state.relationships.player={affinity:50,trust:50,familiarity:5};
     }
-  }
-
-  makeBlockPerson(role:NpcRole) {
-    const colors:Record<NpcRole,number>={farmer:0x6d9d58,baker:0xd7a06b,shopkeeper:0x5a9ca5,guard:0x6675a4,maker:0x9b718d,resident:0xb58a65};
-    const g=new THREE.Group();
-    const mat=new THREE.MeshStandardMaterial({color:colors[role],roughness:.8});
-    const skin=new THREE.MeshStandardMaterial({color:0xe7b894,roughness:.9});
-    const dark=new THREE.MeshStandardMaterial({color:0x3b342f,roughness:.9});
-    const body=new THREE.Mesh(new THREE.BoxGeometry(.75,1,.38),mat); body.position.y=1.2;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.62,.62,.62),skin); head.position.y=2.02;
-    const leg1=new THREE.Mesh(new THREE.BoxGeometry(.27,.75,.3),dark); leg1.position.set(-.2,.38,0);
-    const leg2=leg1.clone(); leg2.position.x=.2;
-    const arm1=new THREE.Mesh(new THREE.BoxGeometry(.22,.85,.28),skin); arm1.position.set(-.52,1.2,0);
-    const arm2=arm1.clone(); arm2.position.x=.52;
-    g.add(body,head,leg1,leg2,arm1,arm2); for(const m of g.children as THREE.Mesh[]) m.castShadow=true;
-    return g;
   }
 
   async loadVisualAssets() {
@@ -770,8 +774,10 @@ class TownGame {
     const tpl=this.assets.get(target.asset);if(!tpl)return;
     const isCharacter=target.asset.startsWith('female')||target.asset.startsWith('male');
     const model=(isCharacter?cloneSkeleton(tpl.scene):tpl.scene.clone(true)) as THREE.Object3D;
-    target.resolvedSize=this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
-    model.rotation.y=target.rotationY||0;
+    const isTree=/^tree[123]$/.test(target.asset);
+    target.resolvedSize=isTree?fitTreeModel(model,target.height,target.rotationY||0)
+      :this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
+    if(!isTree)model.rotation.y=target.rotationY||0;
     model.position.z+=target.offsetZ??0;
     target.group.clear();
     target.group.add(model);
@@ -779,9 +785,12 @@ class TownGame {
     if(isCharacter){
       const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
       if(agent&&tpl.animations.length){
+        agent.soles=new CharacterSoles(model);
         agent.mixer=new THREE.AnimationMixer(model);
         agent.actions=new Map(tpl.animations.map(clip=>[clip.name,agent.mixer!.clipAction(clip)]));
         this.setNpcAnimation(agent,'Idle');
+        agent.mixer.update(0);
+        this.alignNpcVisualToGround(agent);
       }
     }
   }
@@ -895,7 +904,6 @@ class TownGame {
     this.camera.lookAt(this.orbit.target);
     this.orbit.update();
     // God mode is observer-only: no player entity is exposed to NPC perception or targeting.
-    this.playerMarker.visible=false;
     this.cancelPlayerTargeting();
     this.suspendPlayerWildlifeFollowPaths();
     ui.crosshair.classList.add('hidden');
@@ -908,7 +916,6 @@ class TownGame {
     this.cameraMode='firstPerson';
     this.perceptionEpoch++;
     this.orbit.enabled=false;
-    this.playerMarker.visible=false;
     this.camera.position.set(this.playerPosition.x,1.7,this.playerPosition.z);
     this.camera.rotation.copy(this.firstPersonRotation);
     ui.crosshair.classList.remove('hidden');
@@ -980,6 +987,7 @@ class TownGame {
   animate = () => {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
+    this.playerTravel=undefined;this.playerBlockedNpcs.clear();
     if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
     if(this.persistenceReady){
       this.updateTime(dt);
@@ -989,6 +997,9 @@ class TownGame {
       this.updateWildlife(dt);
       if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
     }
+    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
+    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
+    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
     this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
@@ -1004,13 +1015,16 @@ class TownGame {
       const moveInput=()=>({
         id:'player',position:{x:this.camera.position.x,z:this.camera.position.z},
         displacement:{x:move.x,z:move.z},radius:.30,
-        dynamic:this.physicsDynamicColliders('player')
+        dynamic:this.physicsDynamicColliders('player'),
+        constraints:[...this.npcs.values()].filter(a=>!a.removed).map(a=>playerHeadConstraint(`npc:${a.state.id}`,a.characterAsset,a.mesh.position,a.mesh.rotation.y))
       });
       let resolved=this.physics.moveKinematic(moveInput());
       const movableHit=resolved.dynamicHits.find(id=>id.startsWith('object:'));
       if(movableHit&&this.tryPushMovableObject(movableHit.slice('object:'.length),{x:move.x,z:move.z})){
         resolved=this.physics.moveKinematic(moveInput());
       }
+      this.playerTravel={x:move.x,z:move.z};
+      for(const id of resolved.dynamicHits)if(id.startsWith('npc:'))this.playerBlockedNpcs.add(id);
       this.camera.position.x=resolved.position.x;
       this.camera.position.z=resolved.position.z;
     }
@@ -1140,7 +1154,7 @@ class TownGame {
     this.minuteOfDay=Math.max(0,Number(snapshot.meta.minuteOfDay)||0);
     this.weather=String(snapshot.meta.weather||'clear');
     this.playerInventory={...this.playerInventory,...snapshot.meta.playerInventory};
-    this.playerPosition={x:Number(snapshot.meta.playerPosition?.x||0),z:Number(snapshot.meta.playerPosition?.z||7)};
+    this.playerPosition=restoredPlayerPosition(snapshot.meta.playerPosition);
     this.camera.position.x=this.playerPosition.x;
     this.camera.position.z=this.playerPosition.z;
 
@@ -1182,14 +1196,22 @@ class TownGame {
         this.groundHeightAt(runtime.state.position.x,runtime.state.position.z),
         runtime.state.position.z
       );
-      runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
-      runtime.nextGroundAlignAt=0;
+      runtime.mesh.rotation.y=runtime.state.heading??0;
+      runtime.yieldPlan=undefined;runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
+      this.alignNpcVisualToGround(runtime);
       runtime.nextDecisionAt=now()+700+Math.random()*1800;
     }
 
     for(const saved of snapshot.homeObjects||[]){
+      if(this.portables.restoreHome(saved))continue;
       const runtime=this.objects.get(saved.id);
       if(!runtime)continue;
+      if(runtime.state.kind==='building'){
+        // Saved building position is its frontage, never the visible body's center.
+        // Keep the layout-owned model/collider/trigger, restoring mutable state only.
+        runtime.state=restoreBuildingForLayout(runtime.state,saved);
+        continue;
+      }
       runtime.state=structuredClone(saved);
       runtime.state.chunkId=undefined;
       normalizeWorldObjectRigidBody(runtime.state);
@@ -1215,6 +1237,7 @@ class TownGame {
       lastSaveSucceeded=false;
       try{
         this.flushWildlifeHabitatExposure();
+        const itemTransferVersion=this.portables.checkpoint.capture();
         const snapshot=this.buildWorldSnapshot();
         const expectedRevision=this.persistenceRevision;
         const response=await fetch('/api/world/state',{
@@ -1238,6 +1261,7 @@ class TownGame {
           throw new Error('Invalid persistence revision acknowledgement');
         }
         this.persistenceRevision=revision;
+        this.portables.checkpoint.acknowledge(itemTransferVersion);
         lastSaveSucceeded=true;
       }catch(error){
         this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
@@ -1285,7 +1309,8 @@ class TownGame {
   }
 
   flushWorldBeacon() {
-    if(!this.persistenceReady||this.persistenceConflict)return;
+    // Do not persist only the reward side of an unacknowledged fine parcel transfer.
+    if(!this.persistenceReady||this.persistenceConflict||this.portables.checkpoint.pending)return;
     try{
       const snapshot=this.buildFinalWorldSnapshot();
       const payload=JSON.stringify({snapshot,expectedRevision:this.persistenceRevision});
@@ -1354,10 +1379,12 @@ class TownGame {
       const saved=cachedObjects.get(p.state.id);
       const state=structuredClone(saved||p.state);
       state.chunkId=chunk.id;
-      if(state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
+      if(state.kind!=='dropped_item'&&state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
       this.addObject(state,p.asset,p.height,p.rotationY||0);
       runtime.objectIds.push(state.id);
     }
+
+    this.portables.restoreFine(cached?.objectStates||[],chunk.id);
 
     for(const p of plan.residents){
       const saved=cachedNpcs.get(p.id);
@@ -1464,16 +1491,17 @@ class TownGame {
   }
 
   spawnFineNpc(state:NpcState,characterAsset:string) {
-    const mesh=this.makeBlockPerson(state.role);
+    const mesh=new THREE.Group();
     mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
+    mesh.rotation.y=state.heading??0;
     mesh.userData={entityType:'npc',entityId:state.id};
     this.scene.add(mesh);
 
     const speechEl=document.createElement('div');speechEl.className='speech hidden';ui.speechLayer.appendChild(speechEl);
     const nameEl=document.createElement('div');nameEl.className='npc-name hidden';ui.speechLayer.appendChild(nameEl);
     const agent:NpcRuntime={
-      state,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
-      pendingDecision:false,speechEl,nameEl,nextGroundAlignAt:0
+      state,characterAsset,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
+      pendingDecision:false,speechEl,nameEl
     };
     this.npcs.set(state.id,agent);
 
@@ -1606,6 +1634,10 @@ class TownGame {
     let food=0,wood=0,ecology=0,prosperity=0,shrub=0,fruit=0,crop=0;
     for(const id of runtime.objectIds){
       const o=this.objects.get(id)?.state;if(!o)continue;
+      if(o.kind==='dropped_item'){
+        if(o.item){const value=portableItemMetrics(o.item,droppedItemCount(o));food+=value.food;wood+=value.wood;prosperity+=value.prosperity;}
+        continue;
+      }
       const amount=Math.max(0,o.resourceAmount||0);
       if(o.item==='apple'||o.item==='grain'||o.item==='bread'||o.item==='flour')food+=amount;
       if(o.kind==='farm_plot')crop+=amount;
@@ -1623,9 +1655,8 @@ class TownGame {
       const n=this.npcs.get(id)?.state;if(!n)continue;
       prosperity+=n.money;
       for(const slot of n.inventory){
-        if(['apple','grain','bread'].includes(slot.kind))food+=slot.count;
-        if(slot.kind==='wood')wood+=slot.count;
-        prosperity+=slot.kind==='tool'?slot.count*2:slot.count*.1;
+        const value=portableItemMetrics(slot.kind,slot.count);
+        food+=value.food;wood+=value.wood;prosperity+=value.prosperity;
       }
     }
     return {food,wood,ecology,prosperity,shrub,fruit,crop};
@@ -1748,7 +1779,7 @@ class TownGame {
     const seasonFactor=season==='spring'?1.35:season==='summer'?1.0:season==='autumn'?.72:.24;
     const weatherFactor=this.weather==='rain'?1.35:this.weather==='cloudy'?1.05:.9;
     for(const o of this.objects.values()){
-      if(o.state.respawnAt && t>=o.state.respawnAt){o.state.respawnAt=undefined;o.state.pickupable=true;o.mesh.visible=true;}
+      if(advancePickupRespawn(o.state,t))o.mesh.visible=true;
       const s=o.state;
       if(s.resourceCapacity===undefined||s.resourceAmount===undefined||s.resourceAmount>=s.resourceCapacity)continue;
       let rate=0;
@@ -1969,7 +2000,7 @@ class TownGame {
       diseasePressure:source?.wildlifeDisease?.speciesPressure[animal.state.species]??source?.wildlife?.find(x=>x.species===animal.state.species)?.diseaseLoad??0
     };
     const nearbyResources=[...this.objects.values()]
-      .filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
+      .filter(o=>o.state.kind!=='dropped_item'&&o.mesh.visible&&dist(animal.state.position,o.state.position)<=12)
       .map(o=>({id:o.state.id,tags:o.state.tags,distance:dist(animal.state.position,o.state.position),resourceAmount:o.state.resourceAmount}))
       .sort((a,b)=>a.distance-b.distance).slice(0,16);
     const nearbyWildlife=[...this.wildlife.values()].filter(x=>x!==animal&&!x.removed)
@@ -2032,8 +2063,11 @@ class TownGame {
     let target:Vec2|undefined;
 
     if(decision.action==='drink'||decision.action==='graze'||decision.action==='forage'){
-      const object=(decision.targetObjectId&&this.objects.get(decision.targetObjectId))||this.findWildlifeResource(animal,decision.action);
-      if(object){s.targetObjectId=object.state.id;target=object.state.position;}
+      const chosen=decision.targetObjectId?this.objects.get(decision.targetObjectId):undefined;
+      const object=chosen&&chosen.state.kind!=='dropped_item'&&chosen.mesh.visible
+        ?chosen:this.findWildlifeResource(animal,decision.action);
+      s.targetObjectId=object?.state.id;
+      if(object)target=object.state.position;
     }else if(decision.action==='hunt'||decision.action==='seek_mate'){
       const other=(decision.targetWildlifeId&&this.wildlife.get(decision.targetWildlifeId))||this.findWildlifeTarget(animal,decision.action);
       if(other){s.targetWildlifeId=other.state.id;target=other.state.position;}
@@ -2067,7 +2101,7 @@ class TownGame {
   }
 
   findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
-    const candidates=[...this.objects.values()].filter(o=>o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
+    const candidates=[...this.objects.values()].filter(o=>o.state.kind!=='dropped_item'&&o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
     const forageTags=wildlifeSpeciesProfile(animal.state.species).forageTags;
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
     const wanted=(o:RuntimeObject)=>{
@@ -2102,6 +2136,11 @@ class TownGame {
     const s=animal.state;
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(s.phenotype,s.id));
     const object=s.targetObjectId?this.objects.get(s.targetObjectId):undefined;
+    // Sealed inventory parcels are not exposed plants or water. A stale provider
+    // target must not consume fractional parcel stock or grant a free need outcome.
+    if(object?.state.kind==='dropped_item'&&['drink','graze','forage'].includes(s.currentAction)){
+      s.targetObjectId=undefined;s.currentAction='rest';animal.actionResolved=true;return;
+    }
     const other=s.targetWildlifeId?this.wildlife.get(s.targetWildlifeId):undefined;
     switch(s.currentAction){
       case 'drink':
@@ -2746,34 +2785,53 @@ class TownGame {
       const locomotion=(agent.state.currentAction==='patrol'||agent.state.currentAction==='explore')?'Run':'Walk';
       this.setNpcAnimation(agent,activityActive?(agent.activityAnimation||'Idle'):(isMoving?locomotion:'Idle'));
       agent.mixer?.update(dt);
-      if(agent.mixer&&now()>=agent.nextGroundAlignAt){
-        this.alignNpcVisualToGround(agent);
-        agent.nextGroundAlignAt=now()+120;
-      }
+      if(agent.mixer)this.alignNpcVisualToGround(agent);
       if(agent.task && agent.path.length===0) this.completeTask(agent);
-      if(!this.aiPaused&&!agent.pendingDecision&&this.inFlight<this.maxInFlight&&now()>=agent.nextDecisionAt&&!agent.task) this.requestDecision(agent);
-      n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;
+      n.position.x=agent.mesh.position.x;n.position.z=agent.mesh.position.z;n.heading=agent.mesh.rotation.y;
+    }
+    if(!this.aiPaused){
+      for(const agent of dueNpcDecisions(this.npcs.values(),now(),this.maxInFlight-this.inFlight)){
+        void this.requestDecision(agent);
+      }
     }
   }
 
   moveNpc(agent:NpcRuntime,dt:number) {
-    if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;return;}
+    // A player conversation reaches its legal range before source head clearance.
+    // Do not wait for the old generic final-waypoint 1.55 m collision threshold.
+    if(reachedPlayerConversation(this.cameraMode==='firstPerson',agent.task?.action,agent.task?.targetNpcId,
+      Math.hypot(agent.mesh.position.x-this.playerPosition.x,agent.mesh.position.z-this.playerPosition.z))){
+      agent.path=[];agent.pathIndex=0;agent.yieldPlan=undefined;return;
+    }
+    if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;agent.yieldPlan=undefined;return;}
+    const yielded=stepNpcYield(this.physics,{
+      id:`npc:${agent.state.id}`,asset:agent.characterAsset,position:agent.mesh.position,yaw:agent.mesh.rotation.y,
+      player:this.cameraMode==='firstPerson'?this.playerPosition:undefined,travel:this.playerTravel,
+      activePath:true,blockedPlayer:this.playerBlockedNpcs.has(`npc:${agent.state.id}`),plan:agent.yieldPlan,
+      dt,dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+    });
+    agent.yieldPlan=yielded?.plan;
+    if(yielded){agent.mesh.position.x=yielded.position.x;agent.mesh.position.z=yielded.position.z;return;}
     const p=agent.path[agent.pathIndex]; const pos=agent.mesh.position; const dx=p.x-pos.x,dz=p.z-pos.z,d=Math.hypot(dx,dz);
     if(d<.12){agent.pathIndex++;if(agent.pathIndex>=agent.path.length){agent.path=[];agent.pathIndex=0;}return;}
     const speed=1.65;
     const step=Math.min(d,speed*dt);
+    const desiredHeading=Math.atan2(dx,dz);
+    const heading=this.cameraMode==='firstPerson'
+      ?safeNpcHeading(agent.characterAsset,pos,agent.mesh.rotation.y,desiredHeading,this.playerPosition):desiredHeading;
     const resolved=this.physics.moveKinematic({
       id:`npc:${agent.state.id}`,
       position:{x:pos.x,z:pos.z},
       displacement:{x:dx/d*step,z:dz/d*step},
       radius:.32,
-      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`)
+      dynamic:this.physicsDynamicColliders(`npc:${agent.state.id}`),
+      constraints:this.cameraMode==='firstPerson'?[npcHeadConstraint(agent.characterAsset,this.playerPosition,heading)]:[]
     });
     pos.x=resolved.position.x;pos.z=resolved.position.z;
-    if(resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
+    if(!agent.task?.approach&&resolved.collided&&agent.pathIndex===agent.path.length-1&&d<=1.55){
       agent.path=[];agent.pathIndex=0;
     }
-    agent.mesh.rotation.y=Math.atan2(dx,dz);
+    agent.mesh.rotation.y=heading;
   }
 
   async requestDecision(agent:NpcRuntime) {
@@ -2864,7 +2922,29 @@ class TownGame {
     if(d.action==='trade'&&!d.targetObjectId&&this.closestNpc(agent)){const target=this.closestNpc(agent);if(target){task.targetNpcId=target.state.id;agent.path=this.findPath(agent.state.position,target.state.position);return;}}
     if(d.action==='drop_item'){this.dropNpcItem(agent);agent.task=undefined;return;}
     if(d.action==='eat' && agent.state.inventory.some(i=>['apple','bread'].includes(i.kind)&&i.count>0)){this.npcEat(agent);agent.task=undefined;return;}
-    const obj=this.objectForAction(agent,d.action,d.targetObjectId); if(!obj){agent.task=undefined;agent.nextDecisionAt=now()+2500;return;} task.targetObjectId=obj.state.id;agent.path=this.findPath(agent.state.position,obj.state.position);
+    const obj=this.objectForAction(agent,d.action,d.targetObjectId); if(!obj){agent.task=undefined;agent.nextDecisionAt=now()+2500;return;} task.targetObjectId=obj.state.id;this.planNpcObjectPath(agent,task,obj);
+  }
+
+  planNpcObjectPath(agent:NpcRuntime,task:ActionTask,obj:RuntimeObject) {
+    const current={x:agent.mesh.position.x,z:agent.mesh.position.z};
+    const isOvenWork=isBakingOven(obj.state)&&(task.action==='work'||task.action==='craft');
+    if(isOvenWork){
+      task.approach=bakingWorkApproach(agent.characterAsset,obj.state.position,obj.mesh.userData.ovenPhysics?.collider,
+        (point,radius)=>this.physics.isBlocked(point.x,point.z,radius));
+      // No loaded/reachable facility stance means no work outcome, not crafting at
+      // an arbitrary nearby point merely because pathfinding returned an empty path.
+      if(!task.approach){agent.task=undefined;agent.path=[];agent.pathIndex=0;return;}
+    }
+    const destination=task.approach??obj.state.position;
+    const path=this.findPath(current,destination);
+    if(task.approach){
+      const sameCell=Math.round(current.x)===Math.round(destination.x)&&Math.round(current.z)===Math.round(destination.z);
+      if(!path.length&&!sameCell){agent.task=undefined;agent.path=[];agent.pathIndex=0;return;}
+      // Retain the original grid planner, then approach the precise resolved stance.
+      // Do not teleport the actor or stop at the old 1.55 m generic collision threshold.
+      if(dist(current,destination)>.12)path.push({x:destination.x,z:destination.z});
+    }
+    agent.path=path;agent.pathIndex=0;
   }
 
   applyStateShift(agent:NpcRuntime,shift:DecisionResponse['stateShift']) {
@@ -2905,7 +2985,7 @@ class TownGame {
         if(this.cameraMode!=='firstPerson'){
           agent.task=undefined;agent.path=[];agent.pathIndex=0;agent.state.currentAction='idle';agent.nextDecisionAt=now()+900+Math.random()*900;return;
         }
-        const pp=this.playerPosition; if(dist(agent.state.position,pp)>2.2){agent.path=this.findPath(agent.state.position,pp);return;}
+        const pp=this.playerPosition; if(dist(agent.state.position,pp)>PLAYER_CONVERSATION_REACH){agent.path=this.findPath(agent.state.position,pp);return;}
         this.npcTalkPlayerAuto(agent,task.intent||'smalltalk'); this.playActivity(agent,'Wave',1400);agent.task=undefined; return;
       }
       const other=this.npcs.get(task.targetNpcId||''); if(other&&dist(agent.state.position,other.state.position)>2.2){agent.path=this.findPath(agent.state.position,other.state.position);return;}
@@ -2921,6 +3001,12 @@ class TownGame {
     if(task.action==='patrol'){agent.state.energy=clamp(agent.state.energy-2,0,100);agent.state.money+=1;this.remember(agent,'完成了一段巡逻路线。',1);this.playActivity(agent,'Yes',900);agent.task=undefined;return;}
     if(task.action==='explore'){this.remember(agent,`探索到了 ${agent.state.position.x.toFixed(0)},${agent.state.position.z.toFixed(0)} 一带。`,1);agent.state.mood=agent.state.mood==='neutral'?'curious':agent.state.mood;this.playActivity(agent,'Yes',900);agent.task=undefined;return;}
     const obj=task.targetObjectId?this.objects.get(task.targetObjectId):undefined;
+    if(obj&&isBakingOven(obj.state)&&(task.action==='work'||task.action==='craft')){
+      if(!task.approach||dist(agent.mesh.position,task.approach)>.14){this.planNpcObjectPath(agent,task,obj);return;}
+      agent.mesh.rotation.y=this.cameraMode==='firstPerson'
+        ?safeNpcHeading(agent.characterAsset,agent.mesh.position,agent.mesh.rotation.y,task.approach.yaw,this.playerPosition)
+        :task.approach.yaw;
+    }
     if(obj&&dist(agent.state.position,obj.state.position)>2.3){agent.path=this.findPath(agent.state.position,obj.state.position);return;}
     switch(task.action){
       case 'work': this.npcWork(agent,obj);this.playActivity(agent,'Punch',1500);break;
@@ -3026,7 +3112,7 @@ class TownGame {
   }
 
   pickupForNpc(agent:NpcRuntime,obj:RuntimeObject) {
-    if(!obj.state.pickupable||!obj.state.item)return; this.addInventory(agent.state.inventory,obj.state.item,1);obj.state.pickupable=false;obj.state.respawnAt=Date.now()+45_000;obj.mesh.visible=false;this.event(`${agent.state.name} 拾取了 ${obj.state.name}。`);
+    this.portables.pickupForNpc(agent,obj);
   }
 
   useObjectNpc(agent:NpcRuntime,obj:RuntimeObject) {
@@ -3038,10 +3124,7 @@ class TownGame {
   }
 
   dropNpcItem(agent:NpcRuntime) {
-    const item=agent.state.inventory.find(i=>i.count>0);if(!item)return;item.count--;
-    const id=`drop_${agent.state.id}_${Date.now()}`; const p={x:agent.state.position.x+.7,z:agent.state.position.z+.4};
-    this.addObject({id,kind:'dropped_item',name:`掉落的${this.itemName(item.kind)}`,position:p,tags:['dropped',item.kind],usable:false,pickupable:true,item:item.kind});
-    this.event(`${agent.state.name} 放下了 ${this.itemName(item.kind)}。`);
+    this.portables.drop(agent);
   }
 
   async npcConversation(a:NpcRuntime,b:NpcRuntime,intent:SocialIntent) {
@@ -3223,6 +3306,9 @@ class TownGame {
 
   executePlayerInteraction(o:RuntimeObject,action:InteractionCapability) {
     const s=o.state;
+    // A menu may outlive its target or a camera-mode change. Revalidate at execution.
+    if(this.cameraMode!=='firstPerson'||this.objects.get(s.id)!==o||!o.mesh.visible||!this.playerOverlapsObjectTrigger(s.id))return;
+    if(!(s.capabilities?.length?s.capabilities:this.defaultCapabilities(s)).includes(action))return;
     const takeFirst=()=>{
       const order:ItemKind[]=['flower','apple','grain','flour','wood','plank','stone','water','tool','bread'];
       return order.find(k=>this.playerInventory[k]>0);
@@ -3230,8 +3316,11 @@ class TownGame {
     switch(action){
       case 'inspect':
         this.toast(`${s.name} · ${s.tags.join(' / ')}`);break;
-      case 'pickup':
-        if(s.item){this.playerInventory[s.item]++;s.pickupable=false;s.respawnAt=Date.now()+45_000;o.mesh.visible=false;this.toast(`获得：${this.itemName(s.item)}`);this.event(`玩家拾取了 ${s.name}。`);}break;
+      case 'pickup': {
+        const received=this.portables.pickupForPlayer(o);
+        if(received){this.toast(`${this.itemName(received.kind)} ×${received.count}`);this.event(`玩家拾取了 ${s.name}。`);}
+        break;
+      }
       case 'draw_water':
         this.playerInventory.water++;this.toast('打了一份井水');this.event('玩家从水井取水。');break;
       case 'drink':
@@ -3371,6 +3460,29 @@ class TownGame {
         ...object.mesh.userData.ovenPhysics};
     });
     ui.world.dataset.bakingOvens=JSON.stringify(ovens);
+    ui.world.dataset.portableObjects=JSON.stringify(this.portables.diagnostics());
+    const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
+      id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
+      height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
+    }));
+    const homeBuildings=[...this.objects.values()].filter(object=>object.state.kind==='building'&&!object.state.chunkId).map(object=>({
+      id:object.state.id,center:{x:object.mesh.position.x,z:object.mesh.position.z},frontage:object.state.position,
+      blockedAtCenter:this.physics.isBlocked(object.mesh.position.x,object.mesh.position.z,.3),
+      ownTrigger:this.physics.overlappingTriggers(object.state.position).some(trigger=>trigger.id===`object-trigger:${object.state.id}`)
+    }));
+    ui.world.dataset.homeBuildingAnchors=JSON.stringify(homeBuildings);
+    const soleEvidence=[...this.npcs.values()].filter(agent=>agent.soles).map(agent=>({
+      id:agent.state.id,asset:agent.characterAsset,minimumPlayerSeparation:npcPlayerSeparation(agent.characterAsset),
+      headYaw:agent.mesh.rotation.y,workApproach:agent.task?.approach,activePath:agent.pathIndex<agent.path.length,headEnvelope:characterHeadEnvelope(agent.characterAsset),
+      playerHeadClearance:this.cameraMode==='firstPerson'?playerHeadClearance(agent.characterAsset,agent.mesh.position,agent.mesh.rotation.y,this.playerPosition):null,
+      animation:agent.activeAnimation,vertices:agent.soles!.vertexCount,
+      ground:this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z),
+      sole:agent.soles!.minimumWorldY(),position:agent.state.position
+    }));
+    ui.world.dataset.treePresentation=JSON.stringify(treeEvidence);
+    ui.world.dataset.characterSoles=JSON.stringify(soleEvidence);
+    ui.world.dataset.shadowView=JSON.stringify(this.sunShadow.diagnostics());
+    ui.world.dataset.playerBodyPresent=String(this.physicsDynamicColliders().some(body=>body.id==='player'));
     ui.world.dataset.cameraMode=this.cameraMode;
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
@@ -3432,13 +3544,22 @@ class TownGame {
   }
 
   updateSpeech() {
-    const v=new THREE.Vector3();
+    const viewport={width:innerWidth,height:innerHeight};
     for(const a of this.npcs.values()){
-      v.set(a.mesh.position.x,2.9,a.mesh.position.z).project(this.camera);
-      const visible=v.z<=1&&v.z>=-1&&Math.abs(v.x)<1.15&&Math.abs(v.y)<1.15;
-      if(this.cameraMode==='god'&&visible){a.nameEl.classList.remove('hidden');a.nameEl.textContent=`${a.state.name} · ${a.state.currentAction}`;a.nameEl.style.left=`${(v.x*.5+.5)*innerWidth}px`;a.nameEl.style.top=`${(-v.y*.5+.5)*innerHeight}px`;}else a.nameEl.classList.add('hidden');
-      const s=a.speech;if(!s||now()>s.until||!visible){a.speechEl.classList.add('hidden');continue;}
-      a.speechEl.classList.remove('hidden');a.speechEl.textContent=s.text;a.speechEl.style.left=`${(v.x*.5+.5)*innerWidth}px`;a.speechEl.style.top=`${(-v.y*.5+.5)*innerHeight-20}px`;
+      if(this.cameraMode==='god'){
+        a.nameEl.classList.remove('hidden');
+        a.nameEl.textContent=`${a.state.name} · ${a.state.currentAction}`;
+        const anchor=characterOverlay(this.camera,a.mesh.position,viewport,{width:a.nameEl.offsetWidth,height:a.nameEl.offsetHeight},1.82,1);
+        if(anchor){a.nameEl.style.left=`${anchor.left}px`;a.nameEl.style.top=`${anchor.top}px`;}
+        else a.nameEl.classList.add('hidden');
+      }else a.nameEl.classList.add('hidden');
+      const speech=a.speech;
+      if(!speech||now()>speech.until){a.speechEl.classList.add('hidden');continue;}
+      a.speechEl.classList.remove('hidden');
+      a.speechEl.textContent=speech.text;
+      const anchor=characterOverlay(this.camera,a.mesh.position,viewport,{width:a.speechEl.offsetWidth,height:a.speechEl.offsetHeight});
+      if(anchor){a.speechEl.style.left=`${anchor.left}px`;a.speechEl.style.top=`${anchor.top}px`;}
+      else a.speechEl.classList.add('hidden');
     }
   }
 
@@ -3654,6 +3775,7 @@ class TownGame {
   toast(text:string){ui.toast.textContent=text;ui.toast.classList.add('show');setTimeout(()=>ui.toast.classList.remove('show'),2200);}
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
+  parcelLabel(kind:ItemKind,count:number){return droppedParcelLabel(this.locale,this.itemName(kind),count);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 
   playerOverlapsObjectTrigger(objectId:string) {
@@ -3668,13 +3790,7 @@ class TownGame {
   alignNpcVisualToGround(agent:NpcRuntime) {
     const ground=this.groundHeightAt(agent.mesh.position.x,agent.mesh.position.z);
     agent.mesh.position.y=ground;
-    const model=agent.mesh.children[0];
-    if(!model)return;
-    const box=new THREE.Box3().setFromObject(model,true);
-    const error=box.min.y-ground;
-    if(!Number.isFinite(error)||Math.abs(error)>.35)return;
-    model.position.y-=error;
-    model.updateMatrixWorld(true);
+    agent.soles?.ground(ground);
   }
 
   wildlifePhysicsRadius(state:WildlifeState) {
@@ -3684,11 +3800,13 @@ class TownGame {
   physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
     const colliders:DynamicCollider[]=[];
     if(this.cameraMode==='firstPerson'){
-      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,radius:.30});
+      colliders.push({id:'player',x:this.playerPosition.x,z:this.playerPosition.z,
+        radius:PLAYER_BODY_RADIUS});
     }
     for(const agent of this.npcs.values()){
       if(agent.removed)continue;
-      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,radius:.32});
+      colliders.push({id:`npc:${agent.state.id}`,x:agent.mesh.position.x,z:agent.mesh.position.z,
+        radius:NPC_BODY_RADIUS});
     }
     for(const animal of this.wildlife.values()){
       if(animal.removed)continue;

@@ -12,6 +12,7 @@ El proyecto **no está acoplado a Jev**. Jev / TypeSafe System One es el primer 
 
 ## Funciones actuales
 
+- La recuperación visual incorpora árboles existentes a escala adulta y anclados por el tronco, apoyo de las plantas animadas de los pies, sombras acotadas, separación jugador/cabeza y materiales no metálicos de cultivo con originales conservados. La validación de toda la escena, poses sentadas/dormidas y recorridos completos sigue pendiente. Véase el [alcance](environment-presentation.md).
 - Pueblo 3D con Three.js, primera persona y God View como observador externo.
 - Unas 20 acciones acotadas para NPC.
 - Sistema unificado `WorldObject + capabilities` para edificios, pozo, mercado, almacenamiento, carros, árboles, rocas, flores y herramientas.
@@ -83,3 +84,8 @@ Consulta [Roadmap](roadmap.md), [Architecture](architecture.md), [Domestication]
 ## Contribución y licencia
 
 Lee [CONTRIBUTING.md](../CONTRIBUTING.md). Código bajo [MIT](../LICENSE). Las licencias de recursos se documentan en [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). Para citas, usa [CITATION.cff](../CITATION.cff).
+
+
+Validación local sin GitHub Actions: `npm run validate:local`. Conserva fuentes, hashes e informes y utiliza una base de datos E2E separada del mundo del jugador. Véase [validación local](local-validation.md).
+
+Los panaderos llegan físicamente a una posición exterior del horno antes de producir. La orientación opcional del NPC se conserva en partidas compatibles de versión 1; los datos antiguos sin orientación mantienen +Z, sin migración ni reinicio.

@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   testDir: './e2e',
@@ -29,7 +30,9 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
-      JEV_PROVIDER: 'fallback'
+      JEV_PROVIDER: 'fallback',
+      // The tests reset their world: never point them at a player's regular save.
+      WORLD_DB_PATH: fileURLToPath(new URL('./data/latticefolk.e2e.sqlite',import.meta.url))
     }
   }
 });

@@ -4,6 +4,11 @@ Creator: Kenney (https://kenney.nl/)
 License: CC0 1.0 Universal / Public Domain Dedication
 Pinned reproducible source mirror: https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/nature
 
-Included byte-for-byte:
-- crops_dirtDoubleRow.glb
-- crops_wheatStageB.glb
+Unchanged upstream bytes retained locally:
+- crops_dirtDoubleRow.source.glb (upstream: crops_dirtDoubleRow.glb)
+- crops_wheatStageB.source.glb (upstream: crops_wheatStageB.glb)
+
+Served GLBs: source-specific offline adaptation of metallicFactor 1 to 0
+in four soil/stalk/grain materials. Geometry, binary data, source colors
+and all other JSON properties are preserved. No source model is recreated.
+Hashes and preparation: scripts/lib/nature-materials.mjs.
