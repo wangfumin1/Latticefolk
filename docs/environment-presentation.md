@@ -72,3 +72,10 @@ Streamed semantic `water_patch` objects retain their deterministic IDs, world po
 ### Sourced streamed water surface
 
 Semantic `water_patch` entities use the pinned Kenney Nature Kit `ground_riverOpen` surface rather than a generated cylinder. The upstream GLB is retained unchanged as `ground_riverOpen.source.glb`; the served copy changes only its reviewed `water` material `metallicFactor` from `1` to `0` through the same hash-pinned offline preparation used for Kenney crops. Geometry, pale-blue base color, roughness, semantic footprint, interaction trigger, deterministic resource state and save behavior are unchanged. This prevents the upstream fully-metallic material from rendering as a black surface in Latticefolk's non-IBL scene while keeping the visible model sourced and reproducible.
+
+
+## Sourced coarse markers
+
+Normal coarse-world markers no longer create generated house boxes or tree cones. Settlement summaries reuse the existing licensed Quaternius Ultimate Fantasy RTS town-center asset; wilderness summaries reuse the existing Cube World tree, bush or rock assets selected by biome. These are presentation-only clones: they do not add WorldObjects, collision, resources, population or discovery. If a licensed template is unavailable the marker stays empty rather than falling back to a generated visible primitive.
+
+This slice deliberately does **not** redesign the coarse terrain tile. The coarse ground tile and the requested center-town-scale streamed-chunk alignment/seam work remain a separate following stage. Materializing a chunk hides its coarse marker while the authoritative fine scene is active. God View may observe already-discovered coarse markers but camera movement never calls `ensureWindowAround` and therefore cannot discover or materialize new chunks.

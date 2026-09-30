@@ -9,6 +9,7 @@ import { applyConservedFlows, planConservedFlows, type WorldFlowRecord } from '.
 import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, planWildlifeMigration, simulateWildlife, wildlifeCount } from './ecology';
 import { boundedDecisionIdWindow, captureChunkDecisionSignal, nextChunkDecisionDelay, rankChunkDecisionCandidates, type ChunkDecisionSignal } from './decisionScheduling';
 import { CoarseChunkSpatialIndex } from './coarseSpatialIndex';
+import { coarseMarkerVisualSpec, type CoarseMarkerVisualSpec } from '../scene/coarsePresentation';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -104,6 +105,21 @@ interface UpdateContext {
   dt: number;
 }
 
+export interface CoarsePresentationBridge {
+  attach(group:THREE.Group,spec:CoarseMarkerVisualSpec):void;
+  detach(group:THREE.Group):void;
+}
+
+export interface CoarseMarkerPresentationStatus {
+  chunkId:string;
+  asset:string;
+  kind:string;
+  visible:boolean;
+  resolved:boolean;
+  meshes:number;
+  primitiveMeshes:number;
+}
+
 export class CoarseWorldRuntime {
   readonly chunkSize = 24;
   readonly radius = 4;
@@ -140,6 +156,7 @@ export class CoarseWorldRuntime {
   private readonly maxDecisionScanPerWake=256;
   private requestTimeouts=0;
   private decisionContextGeneration=0;
+  private presentationBridge?:CoarsePresentationBridge;
 
   constructor(
     private scene:THREE.Scene,
@@ -169,6 +186,17 @@ export class CoarseWorldRuntime {
 
   private generate() {
     this.ensureWindowAround(0,0,true);
+  }
+
+  setPresentationBridge(bridge:CoarsePresentationBridge|undefined) {
+    if(this.presentationBridge&&this.presentationBridge!==bridge){
+      for(const marker of this.markers.values())this.presentationBridge.detach(marker);
+    }
+    this.presentationBridge=bridge;
+    for(const id of this.activeChunkIds){
+      const chunk=this.chunks.get(id);
+      if(chunk)this.refreshMarker(chunk);
+    }
   }
 
   private isHomeChunk(cx:number,cz:number) {
@@ -281,6 +309,7 @@ export class CoarseWorldRuntime {
 
     const marker=new THREE.Group();
     marker.position.set(chunk.cx*this.chunkSize,0,chunk.cz*this.chunkSize);
+    marker.userData={coarseChunkId:chunk.id};
     this.root.add(marker);
     this.markers.set(chunk.id,marker);
     this.refreshMarker(chunk);
@@ -297,14 +326,8 @@ export class CoarseWorldRuntime {
     }
     const marker=this.markers.get(chunkId);
     if(marker){
-      marker.traverse(object=>{
-        const mesh=object as THREE.Mesh;
-        if(mesh.isMesh){
-          mesh.geometry?.dispose();
-          const material=mesh.material;
-          if(Array.isArray(material))material.forEach(x=>x.dispose());else material?.dispose();
-        }
-      });
+      this.presentationBridge?.detach(marker);
+      marker.clear();
       this.root.remove(marker);
       this.markers.delete(chunkId);
     }
@@ -313,26 +336,32 @@ export class CoarseWorldRuntime {
 
   private refreshMarker(chunk:CoarseChunkState) {
     const marker=this.markers.get(chunk.id);if(!marker)return;
+    this.presentationBridge?.detach(marker);
     marker.clear();
-    if(chunk.settlementLevel>0){
-      const mat=new THREE.MeshStandardMaterial({color:0xc9a675,roughness:.92});
-      const count=Math.min(5,1+chunk.settlementLevel+Math.floor(chunk.population/12));
-      for(let i=0;i<count;i++){
-        const w=2.2+this.hash(chunk.cx,chunk.cz,40+i)*1.3;
-        const h=1.3+this.hash(chunk.cx,chunk.cz,50+i)*1.5;
-        const house=new THREE.Mesh(new THREE.BoxGeometry(w,h,w*.8),mat);
-        const angle=(i/count)*Math.PI*2;
-        house.position.set(Math.cos(angle)*4,h/2,Math.sin(angle)*4);
-        house.castShadow=true;marker.add(house);
-      }
-    } else {
-      const mat=new THREE.MeshStandardMaterial({color:chunk.biome==='forest'?0x315d3c:0x6d8554,roughness:1});
-      for(let i=0;i<3;i++){
-        const tree=new THREE.Mesh(new THREE.ConeGeometry(.8,2.5,6),mat);
-        tree.position.set((this.hash(chunk.cx,chunk.cz,60+i)-.5)*8,1.25,(this.hash(chunk.cx,chunk.cz,70+i)-.5)*8);
-        marker.add(tree);
-      }
-    }
+    const spec=coarseMarkerVisualSpec(chunk);
+    marker.userData.coarseMarkerAsset=spec.asset;
+    marker.userData.coarseMarkerKind=spec.kind;
+    if(this.presentationBridge)this.presentationBridge.attach(marker,spec);
+  }
+
+  presentationStatus():CoarseMarkerPresentationStatus[] {
+    return [...this.markers.entries()].map(([chunkId,marker])=>{
+      let meshes=0,primitiveMeshes=0;
+      marker.traverse(object=>{
+        const mesh=object as THREE.Mesh;
+        if(!mesh.isMesh)return;
+        meshes++;
+        if(['BoxGeometry','CylinderGeometry','ConeGeometry','PlaneGeometry','SphereGeometry'].includes(mesh.geometry?.type||''))primitiveMeshes++;
+      });
+      return {
+        chunkId,
+        asset:String(marker.userData.coarseMarkerAsset||''),
+        kind:String(marker.userData.coarseMarkerKind||''),
+        visible:marker.visible,
+        resolved:marker.children.length>0,
+        meshes,primitiveMeshes
+      };
+    });
   }
 
   update(ctx:UpdateContext) {

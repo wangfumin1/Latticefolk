@@ -321,6 +321,16 @@ class TownGame {
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
     this.coarseWorld = new CoarseWorldRuntime(this.scene);
+    this.coarseWorld.setPresentationBridge({
+      attach:(group,spec)=>{
+        this.visualTargets=this.visualTargets.filter(target=>target.group!==group);
+        this.attachVisualTarget({group,asset:spec.asset,height:spec.height,rotationY:spec.rotationY});
+      },
+      detach:group=>{
+        this.visualTargets=this.visualTargets.filter(target=>target.group!==group);
+        group.clear();
+      }
+    });
     this.scene.add(this.sun.target);
     this.setupWorld();
     this.setupSelectionOverlays();
@@ -3473,6 +3483,7 @@ class TownGame {
       };
     });
     ui.world.dataset.waterPatches=JSON.stringify(waterPatches);
+    ui.world.dataset.coarseMarkers=JSON.stringify(this.coarseWorld.presentationStatus());
     const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
       id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
       height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
