@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Coarse distant markers no longer draw generated settlement boxes or wilderness cones. Normal coarse summaries now reuse already-vendored Quaternius town-center/tree/bush/rock assets; unloaded markers remain visual-only and God camera movement still cannot discover or materialize chunks. Coarse terrain tiles are intentionally unchanged for the next terrain/chunk-alignment stage.
+
 - Streamed `water_patch` entities now use the unchanged pinned Kenney Nature Kit `ground_riverOpen.glb` surface instead of a runtime CylinderGeometry fallback. The existing deterministic water entity, interaction trigger, resource state and regeneration rules are unchanged; the licensed source is only fitted to the existing 3.4 m footprint and lifted 1.8 cm to avoid terrain z-fighting.
 
 - Streamed `water_patch` visuals now use the pinned CC0 Kenney `ground_riverOpen` surface instead of a generated cylinder. The unchanged upstream GLB is retained as a source asset; offline preparation changes only its reviewed water metallic factor from 1 to 0 so the authored pale-blue surface remains visible under the existing scene lighting. Water IDs, footprint, interactions, regeneration and persistence are unchanged.
