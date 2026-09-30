@@ -3454,15 +3454,21 @@ class TownGame {
     ui.world.dataset.portableObjects=JSON.stringify(this.portables.diagnostics());
     const waterPatches=[...this.objects.values()].filter(object=>object.state.kind==='water_patch').map(object=>{
       const target=this.visualTargets.find(candidate=>candidate.group===object.mesh&&candidate.asset===WATER_PATCH_ASSET);
-      let meshes=0,primitives=0;
+      let meshes=0,primitives=0,materials=0,maxMetalness=0,minWaterLuminance=1;
       object.mesh.traverse(child=>{
         const mesh=child as THREE.Mesh;
-        if(mesh.isMesh){meshes++;if(['BoxGeometry','CylinderGeometry','ConeGeometry','PlaneGeometry'].includes(mesh.geometry.type))primitives++;}
+        if(!mesh.isMesh)return;
+        meshes++;if(['BoxGeometry','CylinderGeometry','ConeGeometry','PlaneGeometry'].includes(mesh.geometry.type))primitives++;
+        for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){
+          if(!(material instanceof THREE.MeshStandardMaterial))continue;
+          materials++;maxMetalness=Math.max(maxMetalness,material.metalness);
+          const color=material.color;minWaterLuminance=Math.min(minWaterLuminance,.2126*color.r+.7152*color.g+.0722*color.b);
+        }
       });
       return {
         id:object.state.id,chunkId:object.state.chunkId??null,name:object.state.name,
         position:{...object.state.position},asset:target?.asset,resolved:Boolean(target?.resolvedSize),
-        resolvedSize:target?.resolvedSize??null,surfaceY:object.mesh.position.y,meshes,primitives,
+        resolvedSize:target?.resolvedSize??null,surfaceY:object.mesh.position.y,meshes,primitives,materials,maxMetalness,minWaterLuminance,
         capabilities:object.state.capabilities??[],resourceAmount:object.state.resourceAmount??null
       };
     });

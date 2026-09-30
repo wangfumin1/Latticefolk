@@ -3,12 +3,18 @@ import { createHash } from 'node:crypto';
 
 export const NATURE_SOURCE_HASHES = {
   crops_dirtDoubleRow:'b5c330d81a4efe0944caf5f1d1dd0c0d50227c93f2a4a57ec2425d2c9b7a2d84',
-  crops_wheatStageB:'589db4d6fe0bd7616c1f1c2f10a335704b2dad5d24638dc08a5b2e5334c68852'
+  crops_wheatStageB:'589db4d6fe0bd7616c1f1c2f10a335704b2dad5d24638dc08a5b2e5334c68852',
+  ground_riverOpen:'ee0965c137af0a584fd594e0b9b3692d268608fc476860bb4e89f83a818b19f7'
+};
+export const NATURE_SOURCE_MATERIAL_COUNTS = {
+  crops_dirtDoubleRow:2,
+  crops_wheatStageB:2,
+  ground_riverOpen:1
 };
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 
-// These two reviewed exports mark soil/stalks/grain as fully metallic. Correct that
-// PBR property only: no recolor, added geometry, atlas replacement or global override.
+// These reviewed Kenney exports mark soil/stalks/grain/water as fully metallic. Correct
+// that PBR property only: no recolor, added geometry, atlas replacement or global override.
 export function normalizeNatureMaterials(source,name) {
   if(!Buffer.isBuffer(source)||!NATURE_SOURCE_HASHES[name]||sha256(source)!==NATURE_SOURCE_HASHES[name]){
     throw new Error(`Unrecognized nature source: ${name}`);
@@ -18,7 +24,8 @@ export function normalizeNatureMaterials(source,name) {
   }
   const oldLength=source.readUInt32LE(12);
   const json=JSON.parse(source.subarray(20,20+oldLength).toString('utf8'));
-  if(json.materials.length!==2||json.materials.some(material=>material.pbrMetallicRoughness?.metallicFactor!==1)){
+  const expectedMaterials=NATURE_SOURCE_MATERIAL_COUNTS[name];
+  if(!expectedMaterials||json.materials.length!==expectedMaterials||json.materials.some(material=>material.pbrMetallicRoughness?.metallicFactor!==1)){
     throw new Error(`Unexpected nature materials: ${name}`);
   }
   for(const material of json.materials)material.pbrMetallicRoughness.metallicFactor=0;

@@ -67,3 +67,8 @@ Because this oriented physical boundary depends on facing, NPC snapshots now car
 ## Sourced streamed water patches
 
 Streamed semantic `water_patch` objects retain their deterministic IDs, world positions, interaction capabilities, resource amount/capacity and seasonal/rain regeneration. Presentation now uses Kenney Nature Kit `ground_riverOpen.glb` from the same pinned CC0 mirror already used for crop provenance. The GLB is vendored byte-for-byte; no procedural visible water mesh is constructed. Runtime fitting scales only the authored flat surface's X/Z footprint to the existing 3.4 m water-patch footprint and places it 1.8 cm above terrain to avoid z-fighting. It adds no static collider, changes no trigger radius, and does not affect God View discovery/materialization semantics.
+
+
+### Sourced streamed water surface
+
+Semantic `water_patch` entities use the pinned Kenney Nature Kit `ground_riverOpen` surface rather than a generated cylinder. The upstream GLB is retained unchanged as `ground_riverOpen.source.glb`; the served copy changes only its reviewed `water` material `metallicFactor` from `1` to `0` through the same hash-pinned offline preparation used for Kenney crops. Geometry, pale-blue base color, roughness, semantic footprint, interaction trigger, deterministic resource state and save behavior are unchanged. This prevents the upstream fully-metallic material from rendering as a black surface in Latticefolk's non-IBL scene while keeping the visible model sourced and reproducible.

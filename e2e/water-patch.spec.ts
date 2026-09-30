@@ -7,7 +7,7 @@ import { lookForObject } from './helpers/relative-look.js';
 interface WaterView {
   id:string;chunkId:string|null;name:string;position:{x:number;z:number};asset?:string;
   resolved:boolean;resolvedSize:{x:number;y:number;z:number}|null;surfaceY:number;
-  meshes:number;primitives:number;capabilities:string[];resourceAmount:number|null;
+  meshes:number;primitives:number;materials:number;maxMetalness:number;minWaterLuminance:number;capabilities:string[];resourceAmount:number|null;
 }
 const chunk:CoarseChunkState={
   id:'chunk_2_0',cx:2,cz:0,biome:'plains',settlementLevel:0,population:0,
@@ -58,6 +58,9 @@ test('streamed natural water uses the sourced Kenney surface and keeps first-per
   expect(before.position.x).toBeCloseTo(53.8,8);expect(before.position.z).toBeCloseTo(5.4,8);
   expect(before.asset).toBe(WATER_PATCH_ASSET);
   expect(before.primitives).toBe(0);
+  expect(before.materials).toBeGreaterThan(0);
+  expect(before.maxMetalness).toBe(0);
+  expect(before.minWaterLuminance).toBeGreaterThan(.7);
   expect(before.resolvedSize!.x).toBeCloseTo(WATER_PATCH_WIDTH,5);
   expect(before.resolvedSize!.z).toBeCloseTo(WATER_PATCH_DEPTH,5);
   expect(before.resolvedSize!.y).toBeLessThan(1e-5);
@@ -85,6 +88,7 @@ test('streamed natural water uses the sourced Kenney surface and keeps first-per
   await expect.poll(async()=>{const list=await water(page);return list.length===1&&list[0]!.resolved;},{timeout:45_000}).toBe(true);
   const restored=(await water(page))[0]!;
   expect(restored.asset).toBe(WATER_PATCH_ASSET);expect(restored.primitives).toBe(0);
+  expect(restored.maxMetalness).toBe(0);expect(restored.minWaterLuminance).toBeGreaterThan(.7);
   expect(restored.resolvedSize!.x).toBeCloseTo(WATER_PATCH_WIDTH,5);
   expect(restored.resolvedSize!.z).toBeCloseTo(WATER_PATCH_DEPTH,5);
   expect((await saved(request)).snapshot.meta.playerInventory.water).toBe(1);
