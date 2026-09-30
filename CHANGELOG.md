@@ -8,6 +8,8 @@ The project is currently pre-1.0 and evolving rapidly.
 
 ### Added
 
+- Streamed `water_patch` entities now use the unchanged pinned Kenney Nature Kit `ground_riverOpen.glb` surface instead of a runtime CylinderGeometry fallback. The existing deterministic water entity, interaction trigger, resource state and regeneration rules are unchanged; the licensed source is only fitted to the existing 3.4 m footprint and lifted 1.8 cm to avoid terrain z-fighting.
+
 - One-shot dropped parcels now use the existing licensed crate with an explicit localized payload label, debit only after successful registration, restore dynamic home/fine identity and ownership, detach after player/NPC pickup, and never participate in authored resource respawn. Full-save acknowledgements prevent a compact final beacon from committing only one side of an unacknowledged fine transfer; absolute zero player coordinates remain valid. See [portable objects](docs/portable-objects.md).
 - Oldest-due selection fills only the existing free NPC request slots so repeatedly idle home actors do not monopolize first decisions for streamed residents. Concurrency, provider budgets, backoff and observer perception epochs are unchanged. Parcel browser fixtures normalize saved coarse state and verify source-derived physical route preconditions before native input, rather than starting inside tree collision or changing live coordinates.
 

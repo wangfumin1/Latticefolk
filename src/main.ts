@@ -15,6 +15,7 @@ import { PortableObjectRuntime } from './world/portableObjectRuntime';
 import { dueNpcDecisions } from './world/npcDecisionScheduling';
 import { advancePickupRespawn, droppedItemCount, portableItemMetrics, restoredPlayerPosition } from './world/portableObjects';
 import { droppedParcelLabel, droppedParcelSpec } from './scene/droppedParcel';
+import { WATER_PATCH_ASSET, waterPatchVisualSpec } from './scene/waterPatch';
 import { CharacterSoles } from './scene/characterSoles';
 import { SunShadowView } from './scene/sunShadow';
 import { characterOverlay } from './scene/characterOverlay';
@@ -548,6 +549,12 @@ class TownGame {
   addObject(state:WorldObjectState,assetOverride?:string,assetHeight?:number,rotationY=0) {
     const parcel=droppedParcelSpec(state);
     if(parcel)return this.addAssetObject(state,parcel.asset,parcel.height);
+    const water=waterPatchVisualSpec(state);
+    if(water){
+      const group=this.addAssetObject(state,water.asset,water.height,0,water.width,water.depth,'exactBounds');
+      group.position.y=water.surfaceY;
+      return group;
+    }
     if(state.kind==='farm_plot')return this.addFarmPlotObject(state);
     if(state.kind==='well'){
       return this.addAssetObject(
@@ -568,24 +575,7 @@ class TownGame {
         semanticSpec.width,semanticSpec.depth,semanticSpec.fit,semanticSpec.syncStatic,semanticSpec.offsetZ
       );
     }
-    const g = new THREE.Group();
-    let mesh: THREE.Mesh;
-    switch(state.kind) {
-      case 'water_patch':
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.7,.06,20),new THREE.MeshStandardMaterial({color:0x5c9fc7,roughness:.25,transparent:true,opacity:.78})); mesh.position.y=.025; break;
-      default:
-        throw new Error(`Missing sourced semantic visual: ${state.kind} (${state.id})`);
-    }
-    if (!g.children.length) g.add(mesh);
-    for(const child of g.children) { child.castShadow=true; child.receiveShadow=true; }
-    g.position.set(state.position.x,0,state.position.z);
-    g.userData={entityType:'object',entityId:state.id};
-    this.scene.add(g);
-    state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
-    this.objects.set(state.id,{state,mesh:g});
-    this.registerWorldObjectPhysics(state);
-    if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
-    return g;
+    throw new Error(`Missing sourced semantic visual: ${state.kind} (${state.id})`);
   }
 
 
@@ -730,6 +720,7 @@ class TownGame {
       weaponStandAsset:'fantasy-props-standard/WeaponStand.gltf',
       farmSoil:'/assets/kenney/nature/crops_dirtDoubleRow.glb',
       farmWheat:'/assets/kenney/nature/crops_wheatStageB.glb',
+      [WATER_PATCH_ASSET]:'/assets/kenney/nature/ground_riverOpen.glb',
       [BAKING_OVEN_ASSET]:'/assets/firefly-in-the-dusk/cast-iron-stove/CastIronStove.gltf'
     };
     const assetEntries=Object.entries(defs);
@@ -799,19 +790,19 @@ class TownGame {
     model.traverse(o=>{if((o as THREE.Mesh).isMesh){const m=o as THREE.Mesh;m.castShadow=true;m.receiveShadow=true;}});
     model.updateMatrixWorld(true);
     let box=new THREE.Box3().setFromObject(model);const size=new THREE.Vector3();box.getSize(size);
-    if(size.y>0){
-      if(exactBounds&&targetWidth&&targetDepth&&size.x>0&&size.z>0){
-        model.scale.x*=targetWidth/size.x;
-        model.scale.y*=targetHeight/size.y;
-        model.scale.z*=targetDepth/size.z;
-      }else{
-        let scale=targetHeight/size.y;
-        if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
-          const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
-          scale=Math.min(footprintScale,targetHeight/size.y);
-        }
-        model.scale.multiplyScalar(scale);
+    if(exactBounds&&targetWidth&&targetDepth&&size.x>0&&size.z>0){
+      // Flat sourced surfaces (for example the Kenney water tile) still need an exact
+      // X/Z footprint even though their authored Y extent is zero. Never invent thickness.
+      model.scale.x*=targetWidth/size.x;
+      if(size.y>0)model.scale.y*=targetHeight/size.y;
+      model.scale.z*=targetDepth/size.z;
+    }else if(size.y>0){
+      let scale=targetHeight/size.y;
+      if(targetWidth&&targetDepth&&size.x>0&&size.z>0){
+        const footprintScale=Math.min(targetWidth/size.x,targetDepth/size.z);
+        scale=Math.min(footprintScale,targetHeight/size.y);
       }
+      model.scale.multiplyScalar(scale);
     }
     model.updateMatrixWorld(true);box=new THREE.Box3().setFromObject(model);
     const center=new THREE.Vector3();box.getCenter(center);
@@ -3461,6 +3452,21 @@ class TownGame {
     });
     ui.world.dataset.bakingOvens=JSON.stringify(ovens);
     ui.world.dataset.portableObjects=JSON.stringify(this.portables.diagnostics());
+    const waterPatches=[...this.objects.values()].filter(object=>object.state.kind==='water_patch').map(object=>{
+      const target=this.visualTargets.find(candidate=>candidate.group===object.mesh&&candidate.asset===WATER_PATCH_ASSET);
+      let meshes=0,primitives=0;
+      object.mesh.traverse(child=>{
+        const mesh=child as THREE.Mesh;
+        if(mesh.isMesh){meshes++;if(['BoxGeometry','CylinderGeometry','ConeGeometry','PlaneGeometry'].includes(mesh.geometry.type))primitives++;}
+      });
+      return {
+        id:object.state.id,chunkId:object.state.chunkId??null,name:object.state.name,
+        position:{...object.state.position},asset:target?.asset,resolved:Boolean(target?.resolvedSize),
+        resolvedSize:target?.resolvedSize??null,surfaceY:object.mesh.position.y,meshes,primitives,
+        capabilities:object.state.capabilities??[],resourceAmount:object.state.resourceAmount??null
+      };
+    });
+    ui.world.dataset.waterPatches=JSON.stringify(waterPatches);
     const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
       id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
       height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
