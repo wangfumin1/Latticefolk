@@ -1,5 +1,8 @@
 
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import * as THREE from 'three';
+import { CoarseWorldRuntime } from '../src/world/coarseWorld.js';
+import { planFineChunk } from '../src/world/materialization.js';
 import type {
   WorldPersistenceSnapshot,
   WildlifeState,
@@ -94,9 +97,21 @@ async function seedWildlife(request:APIRequestContext){
   const deleted=await request.delete('/api/world/state');
   expect(deleted.ok()).toBeTruthy();
   const revision=(await deleted.json()).revision;
-  const player={x:48,z:52};
-  const chunkId=`chunk_${chunkAt(player.x)}_${chunkAt(player.z)}`;
-  expect(chunkId).toBe('chunk_2_2');
+
+  const player={x:-48,z:-188};
+  const chunkId='chunk_-2_-8';
+
+  const coarse=new CoarseWorldRuntime(new THREE.Scene());
+  const chunk=coarse.ensureChunk(-2,-8);
+  if(!chunk) throw new Error('missing natural coarse chunk');
+  const plan=planFineChunk(chunk,coarse.chunkSize);
+
+  expect(chunk.id).toBe(chunkId);
+  expect(chunk.settlementLevel).toBe(0);
+  expect(plan.archetype).toBe('wilderness');
+  expect(plan.residents).toHaveLength(0);
+  expect(plan.buildings).toHaveLength(0);
+  expect(plan.roads).toHaveLength(0);
 
   const base=(id:string,species:'raccoon'|'rabbit',x:number,z:number):WildlifeState=>({
     id,chunkId,species,position:{x,z},
@@ -109,10 +124,12 @@ async function seedWildlife(request:APIRequestContext){
     version:1,
     meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:player,
       playerInventory:{apple:0,bread:0,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},
-    coarseChunks:[],fineChunks:[{chunkId,npcStates:[],objectStates:[],wildlifeStates:[
-      base('raccoon_e2e','raccoon',48,49),
-      base('rabbit_e2e','rabbit',50,49)
-    ]}],homeNpcs:[],homeObjects:[]
+    coarseChunks:[structuredClone(chunk)],
+    fineChunks:[{chunkId,npcStates:[],objectStates:[],wildlifeStates:[
+      base('raccoon_e2e','raccoon',-48,-191),
+      base('rabbit_e2e','rabbit',-46,-191)
+    ]}],
+    homeNpcs:[],homeObjects:[]
   };
   const result=await request.post('/api/world/state',{data:{expectedRevision:revision,snapshot}});
   expect(result.ok()).toBeTruthy();
@@ -144,6 +161,13 @@ test('raccoon decision driven movement and presentation capture',async({page,req
   await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
   await seedWildlife(request);
   await page.goto('/',{waitUntil:'domcontentloaded'});
+  await expect.poll(async()=>await status(page).evaluate((el:HTMLElement)=>({
+    x:Number(el.dataset.playerX),
+    z:Number(el.dataset.playerZ)
+  }))).toMatchObject({x:-48,z:-188});
+
+  await expect.poll(async()=>Number(await status(page).evaluate((el:HTMLElement)=>el.dataset.materializedChunks||0))).toBeGreaterThan(0);
+
   await startFirstPerson(page);
 
   const visuals=()=>status(page).evaluate((el:HTMLElement)=>JSON.parse(el.dataset.wildlifeVisuals||'[]') as WildlifeVisual[]);

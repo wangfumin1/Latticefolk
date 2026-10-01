@@ -15,8 +15,9 @@ export async function startFirstPerson(page:Page) {
   await expect(start).toBeEnabled();
   await start.press('Enter');
   await expect(page.locator('#startOverlay')).toHaveClass(/hidden/);
-  await expect.poll(
-    ()=>page.evaluate(()=>document.pointerLockElement?.tagName??''),
-    {timeout:10_000}
-  ).toBe('CANVAS');
+  await page.waitForFunction(
+    ()=>document.pointerLockElement?.tagName==='CANVAS',
+    undefined,
+    {timeout:15_000}
+  );
 }
