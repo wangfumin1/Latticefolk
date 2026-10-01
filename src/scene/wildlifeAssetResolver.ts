@@ -14,17 +14,19 @@ export interface WildlifeAssetResolution {
   reason?: string;
 }
 
+const RACCOON_CLIP_PREFIX = 'AnimalArmature|AnimalArmature|AnimalArmature|';
+
 const RACCOON: WildlifeAssetDefinition = {
   species: 'raccoon',
   asset: '/assets/quaternius/wildlife/Raccoon.glb',
   license: 'CC0',
-  source: 'Quaternius Ultimate Animated Animals / fixed pinned mirror provenance',
+  source: 'Quaternius Ultimate Animated Animals / fixed pinned mirror provenance. Logical action names map to the authored GLB clip names.',
   clips: {
-    idle: 'Idle',
-    walk: 'Walk',
-    run: 'Run',
-    eat: 'Idle_Eating',
-    death: 'Death',
+    idle: `${RACCOON_CLIP_PREFIX}Idle`,
+    walk: `${RACCOON_CLIP_PREFIX}Walk`,
+    run: `${RACCOON_CLIP_PREFIX}Run`,
+    eat: `${RACCOON_CLIP_PREFIX}Idle_Eating`,
+    death: `${RACCOON_CLIP_PREFIX}Death`,
   },
 };
 
