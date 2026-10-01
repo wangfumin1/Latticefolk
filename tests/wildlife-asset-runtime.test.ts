@@ -70,10 +70,9 @@ test('real mixer animation has exact progress, death clamp, and instance isolati
   runtime.update(first, 0.37);
   assert.ok(Math.abs(first.position.x - 4) < 0.001);
 
-  const secondBefore = second.position.x;
   runtime.play(second, 'walk');
   runtime.update(second, 0.25);
-  assert.ok(second.position.x > secondBefore);
+  assert.ok(Math.abs(second.position.x - 1) < 0.001);
 
   runtime.dispose(first);
   assert.equal(first.parent, null);
@@ -83,7 +82,7 @@ test('real mixer animation has exact progress, death clamp, and instance isolati
   assert.equal(first.position.x, disposedX);
 
   runtime.update(second, 0.25);
-  assert.ok(second.position.x > secondBefore);
+  assert.ok(Math.abs(second.position.x - 2) < 0.001);
 
   const recreated = runtime.createInstance('raccoon', 0)!;
   assert.ok(runtime.play(recreated, 'walk'));
