@@ -10,9 +10,20 @@ export interface WildlifeVisualState {
   reason?: string;
 }
 
+export interface WildlifeAssetLoader {
+  load(url: string): Promise<{ scene: THREE.Object3D; animations: THREE.AnimationClip[] }>;
+}
+
+class DefaultWildlifeAssetLoader implements WildlifeAssetLoader {
+  private readonly loader = new GLTFLoader();
+  load(url: string) {
+    return this.loader.loadAsync(url).then(gltf => ({ scene: gltf.scene, animations: gltf.animations }));
+  }
+}
+
 interface CachedAsset {
-  scene: THREE.Object3D;
-  animations: THREE.AnimationClip[];
+  scene?: THREE.Object3D;
+  animations?: THREE.AnimationClip[];
   loading?: Promise<void>;
 }
 
@@ -20,16 +31,18 @@ interface InstanceState {
   mixer: THREE.AnimationMixer;
   actions: Map<string, THREE.AnimationAction>;
   current?: string;
-  death?: boolean;
-  scale: number;
-  footOffset: number;
+  death: boolean;
 }
 
 export class WildlifeVisualRuntime {
   private readonly cache = new Map<string, CachedAsset>();
-  private readonly loader = new GLTFLoader();
   private readonly instances = new Map<THREE.Object3D, InstanceState>();
   private readonly state = new Map<string, WildlifeVisualState>();
+  private readonly loader: WildlifeAssetLoader;
+
+  constructor(loader: WildlifeAssetLoader = new DefaultWildlifeAssetLoader()) {
+    this.loader = loader;
+  }
 
   getState(species: string): WildlifeVisualState | undefined {
     return this.state.get(species);
@@ -43,21 +56,21 @@ export class WildlifeVisualRuntime {
     }
     const existing = this.cache.get(species);
     if (existing?.loading) return existing.loading;
-    if (existing) {
+    if (existing?.scene) {
       this.state.set(species, { status: 'ready' });
       return;
     }
-    this.state.set(species, { status: 'loading' });
-    const entry: CachedAsset = { scene: new THREE.Object3D(), animations: [] };
+    const entry: CachedAsset = {};
     this.cache.set(species, entry);
-    entry.loading = this.loader.loadAsync(resolved.definition.asset).then(gltf => {
-      entry.scene = gltf.scene;
-      entry.animations = gltf.animations;
+    this.state.set(species, { status: 'loading' });
+    entry.loading = this.loader.load(resolved.definition.asset).then(asset => {
+      entry.scene = asset.scene;
+      entry.animations = asset.animations;
       this.state.set(species, { status: 'ready' });
-      delete entry.loading;
     }).catch(error => {
       this.cache.delete(species);
       this.state.set(species, { status: 'failed', reason: error instanceof Error ? error.message : String(error) });
+    }).finally(() => {
       delete entry.loading;
     });
     return entry.loading;
@@ -65,20 +78,20 @@ export class WildlifeVisualRuntime {
 
   createInstance(species: string, groundHeight: number, scale = 1): THREE.Object3D | undefined {
     const asset = this.cache.get(species);
-    if (!asset || this.state.get(species)?.status !== 'ready') return undefined;
+    if (!asset?.scene || this.state.get(species)?.status !== 'ready') return undefined;
     const root = cloneSkeleton(asset.scene);
     root.scale.setScalar(scale);
+    root.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(root);
-    const footOffset = -box.min.y * scale;
-    root.position.y = groundHeight + footOffset;
+    root.position.y = groundHeight - box.min.y;
     const mixer = new THREE.AnimationMixer(root);
     const actions = new Map<string, THREE.AnimationAction>();
     const clips = resolveWildlifeAsset(species).definition?.clips ?? {};
     for (const [key, name] of Object.entries(clips)) {
-      const clip = asset.animations.find(item => item.name === name);
+      const clip = asset.animations?.find(item => item.name === name);
       if (clip) actions.set(key, mixer.clipAction(clip));
     }
-    this.instances.set(root, { mixer, actions, scale, footOffset });
+    this.instances.set(root, { mixer, actions, death: false });
     return root;
   }
 
@@ -88,13 +101,16 @@ export class WildlifeVisualRuntime {
     const next = instance.actions.get(action);
     if (!next) return false;
     if (instance.current === action) return true;
-    instance.actions.get(instance.current ?? '')?.fadeOut(.15);
-    next.reset().fadeIn(.15).play();
+    const previous = instance.current ? instance.actions.get(instance.current) : undefined;
+    previous?.fadeOut(.15);
     if (action === 'death') {
-      next.setLoop(THREE.LoopOnce, 1);
+      next.reset().setLoop(THREE.LoopOnce, 1);
       next.clampWhenFinished = true;
       instance.death = true;
+    } else {
+      next.reset();
     }
+    next.fadeIn(.15).play();
     instance.current = action;
     return true;
   }
