@@ -32,6 +32,7 @@ interface InstanceState {
   actions: Map<string, THREE.AnimationAction>;
   current?: string;
   death: boolean;
+  ownedSkeletons: Set<THREE.Skeleton>;
 }
 
 const REQUIRED_ACTIONS: WildlifeVisualAction[] = ['idle', 'walk', 'run', 'eat', 'death'];
@@ -100,7 +101,12 @@ export class WildlifeVisualRuntime {
       const clip = asset.animations?.find(item => item.name === name);
       if (clip) actions.set(key, mixer.clipAction(clip));
     }
-    this.instances.set(root, { mixer, actions, death: false });
+    const ownedSkeletons = new Set<THREE.Skeleton>();
+    root.traverse(object => {
+      const mesh = object as THREE.SkinnedMesh;
+      if (mesh.isSkinnedMesh && mesh.skeleton) ownedSkeletons.add(mesh.skeleton);
+    });
+    this.instances.set(root, { mixer, actions, death: false, ownedSkeletons });
     return root;
   }
 
@@ -134,6 +140,7 @@ export class WildlifeVisualRuntime {
     for (const action of instance.actions.values()) action.stop();
     instance.mixer.stopAllAction();
     instance.mixer.uncacheRoot(root);
+    for (const skeleton of instance.ownedSkeletons) skeleton.dispose();
     this.instances.delete(root);
     root.removeFromParent();
   }

@@ -139,3 +139,194 @@ test('real mixer animation has exact progress, death clamp, and instance isolati
   runtime.dispose(second);
   runtime.dispose(recreated);
 });
+
+
+
+
+test('owned clone skeleton resources dispose only their own bone textures', async () => {
+  const runtime = new WildlifeVisualRuntime({
+    load: async () => {
+      const scene = new THREE.Group();
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0], 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0], 4));
+
+      const material = new THREE.MeshBasicMaterial();
+      const templateBone = new THREE.Bone();
+      const templateSkeleton = new THREE.Skeleton([templateBone]);
+      const mesh = new THREE.SkinnedMesh(geometry, material);
+      mesh.add(templateBone);
+      mesh.bind(templateSkeleton);
+      scene.add(mesh);
+
+      return {
+        scene,
+        animations: ['Idle', 'Walk', 'Run', 'Idle_Eating', 'Death'].map(name =>
+          new THREE.AnimationClip(`AnimalArmature|AnimalArmature|AnimalArmature|${name}`, 1, [
+            new THREE.NumberKeyframeTrack('.position[x]', [0, 1], [0, 4]),
+          ])
+        ),
+      };
+    },
+  });
+
+  await runtime.load('raccoon');
+
+  const first = runtime.createInstance('raccoon', 0)!;
+  const second = runtime.createInstance('raccoon', 0)!;
+
+  const firstSkeleton = (first.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+  const secondSkeleton = (second.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+
+  assert.notEqual(firstSkeleton, secondSkeleton);
+
+  firstSkeleton.computeBoneTexture();
+  secondSkeleton.computeBoneTexture();
+
+  assert.ok(firstSkeleton.boneTexture);
+  assert.ok(secondSkeleton.boneTexture);
+
+  let firstTextureDisposed = 0;
+  let secondTextureDisposed = 0;
+  firstSkeleton.boneTexture!.addEventListener('dispose', () => firstTextureDisposed++);
+  secondSkeleton.boneTexture!.addEventListener('dispose', () => secondTextureDisposed++);
+
+  const sharedGeometry = (first.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).geometry;
+  const sharedMaterial = (first.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).material;
+  let geometryDisposed = 0;
+  let materialDisposed = 0;
+  sharedGeometry.addEventListener('dispose', () => geometryDisposed++);
+  (sharedMaterial as THREE.Material).addEventListener('dispose', () => materialDisposed++);
+
+  assert.ok(runtime.play(first, 'walk'));
+  assert.ok(runtime.play(second, 'walk'));
+
+  runtime.dispose(first);
+  assert.equal(firstTextureDisposed, 1);
+  assert.equal(secondTextureDisposed, 0);
+  assert.equal(geometryDisposed, 0);
+  assert.equal(materialDisposed, 0);
+
+  runtime.dispose(first);
+  assert.equal(firstTextureDisposed, 1);
+
+  assert.ok(secondSkeleton.boneTexture);
+  runtime.update(second, 0.25);
+  assert.notEqual(second.position.x, 0);
+
+  const recreated = runtime.createInstance('raccoon', 0)!;
+  const recreatedSkeleton = (recreated.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+  assert.notEqual(recreatedSkeleton, secondSkeleton);
+
+  recreatedSkeleton.computeBoneTexture();
+  assert.ok(recreatedSkeleton.boneTexture);
+
+  let recreatedTextureDisposed = 0;
+  recreatedSkeleton.boneTexture.addEventListener('dispose', () => recreatedTextureDisposed++);
+
+  assert.ok(runtime.play(recreated, 'walk'));
+  runtime.update(recreated, 0.25);
+  assert.notEqual(recreated.position.x, 0);
+
+  runtime.dispose(recreated);
+  assert.equal(recreatedTextureDisposed, 1);
+
+  runtime.dispose(second);
+  assert.equal(secondTextureDisposed, 1);
+});
+
+
+test('template and clone skeleton bone textures have isolated disposal ownership', async () => {
+  let templateSkeleton: THREE.Skeleton | undefined;
+
+  const runtime = new WildlifeVisualRuntime({
+    load: async () => {
+      const scene = new THREE.Group();
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0], 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0], 4));
+
+      const material = new THREE.MeshBasicMaterial();
+      const bone = new THREE.Bone();
+      templateSkeleton = new THREE.Skeleton([bone]);
+      const mesh = new THREE.SkinnedMesh(geometry, material);
+      mesh.add(bone);
+      mesh.bind(templateSkeleton);
+      scene.add(mesh);
+
+      return {
+        scene,
+        animations: ['Idle', 'Walk', 'Run', 'Idle_Eating', 'Death'].map(name =>
+          new THREE.AnimationClip(`AnimalArmature|AnimalArmature|AnimalArmature|${name}`, 1, [
+            new THREE.NumberKeyframeTrack('.position[x]', [0, 1], [0, 4]),
+          ]),
+        ),
+      };
+    },
+  });
+
+  await runtime.load('raccoon');
+
+  assert.ok(templateSkeleton);
+  templateSkeleton.computeBoneTexture();
+  let templateDisposed = 0;
+  templateSkeleton.boneTexture!.addEventListener('dispose', () => templateDisposed++);
+
+  const first = runtime.createInstance('raccoon', 0)!;
+  const second = runtime.createInstance('raccoon', 0)!;
+  const firstSkeleton = (first.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+  const secondSkeleton = (second.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+
+  assert.notEqual(firstSkeleton, templateSkeleton);
+  assert.notEqual(secondSkeleton, templateSkeleton);
+  assert.notEqual(firstSkeleton, secondSkeleton);
+
+  firstSkeleton.computeBoneTexture();
+  secondSkeleton.computeBoneTexture();
+
+  let firstDisposed = 0;
+  let secondDisposed = 0;
+  firstSkeleton.boneTexture!.addEventListener('dispose', () => firstDisposed++);
+  secondSkeleton.boneTexture!.addEventListener('dispose', () => secondDisposed++);
+
+  assert.ok(runtime.play(first, 'walk'));
+  assert.ok(runtime.play(second, 'walk'));
+
+  runtime.dispose(first);
+  assert.equal(firstDisposed, 1);
+  assert.equal(firstSkeleton.boneTexture, null);
+  assert.equal(secondDisposed, 0);
+  assert.ok(secondSkeleton.boneTexture);
+  assert.equal(templateDisposed, 0);
+  assert.ok(templateSkeleton.boneTexture);
+
+  runtime.dispose(first);
+  assert.equal(firstDisposed, 1);
+
+  runtime.update(second, 0.25);
+  assert.notEqual(second.position.x, 0);
+
+  const recreated = runtime.createInstance('raccoon', 0)!;
+  const recreatedSkeleton = (recreated.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh).skeleton;
+  assert.notEqual(recreatedSkeleton, secondSkeleton);
+  recreatedSkeleton.computeBoneTexture();
+
+  let recreatedDisposed = 0;
+  recreatedSkeleton.boneTexture!.addEventListener('dispose', () => recreatedDisposed++);
+
+  assert.ok(runtime.play(recreated, 'walk'));
+  runtime.update(recreated, 0.25);
+  assert.notEqual(recreated.position.x, 0);
+
+  runtime.dispose(recreated);
+  assert.equal(recreatedDisposed, 1);
+  assert.equal(recreatedSkeleton.boneTexture, null);
+
+  runtime.dispose(second);
+  assert.equal(secondDisposed, 1);
+  assert.equal(secondSkeleton.boneTexture, null);
+  assert.equal(templateDisposed, 0);
+  assert.ok(templateSkeleton.boneTexture);
+});
