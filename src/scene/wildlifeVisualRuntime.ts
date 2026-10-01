@@ -34,6 +34,8 @@ interface InstanceState {
   death: boolean;
 }
 
+const REQUIRED_ACTIONS: WildlifeVisualAction[] = ['idle', 'walk', 'run', 'eat', 'death'];
+
 export class WildlifeVisualRuntime {
   private readonly cache = new Map<string, CachedAsset>();
   private readonly instances = new Map<THREE.Object3D, InstanceState>();
@@ -64,6 +66,13 @@ export class WildlifeVisualRuntime {
     this.cache.set(species, entry);
     this.state.set(species, { status: 'loading' });
     entry.loading = this.loader.load(resolved.definition.asset).then(asset => {
+      const missing = REQUIRED_ACTIONS.filter(action => {
+        const clipName = resolved.definition?.clips[action];
+        return !clipName || asset.animations.filter(clip => clip.name === clipName).length !== 1;
+      });
+      if (missing.length > 0) {
+        throw new Error(`invalid wildlife clips for ${species}: ${missing.join(', ')}`);
+      }
       entry.scene = asset.scene;
       entry.animations = asset.animations;
       this.state.set(species, { status: 'ready' });
