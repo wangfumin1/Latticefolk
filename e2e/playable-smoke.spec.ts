@@ -367,7 +367,8 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // previous per-pulse protocol loop turned a few seconds of gameplay into several minutes.
   // Real trace showed this waypoint needs more wall-clock budget on software WebGL runners: ~0.6s simulation movement is not enough for the remaining distance.
   await drivePlayerTo(page,{x:5.2,z:4.0},45_000,.55);
-  await drivePlayerTo(page,{x:13.95,z:3.4},25_000,.45);
+  // Trace evidence: the second waypoint continued advancing under normal simulation but required more wall-clock budget on hosted software WebGL runners.
+  await drivePlayerTo(page,{x:13.95,z:3.4},45_000,.45);
   const treeApproach=await drivePlayerTo(page,{x:13.95,z:2.35},12_000,.28);
   expect(treeApproach.x).toBeGreaterThan(13.55);
   expect(treeApproach.x).toBeLessThan(14.4);

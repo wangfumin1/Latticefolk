@@ -15,6 +15,10 @@ import { startFirstPerson } from './helpers/native-start.js';
 
 const status=(page:Page)=>page.locator('#worldStatus');
 const chunkAt=(v:number)=>Math.floor((v+12)/24);
+const WILDLIFE_FIXTURE_PLAYER={x:-48,z:-188} as const;
+const WILDLIFE_FIXTURE_RACCOON={x:-48,z:-191} as const;
+const WILDLIFE_FIXTURE_RABBIT={x:-46,z:-191} as const;
+
 
 type WildlifeVisual = {
   id:string;
@@ -98,7 +102,7 @@ async function seedWildlife(request:APIRequestContext){
   expect(deleted.ok()).toBeTruthy();
   const revision=(await deleted.json()).revision;
 
-  const player={x:-48,z:-188};
+  const player=WILDLIFE_FIXTURE_PLAYER;
   const chunkId='chunk_-2_-8';
 
   const coarse=new CoarseWorldRuntime(new THREE.Scene());
@@ -126,8 +130,8 @@ async function seedWildlife(request:APIRequestContext){
       playerInventory:{apple:0,bread:0,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},
     coarseChunks:[structuredClone(chunk)],
     fineChunks:[{chunkId,npcStates:[],objectStates:[],wildlifeStates:[
-      base('raccoon_e2e','raccoon',-48,-191),
-      base('rabbit_e2e','rabbit',-46,-191)
+      base('raccoon_e2e','raccoon',WILDLIFE_FIXTURE_RACCOON.x,WILDLIFE_FIXTURE_RACCOON.z),
+      base('rabbit_e2e','rabbit',WILDLIFE_FIXTURE_RABBIT.x,WILDLIFE_FIXTURE_RABBIT.z)
     ]}],
     homeNpcs:[],homeObjects:[]
   };
@@ -164,7 +168,7 @@ test('raccoon decision driven movement and presentation capture',async({page,req
   await expect.poll(async()=>await status(page).evaluate((el:HTMLElement)=>({
     x:Number(el.dataset.playerX),
     z:Number(el.dataset.playerZ)
-  }))).toMatchObject({x:-48,z:-188});
+  }))).toMatchObject(WILDLIFE_FIXTURE_PLAYER);
 
   await expect.poll(async()=>Number(await status(page).evaluate((el:HTMLElement)=>el.dataset.materializedChunks||0))).toBeGreaterThan(0);
 
@@ -188,7 +192,7 @@ test('raccoon decision driven movement and presentation capture',async({page,req
 
   moveRequested=false;
   const heading1=await frameRaccoon(page,0,'raccoon_e2e');
-  expect(Math.hypot(raccoon.position.x-48,raccoon.position.z-52)).toBeLessThan(10);
+  expect(Math.hypot(raccoon.position.x-WILDLIFE_FIXTURE_PLAYER.x,raccoon.position.z-WILDLIFE_FIXTURE_PLAYER.z)).toBeLessThan(10);
   const close=await page.screenshot();
   await info.attach('raccoon-close.png',{body:close,contentType:'image/png'});
 
