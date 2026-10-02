@@ -17,6 +17,8 @@ import { advancePickupRespawn, droppedItemCount, portableItemMetrics, restoredPl
 import { droppedParcelLabel, droppedParcelSpec } from './scene/droppedParcel';
 import { WATER_PATCH_ASSET, waterPatchVisualSpec } from './scene/waterPatch';
 import { CharacterSoles } from './scene/characterSoles';
+import { WildlifePresentation } from './scene/wildlifePresentation';
+import { WildlifeVisualRuntime } from './scene/wildlifeVisualRuntime';
 import { SunShadowView } from './scene/sunShadow';
 import { characterOverlay } from './scene/characterOverlay';
 import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
@@ -220,6 +222,7 @@ class TownGame {
   npcs = new Map<string,NpcRuntime>();
   objects = new Map<string,RuntimeObject>();
   wildlife = new Map<string,WildlifeRuntime>();
+  wildlifePresentation = new WildlifePresentation(new WildlifeVisualRuntime());
   wildlifeLineage = new Map<string,WildlifeLineageRecord>();
   wildlifeTransfers = new Map<string,PersistedWildlifeTransfer>();
   lineageEpoch = 0;
@@ -1525,11 +1528,13 @@ class TownGame {
     state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
-    const g=this.makeProceduralAnimal(state);
+    const g=state.species==='raccoon'?new THREE.Group():this.makeProceduralAnimal(state);
     g.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     g.userData={entityType:'wildlife',entityId:state.id};
     this.scene.add(g);
-    this.wildlife.set(state.id,{state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true});
+    const runtime:WildlifeRuntime={state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true};
+    this.wildlife.set(state.id,runtime);
+    this.wildlifePresentation.register(runtime);
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return true;
   }
@@ -1719,6 +1724,7 @@ class TownGame {
         ordinaryDiseaseTotals[species]=(ordinaryDiseaseTotals[species]||0)+(animal.state.diseaseLoad||0);
       }
       animal.removed=true;
+      this.wildlifePresentation.remove(animal);
       animal.mesh.parent?.remove(animal.mesh);
       this.wildlife.delete(id);
     }
@@ -1881,10 +1887,14 @@ class TownGame {
       if(s.health<=0){this.removeWildlife(animal,this.classifyWildlifeDeath(s));continue;}
 
       this.applyOwnedWildlifeCommand(animal);
+      const beforeMoveX=animal.mesh.position.x;
+      const beforeMoveZ=animal.mesh.position.z;
       this.moveWildlife(animal,dt);
+      const actualSpeed=Math.hypot(animal.mesh.position.x-beforeMoveX,animal.mesh.position.z-beforeMoveZ)/Math.max(dt,0.000001);
       animal.mesh.position.y=this.groundHeightAt(animal.mesh.position.x,animal.mesh.position.z);
       if(animal.path.length===0&&!animal.actionResolved)this.completeWildlifeAction(animal);
       if(animal.removed)continue;
+      this.wildlifePresentation.update(animal,{speed:actualSpeed,action:s.currentAction,deltaSeconds:dt});
       s.position.x=animal.mesh.position.x;s.position.z=animal.mesh.position.z;
       this.recordWildlifeHabitatExposure(s);
     }
@@ -2324,6 +2334,7 @@ class TownGame {
 
     animal.removed=true;
     animal.path=[];animal.pathIndex=0;
+    this.wildlifePresentation.remove(animal);
     animal.mesh.parent?.remove(animal.mesh);
     this.wildlife.delete(state.id);
 
@@ -2643,7 +2654,7 @@ class TownGame {
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
-    animal.removed=true;animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
+    animal.removed=true;this.wildlifePresentation.remove(animal);animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
     this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${i18n.t(`evolution.death.${reason}`)}。`);
   }
 
@@ -3460,6 +3471,42 @@ class TownGame {
       return {id:object.state.id,asset:target?.asset,resolved:Boolean(target?.resolvedSize),meshes,primitives,
         ...object.mesh.userData.ovenPhysics};
     });
+    const wildlifePresentationDiagnostics=this.wildlifePresentation.getDiagnosticsSummary();
+    ui.world.dataset.wildlifeRaccoonPending=String(wildlifePresentationDiagnostics.pending);
+    ui.world.dataset.wildlifeRaccoonReady=String(wildlifePresentationDiagnostics.ready);
+    ui.world.dataset.wildlifeRaccoonFailed=String(wildlifePresentationDiagnostics.failed);
+    ui.world.dataset.wildlifeRaccoonCount=String(wildlifePresentationDiagnostics.count);
+    ui.world.dataset.wildlifeVisuals=JSON.stringify([...this.wildlife.values()].filter(animal=>!animal.removed).map(animal=>{
+      const presentationVisual=this.wildlifePresentation.getObject(animal.state.id);
+      const visual=animal.state.species==='raccoon'
+        ? presentationVisual
+        : animal.mesh;
+      let bones=0;
+      let pose:unknown[]=[];
+      if(visual){
+        visual.traverse(node=>{
+          if((node as THREE.Bone).isBone){
+            bones++;
+            const bone=node as THREE.Bone;
+            pose.push(...bone.position.toArray(),...bone.quaternion.toArray(),...bone.scale.toArray());
+          }
+        });
+      }
+      const ready=animal.state.species==='raccoon'
+        ? this.wildlifePresentation.getDiagnostics().some(item=>item.id===animal.state.id&&item.status==='ready')
+        : (()=>{let meshes=0;animal.mesh.traverse(node=>{if((node as THREE.Mesh).isMesh)meshes++;});return meshes>0;})();
+      return {
+        id:animal.state.id,
+        species:animal.state.species,
+        position:{x:animal.mesh.position.x,z:animal.mesh.position.z},
+        heading:animal.mesh.rotation.y,
+        ready,
+        meshes:visual?(()=>{let count=0;visual.traverse(node=>{if((node as THREE.Mesh).isMesh)count++;});return count;})():0,
+        bones,
+        action:animal.state.currentAction,
+        pose
+      };
+    }));
     ui.world.dataset.bakingOvens=JSON.stringify(ovens);
     ui.world.dataset.portableObjects=JSON.stringify(this.portables.diagnostics());
     const waterPatches=[...this.objects.values()].filter(object=>object.state.kind==='water_patch').map(object=>{

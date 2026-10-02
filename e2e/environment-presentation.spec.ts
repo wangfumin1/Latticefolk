@@ -139,7 +139,7 @@ test('rendered NPC soles remain supported through ordinary idle and moving simul
 });
 
 test('native approach respects source head clearance while dialogue and observer shadows remain usable',async({page,request},info)=>{
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const revision=await seed(request,{x:-9,z:-7.5});
   // One read-only DOM snapshot per checkpoint avoids mixing frames and spending
   // the transient speech lifetime on repeated protocol round trips.

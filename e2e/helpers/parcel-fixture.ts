@@ -43,7 +43,11 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
     }
   }
   const constraints = plan.residents.map(n => playerHeadConstraint(`npc:${n.id}`, n.characterAsset, n, 0));
-  const dynamic = plan.residents.map(n => ({id:`npc:${n.id}`,x:n.x,z:n.z,radius:NPC_BODY_RADIUS}));
+  // Include the generated wildlife bodies used by Game.physicsDynamicColliders.
+  // This checks the initial route only; live animals may subsequently cross it.
+  const wildlifeColliders=plan.wildlife.map(a=>({id:`wildlife:${a.id}`,x:a.x,z:a.z,
+    radius:Math.max(.24,Math.min(.48,.20+a.traits.size*.10))}));
+  const dynamic = [...plan.residents.map(n => ({id:`npc:${n.id}`,x:n.x,z:n.z,radius:NPC_BODY_RADIUS})),...wildlifeColliders];
   const exitX = chunk.cx * chunkSize - chunkSize / 2 - .4;
   const rejected = [];
   for (const donor of plan.residents.filter(n => n.inventory.some(i => i.kind === 'water' && i.count > 0))) {
@@ -53,7 +57,7 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
     const returned = physics.moveKinematic({id:'player',position:{x:exitX,z:start.z},
       displacement:{x:start.x-exitX,z:0},radius:PLAYER_BODY_RADIUS,dynamic,constraints,maxSubstep:.05});
     if (Math.abs(outbound.position.x-exitX) < 1e-8 && Math.abs(returned.position.x-start.x) < 1e-8) {
-      return {chunk,donor,start,exitX,treeColliders,rejected};
+      return {chunk,donor,start,exitX,treeColliders,wildlifeColliders,rejected};
     }
     rejected.push({id:donor.id,start,staticHits:outbound.staticHits,dynamicHits:outbound.dynamicHits,
       outbound:outbound.position,returned:returned.position});

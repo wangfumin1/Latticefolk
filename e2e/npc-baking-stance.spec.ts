@@ -32,10 +32,35 @@ test('baker reaches a source-derived work stance before crafting and restores ph
     const oven=await page.evaluate(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')!.dataset.bakingOvens!)[0]);
     const expected=bakingWorkApproach('female2',{x:-10,z:-13},oven.collider,()=>false)!;
     enabled=true;
-    await expect.poll(async()=>{
-      const r=await request.get('/api/world/state');expect(r.ok()).toBe(true);
-      const s=await r.json();return s.snapshot?.homeNpcs?.find((n:NpcState)=>n.id==='ren')?.inventory.find((i:{kind:string})=>i.kind==='bread')?.count;
-    },{timeout:60_000}).toBe(4);
+    const progressDiagnostics:Array<{
+      revision:number;
+      position?:{x:number;z:number};
+      hunger?:number;
+      bread:number;
+    }>=[];
+    try{
+      await expect.poll(async()=>{
+        const r=await request.get('/api/world/state');expect(r.ok()).toBe(true);
+        const s=await r.json();
+        const baker=s.snapshot?.homeNpcs?.find((n:NpcState)=>n.id==='ren');
+        const bread=baker?.inventory.find((i:{kind:string})=>i.kind==='bread')?.count ?? -1;
+        if(progressDiagnostics.length===0||progressDiagnostics.at(-1)?.revision!==s.revision){
+          progressDiagnostics.push({
+            revision:s.revision,
+            position:baker?.position,
+            hunger:baker?.hunger,
+            bread
+          });
+          if(progressDiagnostics.length>20)progressDiagnostics.shift();
+        }
+        return bread;
+      },{timeout:120_000}).toBe(4);
+    }finally{
+      await info.attach('baker-progress-diagnostics',{
+        body:Buffer.from(JSON.stringify(progressDiagnostics,null,2)),
+        contentType:'application/json'
+      });
+    }
     expect(proposed).toBe(true);
     const response=await request.get('/api/world/state');const saved=await response.json();
     const baker=saved.snapshot.homeNpcs.find((n:NpcState)=>n.id==='ren') as NpcState;

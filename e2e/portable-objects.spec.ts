@@ -4,6 +4,7 @@ import { fineParcelFixture } from './helpers/parcel-fixture.js';
 import { ensureWildlifePopulations } from '../src/world/ecology.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
+import { traverseNativeParcelRoute } from './helpers/parcel-route.js';
 
 interface ParcelView {
   id: string; chunkId: string | null; item: string; count: number;
@@ -69,22 +70,6 @@ async function collect(page: Page, title: string, yaw = 0, pitch = .82) {
   await expect(page.locator('#interactionActions button')).toHaveCount(2);
   await page.locator('#interactionActions button').nth(1).press('Enter');
 }
-async function strafe(page: Page, key: 'KeyA' | 'KeyD', targetX: number) {
-  try {
-    await page.keyboard.down(key);
-    // Read on rendered frames; no game/position writes and no repeated locator round trips.
-    await page.evaluate(async ({key,targetX}) => {
-      const start = performance.now();
-      while (performance.now() - start < 30_000) {
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        const x = Number(document.querySelector<HTMLElement>('#worldStatus')?.dataset.playerX);
-        if (Number.isFinite(x) && (key === 'KeyA' ? x <= targetX : x >= targetX)) return;
-      }
-      throw new Error(`Native ${key} failed to reach X=${targetX}`);
-    }, {key,targetX});
-  } finally { await page.keyboard.up(key); }
-}
-
 test.afterEach(async ({page,request}) => {
   await page.close();
   const reset = await request.delete('/api/world/state'); expect(reset.ok()).toBe(true);
@@ -179,10 +164,11 @@ test('fine NPC parcel belongs to its source chunk and survives native unload/rev
   expect(chunk.npcStates.find(n => n.id === donor.id)!.inventory.find(i => i.kind === 'water')?.count).toBe(0);
   await lookForObject(page, object.name, 0, .82);
   await info.attach('fine-sourced-parcel-before-crossing', {body:await page.screenshot(),contentType:'image/png'});
-  await strafe(page,'KeyA',exitX);
+  const outbound=await page.evaluate(traverseNativeParcelRoute,{key:'KeyA' as const,targetX:exitX,laneZ:start.z});
   await expect.poll(async () => (await view(page)).materialized).toBe(0);
   expect((await view(page)).parcels.some(p => p.id === drop.id)).toBe(false);
-  await strafe(page,'KeyD',start.x);
+  const inbound=await page.evaluate(traverseNativeParcelRoute,{key:'KeyD' as const,targetX:start.x,laneZ:start.z});
+  await info.attach('fine-parcel-native-detour-input',{body:Buffer.from(JSON.stringify({outbound,inbound},null,2)),contentType:'application/json'});
   const returned = await waitForParcel(page,drop.id);
   expect(returned.position).toEqual(drop.position); expect(returned.count).toBe(1);
   expect(returned.chunkId).toBe(fine.id);

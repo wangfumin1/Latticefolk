@@ -365,8 +365,10 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   // authoritative static/dynamic collision, but keep the steering loop inside the page.
   // Hosted software WebGL can make each Playwright protocol round-trip take seconds; the
   // previous per-pulse protocol loop turned a few seconds of gameplay into several minutes.
-  await drivePlayerTo(page,{x:5.2,z:4.0},18_000,.55);
-  await drivePlayerTo(page,{x:13.95,z:3.4},25_000,.45);
+  // Real trace showed this waypoint needs more wall-clock budget on software WebGL runners: ~0.6s simulation movement is not enough for the remaining distance.
+  await drivePlayerTo(page,{x:5.2,z:4.0},45_000,.55);
+  // Trace evidence: the second waypoint continued advancing under normal simulation but required more wall-clock budget on hosted software WebGL runners.
+  await drivePlayerTo(page,{x:13.95,z:3.4},45_000,.45);
   const treeApproach=await drivePlayerTo(page,{x:13.95,z:2.35},12_000,.28);
   expect(treeApproach.x).toBeGreaterThan(13.55);
   expect(treeApproach.x).toBeLessThan(14.4);
@@ -535,9 +537,20 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
   expect(staged.materializedChunks).toBe(0);
 
   let heldRequest:ChunkDecisionRequestForE2E|undefined;
+  let releasedAt=0;
+  let released=false;
   let releaseHeld=()=>{};
+  const releaseOnce=()=>{
+    if(released)return;
+    released=true;
+    releasedAt=Date.now();
+    releaseHeld();
+  };
   const heldGate=new Promise<void>(resolve=>{releaseHeld=resolve;});
   let heldCompleted=false;
+  await page.exposeFunction('notifyCoarseTransitionExited',()=>{
+    releaseOnce();
+  });
   let notifyCaptured=()=>{};
   const captured=new Promise<void>(resolve=>{notifyCaptured=resolve;});
   let capturedAt=0;
@@ -592,17 +605,23 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
         const entered=await until(()=>materialized()>0,2_500);
         key('keyup','KeyD');key('keydown','KeyA');
         const exited=entered&&await until(()=>materialized()===0,2_500);
+        if(exited){
+          const notify=(window as unknown as Window & {
+            notifyCoarseTransitionExited:()=>Promise<void>;
+          }).notifyCoarseTransitionExited;
+          await notify();
+        }
         return {before,entered,exited,materialized:materialized(),startedAt,finishedAt:performance.now()};
       } finally {key('keyup','KeyD');key('keyup','KeyA');key('keyup','ShiftLeft');}
     });
-    releaseHeld(); // Do not spend the production 8-second request lifetime on more CDP calls.
+    releaseOnce(); // Browser transition completion releases the held response immediately; finally remains the safety net.
     const before=transition.before;
-    await testInfo.attach('coarse-native-transition-timing',{body:Buffer.from(JSON.stringify({capturedAt,releasedAt:Date.now(),transition},null,2)),contentType:'application/json'});
+    await testInfo.attach('coarse-native-transition-timing',{body:Buffer.from(JSON.stringify({capturedAt,releasedAt,transition},null,2)),contentType:'application/json'});
     expect(transition.entered).toBe(true);
     expect(transition.exited).toBe(true);
     expect(transition.materialized).toBe(0);
 
-    releaseHeld();
+    releaseOnce();
     await expect.poll(()=>heldCompleted,{timeout:3_000}).toBe(true);
     await page.waitForTimeout(250);
     const afterStale=await runtime(page);
@@ -618,7 +637,7 @@ test('coarse policy reply crossing a real materialize-unload transition is disca
     expect(recovered.coarseLastBatchSize).toBeGreaterThan(0);
     expect(recovered.coarseLastSource).not.toBe('e2e-stale-transition');
   }finally{
-    releaseHeld();
+    releaseOnce();
     await page.unroute('**/api/world/chunks/decide').catch(()=>{});
   }
 });
