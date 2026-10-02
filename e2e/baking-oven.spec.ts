@@ -15,7 +15,15 @@ async function savedWorld(request:APIRequestContext) {
   return response.json() as Promise<{revision:number;snapshot:WorldPersistenceSnapshot|null}>;
 }
 async function position(page:Page) {
-  return page.locator('#worldStatus').evaluate(el=>({x:Number((el as HTMLElement).dataset.playerX),z:Number((el as HTMLElement).dataset.playerZ)}));
+  // Both normal callers have already observed ready worldStatus data. A direct
+  // read avoids the extra locator/ElementHandle round trip measured in CI.
+  return page.evaluate(()=>{
+    const data=document.querySelector<HTMLElement>('#worldStatus')?.dataset;
+    if(!data||!data.playerX?.trim()||!data.playerZ?.trim())throw new Error('Oven position data is missing');
+    const x=Number(data.playerX),z=Number(data.playerZ);
+    if(!Number.isFinite(x)||!Number.isFinite(z))throw new Error('Oven position data is not finite');
+    return {x,z};
+  });
 }
 
 const generated:CoarseChunkState={id:'chunk_2_-1',cx:2,cz:-1,biome:'plains',settlementLevel:2,population:23,
