@@ -4,12 +4,15 @@ import * as THREE from 'three';
 import { sourceGltf } from './helpers/source-gltf';
 import { WildlifeVisualRuntime } from '../src/scene/wildlifeVisualRuntime';
 import { WildlifePresentation } from '../src/scene/wildlifePresentation';
+import { neutralRaccoonAppearance } from './helpers/raccoon-appearance';
 
 const makeOwner = (id: string) => ({
   state: {
     id,
     species: 'raccoon' as const,
     traits: { speed: 1, size: .58, fertility: 1, wariness: 1 },
+    phenotype: neutralRaccoonAppearance().phenotype,
+    organismGenome: neutralRaccoonAppearance().genome,
   },
   mesh: new THREE.Group(),
 });

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveWildlifeAsset } from './wildlifeAssetResolver';
+import { applyRaccoonAppearance, type RaccoonAppearance } from './raccoonAppearance';
 
 export type WildlifeVisualAction = 'idle' | 'walk' | 'run' | 'eat' | 'death';
 
@@ -33,6 +34,7 @@ interface InstanceState {
   current?: string;
   death: boolean;
   ownedSkeletons: Set<THREE.Skeleton>;
+  ownedGeometries: Set<THREE.BufferGeometry>;
 }
 
 const REQUIRED_ACTIONS: WildlifeVisualAction[] = ['idle', 'walk', 'run', 'eat', 'death'];
@@ -86,10 +88,24 @@ export class WildlifeVisualRuntime {
     return entry.loading;
   }
 
-  createInstance(species: string, groundHeight: number, scale = 1): THREE.Object3D | undefined {
+  createInstance(species: string, groundHeight: number, scale = 1, appearance?: RaccoonAppearance): THREE.Object3D | undefined {
     const asset = this.cache.get(species);
     if (!asset?.scene || this.state.get(species)?.status !== 'ready') return undefined;
     const root = cloneSkeleton(asset.scene);
+    const ownedSkeletons = new Set<THREE.Skeleton>();
+    root.traverse(object => {
+      const mesh = object as THREE.SkinnedMesh;
+      if (mesh.isSkinnedMesh && mesh.skeleton) ownedSkeletons.add(mesh.skeleton);
+    });
+    let adapted;
+    try {
+      adapted = species === 'raccoon' && appearance
+        ? applyRaccoonAppearance(root, asset.animations ?? [], appearance)
+        : { animations: asset.animations ?? [], geometries: new Set<THREE.BufferGeometry>() };
+    } catch (error) {
+      for (const skeleton of ownedSkeletons) skeleton.dispose();
+      throw error;
+    }
     root.scale.setScalar(scale);
     root.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(root);
@@ -98,15 +114,10 @@ export class WildlifeVisualRuntime {
     const actions = new Map<string, THREE.AnimationAction>();
     const clips = resolveWildlifeAsset(species).definition?.clips ?? {};
     for (const [key, name] of Object.entries(clips)) {
-      const clip = asset.animations?.find(item => item.name === name);
+      const clip = adapted.animations.find(item => item.name === name);
       if (clip) actions.set(key, mixer.clipAction(clip));
     }
-    const ownedSkeletons = new Set<THREE.Skeleton>();
-    root.traverse(object => {
-      const mesh = object as THREE.SkinnedMesh;
-      if (mesh.isSkinnedMesh && mesh.skeleton) ownedSkeletons.add(mesh.skeleton);
-    });
-    this.instances.set(root, { mixer, actions, death: false, ownedSkeletons });
+    this.instances.set(root, { mixer, actions, death: false, ownedSkeletons, ownedGeometries: adapted.geometries });
     return root;
   }
 
@@ -141,6 +152,7 @@ export class WildlifeVisualRuntime {
     instance.mixer.stopAllAction();
     instance.mixer.uncacheRoot(root);
     for (const skeleton of instance.ownedSkeletons) skeleton.dispose();
+    for (const geometry of instance.ownedGeometries) geometry.dispose();
     this.instances.delete(root);
     root.removeFromParent();
   }

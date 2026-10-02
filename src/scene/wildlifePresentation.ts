@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { WildlifeVisualRuntime, type WildlifeVisualAction } from './wildlifeVisualRuntime';
 import type { WildlifeState } from '../types';
+import { normalizeWildlifePhenotype } from '../world/wildlifePhenotype';
+import { normalizeWildlifeOrganismGenome } from '../world/organismFamilies';
 
-type WildlifeOwnerState = Pick<WildlifeState, 'id' | 'species' | 'traits'>;
+type WildlifeOwnerState = Pick<WildlifeState, 'id' | 'species' | 'traits' | 'phenotype' | 'organismGenome'>;
 
 export interface WildlifePresentationOwner {
   readonly state: WildlifeOwnerState;
@@ -129,39 +131,50 @@ export class WildlifePresentation {
   }
 
   private async attach(binding: Binding): Promise<void> {
-    await this.runtime.load(binding.owner.state.species);
-    const current = this.bindings.get(binding.owner.state.id);
-    if (!current || current !== binding || current.owner !== binding.owner) return;
+    try {
+      await this.runtime.load(binding.owner.state.species);
+      const current = this.bindings.get(binding.owner.state.id);
+      if (!current || current !== binding || current.owner !== binding.owner) return;
 
-    const runtimeState = this.runtime.getState(binding.owner.state.species);
-    if (runtimeState?.status === 'failed') {
-      binding.status = 'failed';
-      binding.reason = runtimeState.reason;
-      return;
-    }
-
-    const visual = this.runtime.createInstance(binding.owner.state.species, 0, raccoonScale(binding.owner.state));
-    if (!visual) {
-      binding.status = 'failed';
-      binding.reason = `unable to create ${binding.owner.state.species} visual`;
-      return;
-    }
-
-    visual.traverse(node => {
-      const mesh = node as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+      const runtimeState = this.runtime.getState(binding.owner.state.species);
+      if (runtimeState?.status === 'failed') {
+        binding.status = 'failed';
+        binding.reason = runtimeState.reason;
+        return;
       }
-    });
 
-    const presentationRoot = new THREE.Group();
-    presentationRoot.name = 'wildlife-presentation-ground0';
-    presentationRoot.add(visual);
-    binding.owner.mesh.add(presentationRoot);
+      const state = binding.owner.state;
+      const visual = this.runtime.createInstance(state.species, 0, raccoonScale(state), {
+        phenotype: normalizeWildlifePhenotype(state.phenotype, state.id),
+        genome: normalizeWildlifeOrganismGenome(state.species, state.organismGenome, state.id),
+      });
+      if (!visual) {
+        binding.status = 'failed';
+        binding.reason = `unable to create ${binding.owner.state.species} visual`;
+        return;
+      }
+      binding.visual = visual;
 
-    binding.visual = visual;
-    binding.container = presentationRoot;
-    binding.status = 'ready';
+      visual.traverse(node => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+        }
+      });
+
+      const presentationRoot = new THREE.Group();
+      presentationRoot.name = 'wildlife-presentation-ground0';
+      binding.container = presentationRoot;
+      presentationRoot.add(visual);
+      binding.owner.mesh.add(presentationRoot);
+
+      binding.status = 'ready';
+    } catch (error) {
+      if (this.bindings.get(binding.owner.state.id) !== binding) return;
+      this.disposeBinding(binding);
+      binding.status = 'failed';
+      binding.reason = error instanceof Error ? error.message : String(error);
+    }
   }
 }
