@@ -5,10 +5,10 @@ import {test} from 'node:test';
 import ts from 'typescript';
 import {FinePhysicsAuthority,type PhysicsPoint,type StaticCollider} from '../src/world/finePhysics.js';
 import {registerHomeTerrain} from '../src/world/fineTerrain.js';
-import {characterHeadEnvelope,playerHeadConstraint,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
+import {characterHeadEnvelope,playerHeadConstraint,playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
 
 type Actor={id:string;asset:string;position:PhysicsPoint;headYaw:number};
-type Fixture={name:string;start:PhysicsPoint;target:PhysicsPoint;actors:Actor[];tolerance?:number;timeoutMs?:number;statics?:StaticCollider[]};
+type Fixture={name:string;start:PhysicsPoint;target:PhysicsPoint;actors:Actor[];tolerance?:number;timeoutMs?:number;statics?:StaticCollider[];diagnosticStatics?:StaticCollider[]};
 type Result={reached:boolean;x:number;z:number;distance:number;detours:number};
 // Run the actual self-contained browser callback with keyboard events and read-only
 // diagnostics, integrating unchanged production physics. This is not browser E2E.
@@ -19,7 +19,7 @@ const saved=JSON.parse(fs.readFileSync(new URL('./fixtures/native-waypoint-ci.js
 const actual:Fixture={...saved,name:'CI frozen actor poses'};
 const actor=(id:string,asset:string,x:number,z:number,headYaw:number):Actor=>({id,asset,position:{x,z},headYaw});
 
-async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;moveActor?:boolean;intrudeAt?:number;badActors?:boolean;badPosition?:boolean}={}){
+async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;moveActor?:boolean;intrudeAt?:number;badActors?:boolean;badPosition?:boolean;coverGoalAt?:number;uncoverGoalAt?:number;badTrees?:boolean}={}){
   let p={...fixture.start},elapsed=0,frames=0;
   const actors=structuredClone(fixture.actors),held=new Set<string>(),events:Array<{type:string;code:string}>=[];
   const physics=new FinePhysicsAuthority();registerHomeTerrain(physics,72);
@@ -28,6 +28,7 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
   const dataset=new Proxy({},{get:(_target,key)=>{
     if(key==='playerX')return options.badPosition&&frames>0?'NaN':p.x.toFixed(4);
     if(key==='playerZ')return p.z.toFixed(4);
+    if(key==='treePresentation')return options.badTrees?'{invalid':JSON.stringify((fixture.diagnosticStatics??[]).map(collider=>({collider})));
     if(key==='characterSoles'&&options.badActors)return '{invalid';
     if(key==='characterSoles')return JSON.stringify(actors.map(a=>({...a,headEnvelope:characterHeadEnvelope(a.asset)})));
     return undefined;
@@ -42,6 +43,8 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
     elapsed+=frameMs;frames++;
     if(options.moveActor&&frames===10)actors[0].position.z+=2;
     if(options.intrudeAt===frames)actors[1].position.z=1.44;
+    if(options.coverGoalAt===frames)actors[0].position.x=fixture.target.x;
+    if(options.uncoverGoalAt===frames)actors[0].position.x=fixture.actors[0].position.x;
     const x=Number(held.has('KeyD'))-Number(held.has('KeyA')),z=Number(held.has('KeyS'))-Number(held.has('KeyW')),length=Math.hypot(x,z);
     if(length){
       const distance=(held.has('ShiftLeft')?7.2:4.5)*Math.min(.05,frameMs/1000);
@@ -55,7 +58,7 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
   const fn=vm.runInNewContext(callback,context) as (args:{target:PhysicsPoint;timeoutMs:number;tolerance:number})=>Promise<Result>;
   try{
     const result=await fn({target:fixture.target,timeoutMs:fixture.timeoutMs??45_000,tolerance:fixture.tolerance??.55});
-    return {result,frames,elapsed,events};
+    return {result,frames,elapsed,events,finalClearances:actors.map(a=>playerHeadClearance(a.asset,a.position,a.headYaw,p))};
   }finally{
     assert.equal(held.size,0,'success, timeout and exceptions must release every key');
   }
@@ -123,4 +126,39 @@ test('malformed actor diagnostic throws and releases held keys',async()=>{
 });
 test('unavailable position throws and releases held keys',async()=>{
   await assert.rejects(replay(actual,100,{badPosition:true}),/position is unavailable/);
+});
+
+
+const secondRecorded=JSON.parse(fs.readFileSync(new URL('./fixtures/native-waypoint-second-ci.json',import.meta.url),'utf8')) as Fixture&{callStart:PhysicsPoint;checkpointRemainingMs:number};
+for(const frameMs of [16,500,750])test(`recorded second-waypoint actors and tree footprints at ${frameMs}ms`,async()=>{
+  const {result,elapsed,finalClearances}=await replay({...secondRecorded,start:secondRecorded.callStart},frameMs);
+  assert.equal(result.reached,true,JSON.stringify(result));assert.ok(result.distance<=.45);assert.ok(elapsed<=45_000);assert.ok(finalClearances.every(d=>d>=-1e-8));
+});
+test('recorded pre-detour checkpoint fits its original remaining time',async()=>{
+  const {result,elapsed}=await replay({...secondRecorded,timeoutMs:secondRecorded.checkpointRemainingMs},750);
+  assert.equal(result.reached,true,JSON.stringify(result));assert.ok(elapsed<=secondRecorded.checkpointRemainingMs);assert.ok(result.distance<=.45);
+});
+test('insufficient late-checkpoint budget is still a failure',async()=>{
+  const {result,elapsed}=await replay({...secondRecorded,timeoutMs:secondRecorded.checkpointRemainingMs},1000);
+  assert.equal(result.reached,false);assert.equal(elapsed,24_000);assert.ok(result.distance>.45);
+});
+const partialGoals:Fixture[]=[
+  {name:'east tolerance region',start:{x:-3,z:0},target:{x:1.6,z:.16},actors:[actor('one','female2',0,0,0)],tolerance:.28},
+  {name:'west tolerance region',start:{x:3,z:0},target:{x:-1.55,z:.16},actors:[actor('one','female2',0,0,0)],tolerance:.28},
+  {name:'north tolerance region',start:{x:0,z:3},target:{x:.16,z:-1.6},actors:[actor('one','female2',0,0,Math.PI/2)],tolerance:.28},
+  {name:'south tolerance region',start:{x:0,z:-3},target:{x:.16,z:1.55},actors:[actor('one','female2',0,0,Math.PI/2)],tolerance:.28}
+];
+for(const fixture of partialGoals)for(const frameMs of [16,100,500,750])test(`${fixture.name} accepts a reachable point without enlarging tolerance at ${frameMs}ms`,async()=>{
+  const a=fixture.actors[0];assert.ok(playerHeadClearance(a.asset,a.position,a.headYaw,fixture.target)<0,'the exact center really is occupied');
+  const {result,finalClearances}=await replay(fixture,frameMs);assert.equal(result.reached,true,JSON.stringify(result));assert.ok(result.distance<=.28);assert.ok(finalClearances.every(d=>d>=-1e-8));
+});
+for(const frameMs of [100,500])test(`moving NPC invalidates the candidate region until it clears at ${frameMs}ms`,async()=>{
+  const {result,frames,finalClearances}=await replay(partialGoals[0],frameMs,{coverGoalAt:11,uncoverGoalAt:30});
+  assert.equal(result.reached,true,JSON.stringify(result));assert.ok(frames>=30,'must not succeed while the entire region is occupied');assert.ok(result.distance<=.28);assert.ok(finalClearances.every(d=>d>=-1e-8));
+});
+test('a moving NPC that keeps the entire tolerance region occupied cannot turn green',async()=>{
+  const {result,elapsed}=await replay(partialGoals[0],500,{coverGoalAt:11});assert.equal(result.reached,false);assert.equal(elapsed,45_000);
+});
+test('malformed observed tree footprints throw and release keys',async()=>{
+  await assert.rejects(replay(actual,100,{badTrees:true}),/JSON|property|position/i);
 });
