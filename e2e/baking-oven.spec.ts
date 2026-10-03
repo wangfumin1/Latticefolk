@@ -34,6 +34,14 @@ const cases=[
   {name:'generated-bakery',id:bakery.id,title:bakery.name,anchor:bakery.position,chunks:[generated]}
 ];
 
+// Keep fixture teardown in Playwright's separate afterEach phase. The 240s
+// scenario budget still covers every gameplay assertion and evidence capture.
+test.afterEach(async({page,request})=>{
+  await page.keyboard.up('KeyW');await page.keyboard.up('KeyS');
+  await page.close();
+  const cleared=await request.delete('/api/world/state');expect(cleared.ok()).toBe(true);
+});
+
 for(const scenario of cases){
   test(`${scenario.name}: visible oven, physical approach, ingredient-conserving baking and reload`,async({page,request},testInfo)=>{
     test.setTimeout(240_000);
@@ -126,10 +134,6 @@ for(const scenario of cases){
         await testInfo.attach(`${scenario.name}-diagnostic-error`,{body:Buffer.from(String(diagnosticError)),contentType:'text/plain'});
       }
       throw error;
-    } finally {
-      await page.keyboard.up('KeyW');await page.keyboard.up('KeyS');
-      await page.close();
-      const cleared=await request.delete('/api/world/state');expect(cleared.ok()).toBe(true);
     }
   });
 }

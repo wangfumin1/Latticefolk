@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 import { startFirstPerson } from './helpers/native-start.js';
+import { driveNativeWaypoint } from './helpers/native-waypoint.js';
 
 
 interface ChunkDecisionRequestForE2E {
@@ -133,79 +134,7 @@ async function drivePlayerTo(
   timeoutMs=20_000,
   tolerance=.35
 ) {
-  const result=await page.evaluate(async({target,timeoutMs,tolerance})=>{
-    const status=()=>document.querySelector<HTMLElement>('#worldStatus');
-    const read=()=>{
-      const data=status()?.dataset;
-      return {x:Number(data?.playerX??'NaN'),z:Number(data?.playerZ??'NaN')};
-    };
-    const held=new Set<string>();
-    const setHeld=(next:Set<string>)=>{
-      for(const code of [...held]){
-        if(next.has(code))continue;
-        window.dispatchEvent(new KeyboardEvent('keyup',{code,bubbles:true}));
-        held.delete(code);
-      }
-      for(const code of next){
-        if(held.has(code))continue;
-        window.dispatchEvent(new KeyboardEvent('keydown',{code,bubbles:true}));
-        held.add(code);
-      }
-    };
-    const release=()=>setHeld(new Set());
-    const deadline=performance.now()+timeoutMs;
-    let last=read();
-    let lastMovedAt=performance.now();
-    let detourUntil=0;
-    let detourCode:string|undefined;
-    let avoidSign=1;
-    try{
-      while(performance.now()<deadline){
-        const p=read();
-        if(!Number.isFinite(p.x)||!Number.isFinite(p.z)){
-          await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-          continue;
-        }
-        const currentTime=performance.now();
-        if(Number.isFinite(last.x)&&Number.isFinite(last.z)&&Math.hypot(p.x-last.x,p.z-last.z)>.035){
-          lastMovedAt=currentTime;
-          last=p;
-        }
-        const dx=target.x-p.x,dz=target.z-p.z;
-        const distance=Math.hypot(dx,dz);
-        if(distance<=tolerance)return {reached:true,x:p.x,z:p.z,distance};
-
-        // A dynamic body can pin a diagonal request against its edge. When the player has
-        // stopped moving, temporarily drop the forward component and take a short pure
-        // perpendicular step, then resume toward the target with normal authoritative input.
-        if(currentTime-lastMovedAt>700&&currentTime>=detourUntil){
-          avoidSign*=-1;
-          detourCode=Math.abs(dx)>=Math.abs(dz)
-            ?(avoidSign>0?'KeyW':'KeyS')
-            :(avoidSign>0?'KeyD':'KeyA');
-          detourUntil=currentTime+850;
-          lastMovedAt=currentTime;
-        }
-
-        const next=new Set<string>();
-        if(detourCode&&currentTime<detourUntil){
-          next.add(detourCode);
-        }else{
-          detourCode=undefined;
-          if(distance>1.8)next.add('ShiftLeft');
-          if(Math.abs(dx)>tolerance*.6)next.add(dx>0?'KeyD':'KeyA');
-          if(Math.abs(dz)>tolerance*.6)next.add(dz>0?'KeyS':'KeyW');
-        }
-        setHeld(next);
-        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-      }
-      const p=read();
-      const distance=Math.hypot(target.x-p.x,target.z-p.z);
-      return {reached:distance<=tolerance,x:p.x,z:p.z,distance};
-    }finally{
-      release();
-    }
-  },{target,timeoutMs,tolerance});
+  const result=await page.evaluate(driveNativeWaypoint,{target,timeoutMs,tolerance});
   expect(
     result.reached,
     `player failed to reach (${target.x}, ${target.z}); stopped at (${result.x.toFixed(3)}, ${result.z.toFixed(3)})`
