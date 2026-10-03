@@ -5,6 +5,12 @@ import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
 import { waitForPlayerZBelow } from './helpers/frame-position.js';
 
+// Teardown must not consume the bounded gameplay/evidence phase.
+test.afterEach(async({page,request})=>{
+  await page.keyboard.up('KeyW');await page.close();
+  const r=await request.delete('/api/world/state');expect(r.ok()).toBe(true);
+});
+
 test('baker reaches a source-derived work stance before crafting and restores physical facing',async({page,request},info)=>{
   test.setTimeout(240_000);
   const reset=await request.delete('/api/world/state');expect(reset.ok()).toBe(true);
@@ -24,62 +30,60 @@ test('baker reaches a source-derived work stance before crafting and restores ph
     }else await route.fulfill({json:{source:'test-bounded-idle',action:'idle',stateShift:'stable',commitment:1,confidence:1,reasonCode:'stance-idle'} satisfies DecisionResponse});
   });
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  try {
-    await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
-    await page.goto('/');
-    await page.waitForFunction(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.bakingOvens??'[]').some((o:any)=>o.id==='oven'&&o.resolved),undefined,{timeout:45_000});
-    await startFirstPerson(page);
-    const oven=await page.evaluate(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')!.dataset.bakingOvens!)[0]);
-    const expected=bakingWorkApproach('female2',{x:-10,z:-13},oven.collider,()=>false)!;
-    enabled=true;
-    const progressDiagnostics:Array<{
-      revision:number;
-      position?:{x:number;z:number};
-      hunger?:number;
-      bread:number;
-    }>=[];
-    try{
-      await expect.poll(async()=>{
-        const r=await request.get('/api/world/state');expect(r.ok()).toBe(true);
-        const s=await r.json();
-        const baker=s.snapshot?.homeNpcs?.find((n:NpcState)=>n.id==='ren');
-        const bread=baker?.inventory.find((i:{kind:string})=>i.kind==='bread')?.count ?? -1;
-        if(progressDiagnostics.length===0||progressDiagnostics.at(-1)?.revision!==s.revision){
-          progressDiagnostics.push({
-            revision:s.revision,
-            position:baker?.position,
-            hunger:baker?.hunger,
-            bread
-          });
-          if(progressDiagnostics.length>20)progressDiagnostics.shift();
-        }
-        return bread;
-      },{timeout:120_000}).toBe(4);
-    }finally{
-      await info.attach('baker-progress-diagnostics',{
-        body:Buffer.from(JSON.stringify(progressDiagnostics,null,2)),
-        contentType:'application/json'
-      });
-    }
-    expect(proposed).toBe(true);
-    const response=await request.get('/api/world/state');const saved=await response.json();
-    const baker=saved.snapshot.homeNpcs.find((n:NpcState)=>n.id==='ren') as NpcState;
-    expect(baker.workAt).toBe('oven');expect(baker.position.x).toBeGreaterThan(initial.position.x);
-    expect(Math.hypot(baker.position.x-expected.x,baker.position.z-expected.z)).toBeLessThan(.14);
-    expect(baker.heading).toBeCloseTo(expected.yaw,8);
-    expect(baker.inventory.find(i=>i.kind==='flour')?.count).toBe(0);expect(baker.inventory.find(i=>i.kind==='water')?.count).toBe(0);
-    // Player stays on the original oven lane; only the selected craft intention moved the NPC.
-    try {await page.keyboard.down('KeyW');await waitForPlayerZBelow(page,oven.collider.maxZ+.43,20_000);}
-    finally {await page.keyboard.up('KeyW');}
-    await lookForObject(page,'面包炉',0,1.15);
-    await info.attach('baker-working-beside-visible-oven',{body:await page.screenshot(),contentType:'image/png'});
-    await page.reload();await startFirstPerson(page);
-    await page.waitForFunction(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.characterSoles??'[]').some((n:any)=>n.id==='ren'),undefined,{timeout:45_000});
-    const restored=await page.evaluate(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')!.dataset.characterSoles!).find((n:any)=>n.id==='ren'));
-    expect(restored.position).toEqual(baker.position);expect(restored.headYaw).toBeCloseTo(baker.heading!,8);
-    expect(restored.playerHeadClearance).toBeGreaterThanOrEqual(-1e-6);
-    await info.attach('baker-stance-production-and-restoration',{body:Buffer.from(JSON.stringify({initial,expected,baker,restored,oven,revision:saved.revision},null,2)),contentType:'application/json'});
-    await info.attach('baker-reloaded-facing',{body:await page.screenshot(),contentType:'image/png'});
-    expect(errors).toEqual([]);
-  } finally {await page.keyboard.up('KeyW');await page.close();const r=await request.delete('/api/world/state');expect(r.ok()).toBe(true);}
+  await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
+  await page.goto('/');
+  await page.waitForFunction(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.bakingOvens??'[]').some((o:any)=>o.id==='oven'&&o.resolved),undefined,{timeout:45_000});
+  await startFirstPerson(page);
+  const oven=await page.evaluate(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')!.dataset.bakingOvens!)[0]);
+  const expected=bakingWorkApproach('female2',{x:-10,z:-13},oven.collider,()=>false)!;
+  enabled=true;
+  const progressDiagnostics:Array<{
+    revision:number;
+    position?:{x:number;z:number};
+    hunger?:number;
+    bread:number;
+  }>=[];
+  try{
+    await expect.poll(async()=>{
+      const r=await request.get('/api/world/state');expect(r.ok()).toBe(true);
+      const s=await r.json();
+      const baker=s.snapshot?.homeNpcs?.find((n:NpcState)=>n.id==='ren');
+      const bread=baker?.inventory.find((i:{kind:string})=>i.kind==='bread')?.count ?? -1;
+      if(progressDiagnostics.length===0||progressDiagnostics.at(-1)?.revision!==s.revision){
+        progressDiagnostics.push({
+          revision:s.revision,
+          position:baker?.position,
+          hunger:baker?.hunger,
+          bread
+        });
+        if(progressDiagnostics.length>20)progressDiagnostics.shift();
+      }
+      return bread;
+    },{timeout:120_000}).toBe(4);
+  }finally{
+    await info.attach('baker-progress-diagnostics',{
+      body:Buffer.from(JSON.stringify(progressDiagnostics,null,2)),
+      contentType:'application/json'
+    });
+  }
+  expect(proposed).toBe(true);
+  const response=await request.get('/api/world/state');const saved=await response.json();
+  const baker=saved.snapshot.homeNpcs.find((n:NpcState)=>n.id==='ren') as NpcState;
+  expect(baker.workAt).toBe('oven');expect(baker.position.x).toBeGreaterThan(initial.position.x);
+  expect(Math.hypot(baker.position.x-expected.x,baker.position.z-expected.z)).toBeLessThan(.14);
+  expect(baker.heading).toBeCloseTo(expected.yaw,8);
+  expect(baker.inventory.find(i=>i.kind==='flour')?.count).toBe(0);expect(baker.inventory.find(i=>i.kind==='water')?.count).toBe(0);
+  // Player stays on the original oven lane; only the selected craft intention moved the NPC.
+  try {await page.keyboard.down('KeyW');await waitForPlayerZBelow(page,oven.collider.maxZ+.43,20_000);}
+  finally {await page.keyboard.up('KeyW');}
+  await lookForObject(page,'面包炉',0,1.15);
+  await info.attach('baker-working-beside-visible-oven',{body:await page.screenshot(),contentType:'image/png'});
+  await page.reload();await startFirstPerson(page);
+  await page.waitForFunction(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.characterSoles??'[]').some((n:any)=>n.id==='ren'),undefined,{timeout:45_000});
+  const restored=await page.evaluate(()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')!.dataset.characterSoles!).find((n:any)=>n.id==='ren'));
+  expect(restored.position).toEqual(baker.position);expect(restored.headYaw).toBeCloseTo(baker.heading!,8);
+  expect(restored.playerHeadClearance).toBeGreaterThanOrEqual(-1e-6);
+  await info.attach('baker-stance-production-and-restoration',{body:Buffer.from(JSON.stringify({initial,expected,baker,restored,oven,revision:saved.revision},null,2)),contentType:'application/json'});
+  await info.attach('baker-reloaded-facing',{body:await page.screenshot(),contentType:'image/png'});
+  expect(errors).toEqual([]);
 });
