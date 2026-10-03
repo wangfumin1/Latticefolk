@@ -3555,6 +3555,7 @@ class TownGame {
     ui.world.dataset.shadowView=JSON.stringify(this.sunShadow.diagnostics());
     ui.world.dataset.playerBodyPresent=String(this.physicsDynamicColliders().some(body=>body.id==='player'));
     ui.world.dataset.cameraMode=this.cameraMode;
+    ui.world.dataset.cameraYaw=new THREE.Euler().setFromQuaternion(this.camera.quaternion,'YXZ').y.toFixed(6);
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
     ui.world.dataset.coarseDecidedChunks=String(world.decidedChunks);
