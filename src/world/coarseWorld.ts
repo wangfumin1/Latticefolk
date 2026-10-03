@@ -10,6 +10,7 @@ import { applyWildlifeMigration, ensureWildlifePopulations, plantBiomassTotal, p
 import { boundedDecisionIdWindow, captureChunkDecisionSignal, nextChunkDecisionDelay, rankChunkDecisionCandidates, type ChunkDecisionSignal } from './decisionScheduling';
 import { CoarseChunkSpatialIndex } from './coarseSpatialIndex';
 import { coarseMarkerVisualSpec, type CoarseMarkerVisualSpec } from '../scene/coarsePresentation';
+import { fineTerrainSurfaceForChunk } from './fineTerrain';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -300,8 +301,11 @@ export class CoarseWorldRuntime {
     const material=new THREE.MeshStandardMaterial({
       color:this.colorForBiome(chunk.biome),roughness:1,metalness:0
     });
-    const tile=new THREE.Mesh(new THREE.BoxGeometry(this.chunkSize-.35,.18,this.chunkSize-.35),material);
-    tile.position.set(chunk.cx*this.chunkSize,-.18,chunk.cz*this.chunkSize);
+    // Ground presentation uses the same full footprint and elevation as fine physics.
+    const surface=fineTerrainSurfaceForChunk(chunk,this.chunkSize);
+    const thickness=.18;
+    const tile=new THREE.Mesh(new THREE.BoxGeometry(surface.maxX-surface.minX,thickness,surface.maxZ-surface.minZ),material);
+    tile.position.set(surface.originX,surface.originY-thickness/2,surface.originZ);
     tile.receiveShadow=true;
     tile.userData={coarseChunkId:chunk.id};
     this.root.add(tile);
