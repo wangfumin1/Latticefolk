@@ -10,6 +10,15 @@ export const SUPPORTED_LOCALES: Array<{code:LocaleCode;label:string}> = [
 type Dict=Record<string,string>;
 
 const zh:Dict={
+  'persistence.restored':'已恢复世界存档 · 版本 {revision} · 第 {day} 天 · {coarse} 个粗粒度区块 · {fine} 个已访问细粒度区块',
+  'persistence.newWorld':'未发现已有世界存档，将从当前世界种子开始 · 版本 {revision}',
+  'persistence.loadFailed':'世界存档加载失败，继续使用当前运行时：{error}',
+  'persistence.invalidRevision':'服务器返回了无效的存档版本',
+  'persistence.conflict':'存档版本冲突（本地 {local}，服务器 {server}）；需要重新加载',
+  'persistence.conflictUnknown':'存档版本冲突（本地 {local}）；需要重新加载',
+  'persistence.invalidAcknowledgement':'存档版本确认无效',
+  'persistence.saveFailed':'世界自动保存失败：{error}',
+  'persistence.beaconRejected':'最终存档未进入浏览器发送队列 · {bytes} 字节',
   'brand':'LATTICEFOLK // 活着的小镇',
   'mode.god':'G · 上帝视角','mode.first':'第一人称','mode.observer':'观察者模式',
   'console.title':'Town Console','console.close':'Tab 关闭','console.importFormat':'批量导入格式',
@@ -45,6 +54,15 @@ const zh:Dict={
 };
 
 const en:Dict={
+  'persistence.restored':'Saved world restored · revision {revision} · day {day} · {coarse} coarse chunks · {fine} visited fine chunks',
+  'persistence.newWorld':'No saved world found; starting from the current world seed · revision {revision}',
+  'persistence.loadFailed':'Failed to load saved world; continuing with the current runtime: {error}',
+  'persistence.invalidRevision':'Invalid persistence revision from server',
+  'persistence.conflict':'Revision conflict (local {local}, server {server}); reload required',
+  'persistence.conflictUnknown':'Revision conflict (local {local}); reload required',
+  'persistence.invalidAcknowledgement':'Invalid persistence revision acknowledgement',
+  'persistence.saveFailed':'World autosave failed: {error}',
+  'persistence.beaconRejected':'Final save was not queued by the browser · {bytes} bytes',
   'brand':'LATTICEFOLK // LIVING TOWN',
   'mode.god':'G · God View','mode.first':'First person','mode.observer':'Observer',
   'console.title':'Town Console','console.close':'Tab to close','console.importFormat':'Bulk import format',
@@ -80,6 +98,15 @@ const en:Dict={
 };
 
 const ja:Dict={
+  'persistence.restored':'保存済みワールドを復元しました · リビジョン {revision} · {day} 日目 · 粗粒度チャンク {coarse} 個 · 訪問済み詳細チャンク {fine} 個',
+  'persistence.newWorld':'保存済みワールドが見つからないため、現在のワールドシードから開始します · リビジョン {revision}',
+  'persistence.loadFailed':'ワールドの読み込みに失敗しました。現在の実行状態を使用します：{error}',
+  'persistence.invalidRevision':'サーバーから無効な保存リビジョンが返されました',
+  'persistence.conflict':'保存リビジョンが競合しています（ローカル {local}、サーバー {server}）。再読み込みが必要です',
+  'persistence.conflictUnknown':'保存リビジョンが競合しています（ローカル {local}）。再読み込みが必要です',
+  'persistence.invalidAcknowledgement':'保存リビジョンの確認応答が無効です',
+  'persistence.saveFailed':'ワールドの自動保存に失敗しました：{error}',
+  'persistence.beaconRejected':'最後の保存がブラウザーの送信キューに追加されませんでした · {bytes} バイト',
   'brand':'LATTICEFOLK // 生きている町','mode.god':'G · 神視点','mode.first':'一人称','mode.observer':'観察者',
   'console.title':'Town Console','console.close':'Tab で閉じる','console.importFormat':'一括インポート形式',
   'console.import':'台詞をインポート','console.pause':'NPC AI を停止','console.resume':'NPC AI を再開',
@@ -112,6 +139,15 @@ const ja:Dict={
 };
 
 const es:Dict={
+  'persistence.restored':'Mundo guardado restaurado · revisión {revision} · día {day} · {coarse} regiones generales · {fine} regiones detalladas visitadas',
+  'persistence.newWorld':'No se encontró un mundo guardado; se usará la semilla actual del mundo · revisión {revision}',
+  'persistence.loadFailed':'Error al cargar el mundo guardado; se mantiene el estado actual: {error}',
+  'persistence.invalidRevision':'El servidor devolvió una revisión de guardado no válida',
+  'persistence.conflict':'Conflicto de revisiones (local {local}, servidor {server}); es necesario volver a cargar',
+  'persistence.conflictUnknown':'Conflicto de revisiones (local {local}); es necesario volver a cargar',
+  'persistence.invalidAcknowledgement':'Confirmación de revisión de guardado no válida',
+  'persistence.saveFailed':'Error al guardar automáticamente el mundo: {error}',
+  'persistence.beaconRejected':'El guardado final no se añadió a la cola de envío del navegador · {bytes} bytes',
   'brand':'LATTICEFOLK // PUEBLO VIVO','mode.god':'G · Vista divina','mode.first':'Primera persona','mode.observer':'Observador',
   'console.title':'Town Console','console.close':'Tab para cerrar','console.importFormat':'Formato de importación',
   'console.import':'Importar diálogos','console.pause':'Pausar IA NPC','console.resume':'Reanudar IA NPC',
