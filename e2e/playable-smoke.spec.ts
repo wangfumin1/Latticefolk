@@ -237,12 +237,13 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await moveWithKeys(page,['KeyS'],650);
 
   await expect.poll(()=>injectedSaveFailure,{timeout:8_000}).toBe(true);
+  // A clean player HUD must still surface a real failed autosave.
+  await expect(page.locator('#log')).toBeVisible();
+  await expect(page.locator('#log')).toContainText('世界自动保存失败');
   await expect.poll(async()=>(await runtime(page)).movableDirty,{timeout:8_000}).toBe(true);
   releaseSaveRetry();
 
-  const worldStatusBox=await page.locator('#worldStatus').boundingBox();
-  expect(worldStatusBox).not.toBeNull();
-  expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
+  await expect(page.locator('#worldStatus')).toBeHidden();
 
   await page.screenshot({path:testInfo.outputPath('first-person-cart-pushed.png'),fullPage:true});
   await expect.poll(async()=>Math.abs((await persistedCartZ(page))-pushedCartZ),{timeout:45_000}).toBeLessThan(.08);
@@ -269,6 +270,9 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
 
   await page.keyboard.press('KeyG');
   await expect.poll(async()=>(await runtime(page)).cameraMode).toBe('god');
+  const worldStatusBox=await page.locator('#worldStatus').boundingBox();
+  expect(worldStatusBox).not.toBeNull();
+  expect(worldStatusBox!.width).toBeLessThanOrEqual(541);
   const godBefore=await runtime(page);
   expect(godBefore.physicsBodies).toBe(firstAfter.physicsBodies-1);
   expect(godBefore.terrainSurfaces).toBe(firstAfter.terrainSurfaces);

@@ -21,3 +21,9 @@
 .evo-lineage{margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.11);overflow-wrap:anywhere}.evo-lineage>div{margin-top:4px;opacity:.8}.evo-cohorts{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px}
 .evo-selection{margin-top:6px;padding:6px 7px;border-radius:7px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.evo-selection>div{margin-top:2px}.evo-selection b{text-transform:uppercase;letter-spacing:.05em}
 @media(max-width:780px){.evolution{display:none!important}}
+/* Developer diagnostics stay readable in the console and God observer view.
+   Only presentation changes: their text and data-* evidence stay in the DOM. */
+#app:has(#admin.hidden):not(:has(#worldStatus[data-camera-mode="god"])) :is(#decisionStatus,#worldStatus){display:none}
+
+/* Player messages, including save failures, remain readable on narrow screens. */
+#log[data-player-log="true"]{display:block}

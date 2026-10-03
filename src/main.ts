@@ -41,6 +41,7 @@ import { resolveContactAction } from './world/contactAction';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
+import { appendHudLog, visibleHudLogs, type HudLogEntry, type HudLogAudience } from './ui/hudDiagnostics';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
   CoarseChunkState, InteractionCapability, ItemKind, Mood, NpcRole, NpcState, PersistedFineChunk, PersistedWildlifeTransfer, SocialIntent, Vec2, WildlifeAction, WildlifeDeathReason, WildlifeCoevolutionPairEvidence, WildlifeCoevolutionSideEvidence, WildlifeDecisionBatchRequest, WildlifeDecisionBatchResponse, WildlifeDecisionResult, WildlifeEvolutionStats, WildlifeInteractionNetwork, WildlifeInteractionSourceGenerationEvidence, WildlifeLineageRecord, WildlifeMigrationCandidate, WildlifePredationPairPerformance, WildlifeReciprocalInteractionSelectionEvidence, WildlifeDomesticationCommand, WildlifeSpecies, WildlifeState, WorldObjectState, WorldPersistenceSnapshot
@@ -69,7 +70,7 @@ app.innerHTML = `
 </div>
 <div id="npcPanel" class="panel compact"></div>
 <div id="evolutionPanel" class="panel evolution hidden"></div>
-<div id="log" class="panel log"></div>
+<div id="log" class="panel log hidden"></div>
 <div id="admin" class="panel admin hidden">
   <div class="panel-title">${i18n.t('console.title')} <span>${i18n.t('console.close')}</span></div>
   <div id="adminStatus"></div>
@@ -245,7 +246,7 @@ class TownGame {
   weather = 'clear';
   weatherEpoch = 0;
   recentEvents: string[] = [];
-  logs: string[] = [];
+  logs: HudLogEntry[] = [];
   aiPaused = false;
   inFlight = 0;
   maxInFlight = 3;
@@ -343,7 +344,7 @@ class TownGame {
     window.addEventListener('beforeunload',()=>this.flushWorldBeacon());
     this.refreshHealth();
     void this.initializePersistence();
-    this.log('Latticefolk 已启动；未配置远程决策引擎时使用本地规则 provider。');
+    this.log('Latticefolk 已启动；未配置远程决策引擎时使用本地规则 provider。','developer');
     this.animate();
   }
 
@@ -762,7 +763,7 @@ class TownGame {
     this.spawnAssetDecoration('barrel',10,-8.8,1.15,0);
     this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
     this.assetsReady=this.assetLoadFailures.length===0;
-    this.log(`视觉素材：Quaternius 已加载 ${assetEntries.length-this.assetLoadFailures.length}/${assetEntries.length}（Cube World + Ultimate Fantasy RTS + Medieval Village）`);
+    this.log(`视觉素材：Quaternius 已加载 ${assetEntries.length-this.assetLoadFailures.length}/${assetEntries.length}（Cube World + Ultimate Fantasy RTS + Medieval Village）`,'developer');
     if(this.assetLoadFailures.length)this.log(`素材加载失败：${this.assetLoadFailures.join(', ')}；对应对象保持不可见（禁止程序化 fallback）。`);
   }
 
@@ -1458,7 +1459,7 @@ class TownGame {
     runtime.initialMetrics=this.fineMetrics(runtime);
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
-    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`);
+    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`,'developer');
   }
 
   materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
@@ -1767,7 +1768,7 @@ class TownGame {
     if(this.selectedEntity&&(runtime.npcIds.includes(this.selectedEntity.id)||runtime.objectIds.includes(this.selectedEntity.id)||runtime.wildlifeIds.includes(this.selectedEntity.id)))this.selectedEntity=undefined;
     if(this.hoverEntity&&(runtime.npcIds.includes(this.hoverEntity.id)||runtime.objectIds.includes(this.hoverEntity.id)||runtime.wildlifeIds.includes(this.hoverEntity.id)))this.hoverEntity=undefined;
     this.event(`远区 ${chunkId} 已折叠回粗粒度模拟。`);
-    this.log(`Collapsed ${chunkId} back to coarse state`);
+    this.log(`Collapsed ${chunkId} back to coarse state`,'developer');
   }
 
   updateTime(dt:number) {
@@ -2349,7 +2350,7 @@ class TownGame {
     if(this.selectedEntity?.type==='wildlife'&&this.selectedEntity.id===state.id)this.selectedEntity=undefined;
     if(this.hoverEntity?.type==='wildlife'&&this.hoverEntity.id===state.id)this.hoverEntity=undefined;
     this.event(`${this.wildlifeName(state.species)} ${state.id} 从 ${source.id} 迁移至 ${target.id}（代表 ${representedPopulation.toFixed(2)} · ${reason}）`);
-    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)} reason=${reason}`);
+    this.log(`Wildlife migration ${state.id}: ${source.id} -> ${target.id} amount=${representedPopulation.toFixed(3)} reason=${reason}`,'developer');
     return true;
   }
   tryWildlifeReproduction(a:WildlifeRuntime,b:WildlifeRuntime) {
@@ -2859,7 +2860,7 @@ class TownGame {
       if(agent.removed)return;
       if(decisionEpoch!==this.perceptionEpoch){agent.nextDecisionAt=now()+250+Math.random()*500;return;}
       this.applyDecision(agent,d);
-      this.log(`${agent.state.name} → ${d.action}${d.socialIntent?` / ${d.socialIntent}`:''} [${d.source} ${(d.confidence*100).toFixed(0)}%]`);
+      this.log(`${agent.state.name} → ${d.action}${d.socialIntent?` / ${d.socialIntent}`:''} [${d.source} ${(d.confidence*100).toFixed(0)}%]`,'developer');
     }catch{
       agent.nextDecisionAt=now()+4000;
     }finally{agent.pendingDecision=false;this.inFlight--;}
@@ -3142,7 +3143,7 @@ class TownGame {
   async npcConversation(a:NpcRuntime,b:NpcRuntime,intent:SocialIntent) {
     a.state.social=clamp(a.state.social+15,0,100);b.state.social=clamp(b.state.social+9,0,100);
     const req:DialogueRequest={locale:this.locale,speaker:this.actor(a,b),listener:this.actor(b,a),situation:`${a.state.name} 主动与 ${b.state.name} 在小镇中交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(a.state.position)},recentLines:[a.state.lastDialogue,b.state.lastDialogue].filter(Boolean) as string[]};
-    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;this.say(a,d.text);a.state.lastDialogue=d.text;this.applyRelation(a,b,d.relationEffect);this.remember(a,`与${b.state.name}交谈：${d.text}`,2);this.log(`${a.state.name} 对 ${b.state.name}：${d.text} [${d.source}]`);}catch{this.say(a,'嗨。');}
+    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;this.say(a,d.text);a.state.lastDialogue=d.text;this.applyRelation(a,b,d.relationEffect);this.remember(a,`与${b.state.name}交谈：${d.text}`,2);this.log(`${a.state.name} 对 ${b.state.name}：${d.text} [${d.source}]`,'developer');}catch{this.say(a,'嗨。');}
   }
 
   actor(a:NpcRuntime,b?:NpcRuntime) {return {id:a.state.id,name:a.state.name,role:a.state.role,mood:a.state.mood,relationship:b?a.state.relationships[b.state.id]:undefined};}
@@ -3610,7 +3611,10 @@ class TownGame {
       const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
     } else ui.npc.classList.add('hidden');
     this.renderEvolutionPanel();
-    ui.log.innerHTML=this.logs.slice(-7).map(x=>`<div>${this.escape(x)}</div>`).join('');
+    const logs=visibleHudLogs(this.logs,this.cameraMode,!ui.admin.classList.contains('hidden'));
+    ui.log.innerHTML=logs.map(entry=>`<div data-log-audience="${entry.audience}">${this.escape(entry.text)}</div>`).join('');
+    ui.log.dataset.playerLog=String(logs.some(entry=>entry.audience==='player'));
+    ui.log.classList.toggle('hidden',logs.length===0);
   }
 
   updateSpeech() {
@@ -3841,7 +3845,7 @@ class TownGame {
   gameTimeText(){const h=Math.floor(this.minuteOfDay/60)%24,m=Math.floor(this.minuteOfDay%60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;}
   say(a:NpcRuntime,text:string){a.speech={text,until:now()+Math.max(3500,Math.min(9000,text.length*220))};}
   event(text:string){this.recentEvents.push(`${this.gameTimeText()} ${text}`);if(this.recentEvents.length>30)this.recentEvents.shift();}
-  log(text:string){this.logs.push(text);if(this.logs.length>80)this.logs.shift();}
+  log(text:string,audience:HudLogAudience='player'){appendHudLog(this.logs,text,audience);}
   toast(text:string){ui.toast.textContent=text;ui.toast.classList.add('show');setTimeout(()=>ui.toast.classList.remove('show'),2200);}
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
