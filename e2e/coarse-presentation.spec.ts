@@ -52,6 +52,19 @@ test('normal coarse markers use sourced assets and God camera does not discover 
   await page.keyboard.press('KeyG');
   await expect(page.locator('#worldStatus')).toHaveAttribute('data-camera-mode','god');
   await expect.poll(()=>hudView(page)).toMatchObject({diagnostics:[true,true],player:[true,true,true],console:false,mode:'god'});
+  // Refresh observer labels in place without returning the player to the world.
+  const observerCanvas=await page.locator('#game canvas').elementHandle();
+  await page.locator('#localeSelect').selectOption('ja');
+  await expect(page.locator('html')).toHaveAttribute('lang','ja');
+  await expect(page.locator('#modeHint')).toHaveText('観察者');
+  await info.attach('god-view-language-ja',{body:await page.screenshot(),contentType:'image/png'});
+  await expect(page.locator('#worldStatus')).toHaveAttribute('data-camera-mode','god');
+  await expect(page.locator('#worldStatus')).toHaveAttribute('data-player-body-present','false');
+  await page.locator('#localeSelect').selectOption('en');
+  await expect(page.locator('#modeHint')).toHaveText('Observer');
+  expect(await observerCanvas!.evaluate(element=>element===document.querySelector('#game canvas'))).toBe(true);
+  expect(await numberStatus(page,'data-discovered-chunks')).toBe(discovered);
+  expect(await numberStatus(page,'data-materialized-chunks')).toBe(materialized);
   const canvas=page.locator('#game canvas');
   const box=await canvas.boundingBox();expect(box).not.toBeNull();
   await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);
