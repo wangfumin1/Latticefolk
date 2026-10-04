@@ -5,6 +5,7 @@ import { planFineChunk } from '../src/world/materialization.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
 import { waitForPlayerZBelow } from './helpers/frame-position.js';
+import { readOvenInspection, readOvenMenu } from './helpers/oven-observation.js';
 
 interface OvenEvidence {id:string;asset:string;resolved:boolean;meshes:number;primitives:number;collider:StaticCollider;trigger:PhysicsTrigger}
 async function ovens(page:Page):Promise<OvenEvidence[]> {
@@ -61,12 +62,14 @@ for(const scenario of cases){
       const status=page.locator('#worldStatus');
       await expect(page.locator('#game canvas')).toBeVisible();
       await expect.poll(async()=>(await ovens(page)).some(o=>o.id===scenario.id&&o.resolved&&o.meshes>0&&o.primitives===0&&!!o.collider),{timeout:45_000}).toBe(true);
-      await expect(status).toHaveAttribute('data-asset-failures','0');
-      await expect(status).toHaveAttribute('data-persistence-conflict','false');
-      const oven=(await ovens(page)).find(o=>o.id===scenario.id)!;
+      let inspection:ReturnType<typeof readOvenInspection>;
+      await expect.poll(async()=>inspection=await page.evaluate(readOvenInspection)).toMatchObject({
+        assetFailures:'0',persistenceConflict:'false'
+      });
+      const oven=(inspection!.ovens as OvenEvidence[]).find(o=>o.id===scenario.id)!;
       expect(oven.asset).toBe('bakingOvenAsset');expect(oven.collider.id).toBe(`object:${scenario.id}`);
       expect(oven.trigger.maxZ-oven.collider.maxZ).toBeCloseTo(.5,4);
-      const before=await position(page);expect(before.x).toBeCloseTo(scenario.anchor.x,3);
+      const before=inspection!.position;expect(before.x).toBeCloseTo(scenario.anchor.x,3);
       await startFirstPerson(page);
       await testInfo.attach(`${scenario.name}-approach-overview`,{body:await page.screenshot(),contentType:'image/png'});
       // Real forward input must reach the oven's calibrated collision face and must not
@@ -84,8 +87,8 @@ for(const scenario of cases){
       await lookForObject(page,scenario.title,0,1.15);
       await testInfo.attach(`${scenario.name}-visible-collision-closeup`,{body:await page.screenshot(),contentType:'image/png'});
       await page.keyboard.press('KeyE');
-      await expect(page.locator('#interactionTitle')).toHaveText(scenario.title);
-      const actions=page.locator('#interactionActions button');await expect(actions).toHaveCount(3);
+      await expect.poll(()=>page.evaluate(readOvenMenu)).toEqual({title:scenario.title,actions:3});
+      const actions=page.locator('#interactionActions button');
       await actions.nth(2).press('Enter');
       await expect(page.locator('#toast')).toContainText('制作：烘烤面包');
       await expect.poll(async()=>{
