@@ -25,6 +25,10 @@ export function readLocaleDom(reference:ReturnType<typeof captureLocaleDom>) {
     menuOpen:menu!==null&&!/hidden/.test(menu.className),
     sameButtons:buttons.length===reference.buttons.length&&buttons.every((button,index)=>button===reference.buttons[index]),
     actionText:buttons[reference.actionIndex]?.textContent,
+    inventory:document.querySelector('#inventory')?.textContent,
+    details:document.querySelector('#npcPanel')?.textContent,
+    title:document.querySelector('#interactionTitle')?.textContent,
+    focus:document.activeElement?.id,
     samePosition:reference.position.x!==undefined&&reference.position.z!==undefined&&
       reference.position.x===status?.dataset.playerX&&reference.position.z===status?.dataset.playerZ
   };

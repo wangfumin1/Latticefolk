@@ -71,10 +71,16 @@ for (const scenario of cases) {
       // actual open menu/buttons and the original action/persistence assertions.
       const reference=await page.evaluateHandle(captureLocaleDom,scenario.action);
       let navigations=0;const onNavigation=()=>{navigations++;};page.on('framenavigated',onNavigation);
+      await page.locator('#localeSelect').focus();
       for(const locale of ['ja','es','zh-CN','en'] as const){
         await page.locator('#localeSelect').selectOption(locale);
+        const language=new I18n(locale);
+        // One coherent read retains every HUD and original menu/state assertion.
         await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({
-          lang:locale,actionText:new I18n(locale).t('interaction.work'),menuOpen:true,
+          inventory:`${language.t('hud.inventory')} 🍎0 🍞0 🪵0 🌾0 🥣0 💧0 🪵0 🪨0 🔧0 ◉10`,
+          details:expect.stringMatching(new RegExp(`${language.t('hud.position')} .+${language.t('hud.tags')} .+${language.t('hud.interactions')} `)),
+          title:scenario.title,focus:'localeSelect',
+          lang:locale,actionText:language.t('interaction.work'),menuOpen:true,
           sameButtons:true,sameCanvas:true,samePosition:true,mode:'firstPerson'
         });
         if(locale==='ja'){
