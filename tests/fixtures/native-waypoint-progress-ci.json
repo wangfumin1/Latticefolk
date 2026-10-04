@@ -1,0 +1,204 @@
+{
+  "name": "Run 37164838743 first waypoint, ten-frame Nao reciprocal-yield contact",
+  "source": {
+    "commit": "78bfc696",
+    "startTime": "2026-10-04T00:55:34.236Z",
+    "endTime": "2026-10-04T00:55:49.858Z",
+    "startMonotonicMs": 1795990.275,
+    "endMonotonicMs": 1811630.225,
+    "startMinuteOfDay": 521.5100000000033,
+    "endMinuteOfDay": 522.6100000000034
+  },
+  "limits": [
+    "Positions/headings and end positions are captured facts.",
+    "Continuing positive yield direction is inferred from exact motion and tested against original physics.",
+    "Initial remaining yield distance is generated and non-binding; it is not captured.",
+    "Other NPCs are fixed at their initial captured poses.",
+    "Ordinary NPC path state and decisions are unavailable. The harness throws if Nao leaves yielding; it cannot certify a complete alternate navigation trajectory."
+  ],
+  "target": {
+    "x": 5.2,
+    "z": 4
+  },
+  "tolerance": 0.55,
+  "timeoutMs": 45000,
+  "dt": 0.05,
+  "frames": 10,
+  "keys": [
+    "KeyD",
+    "KeyW",
+    "ShiftLeft"
+  ],
+  "player": {
+    "x": 1.6546298679765217,
+    "z": 5.5831623381592665
+  },
+  "actors": [
+    {
+      "id": "mina",
+      "asset": "female1",
+      "position": {
+        "x": -21.903397224673252,
+        "z": -9.99999487794537
+      },
+      "yaw": -1.5708493486113644
+    },
+    {
+      "id": "ren",
+      "asset": "female2",
+      "position": {
+        "x": -7.040651456428565,
+        "z": -12.00437437758345
+      },
+      "yaw": 1.463601891275047
+    },
+    {
+      "id": "sora",
+      "asset": "male1",
+      "position": {
+        "x": 5.029209692697539,
+        "z": -7.999108356240923
+      },
+      "yaw": -1.571662664862184
+    },
+    {
+      "id": "kai",
+      "asset": "male2",
+      "position": {
+        "x": 24.896635606902894,
+        "z": 6.999616765603727
+      },
+      "yaw": 1.5670887382454752
+    },
+    {
+      "id": "yui",
+      "asset": "female1",
+      "position": {
+        "x": -15.029752405271772,
+        "z": 5.588027265306202
+      },
+      "yaw": 3.091038781869599
+    },
+    {
+      "id": "nao",
+      "asset": "male1",
+      "position": {
+        "x": 1.36694464277626,
+        "z": 4.278350222153444
+      },
+      "yaw": 2.935023849596386
+    },
+    {
+      "id": "haru",
+      "asset": "male2",
+      "position": {
+        "x": -9.335000000000086,
+        "z": 5
+      },
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "mei",
+      "asset": "female2",
+      "position": {
+        "x": -1.0002439298541572,
+        "z": 4.202449701469726
+      },
+      "yaw": 3.1395590581076904
+    },
+    {
+      "id": "toma",
+      "asset": "male1",
+      "position": {
+        "x": 19.999979454994463,
+        "z": 4.78978112717732
+      },
+      "yaw": 9.773149857570282e-05
+    },
+    {
+      "id": "aki",
+      "asset": "female1",
+      "position": {
+        "x": -1.1596407130806796,
+        "z": -8.000000000017982
+      },
+      "yaw": -1.5707963267734981
+    }
+  ],
+  "yieldingActorId": "nao",
+  "inferredYieldPlan": {
+    "direction": {
+      "x": 0.7071067811865475,
+      "z": 0.7071067811865475
+    },
+    "travel": {
+      "x": 0.7071067811865475,
+      "z": -0.7071067811865475
+    },
+    "remaining": 2.445761856032221
+  },
+  "cart": {
+    "id": "object:cart_town",
+    "x": 0.0,
+    "z": 3.26,
+    "radius": 1.05
+  },
+  "statics": [
+    {
+      "id": "object:tree_apple_1",
+      "minX": -8.65916732029631,
+      "maxX": -7.3408326797036905,
+      "minZ": -5.658828812538328,
+      "maxZ": -4.341171187461672
+    },
+    {
+      "id": "object:tree_apple_2",
+      "minX": 13.306533680823483,
+      "maxX": 14.693466319176517,
+      "minZ": 0.8068058550468388,
+      "maxZ": 2.1931941449531616
+    },
+    {
+      "id": "object:tree_apple_3",
+      "minX": -18.66917216620298,
+      "maxX": -17.33082783379702,
+      "minZ": 22.330105632196243,
+      "maxZ": 23.66989436780376
+    },
+    {
+      "id": "well",
+      "minX": -0.7,
+      "maxX": 0.7,
+      "minZ": -1,
+      "maxZ": 1
+    },
+    {
+      "id": "bench_w",
+      "minX": -5,
+      "maxX": -3,
+      "minZ": 2.65,
+      "maxZ": 3.35
+    },
+    {
+      "id": "bench_e",
+      "minX": 3,
+      "maxX": 5,
+      "minZ": -3.35,
+      "maxZ": -2.65
+    }
+  ],
+  "expected": {
+    "player": {
+      "x": 2.1637467504308363,
+      "z": 5.5831623381592665
+    },
+    "nao": {
+      "x": 1.9503077372551614,
+      "z": 4.278350222153444
+    },
+    "maximumStationaryRun": 2,
+    "fullyBlockedFrames": 6,
+    "blockedFrames": 10,
+    "goalImprovement": 0.45857594142267555
+  }
+}

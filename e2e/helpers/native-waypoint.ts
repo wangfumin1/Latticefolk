@@ -12,6 +12,10 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
     const data=document.querySelector<HTMLElement>('#worldStatus')?.dataset;
     return {x:Number(data?.playerX??'NaN'),z:Number(data?.playerZ??'NaN')};
   };
+  const simulation=()=>{
+    const value=document.querySelector<HTMLElement>('#worldStatus')?.dataset.playerInputSeconds;
+    return value?.trim()?Number(value):NaN;
+  };
   type Actor={position:Point;headYaw:number;headEnvelope:Bounds};
   const actors=()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.characterSoles??'[]') as Actor[];
   const clearance=(p:Point,a:Actor)=>{
@@ -102,6 +106,9 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   const begin=performance.now(),deadline=begin+timeoutMs;
   const maximumStep=7.2*.05; // Existing sprint speed and production dt cap.
   let last=read(),unchanged=0,detours=0;
+  let simulatedAt=simulation();
+  if(!Number.isFinite(simulatedAt)||simulatedAt<0)throw new Error('Waypoint simulation observation is unavailable');
+  let progress:{goal:Point;distance:number;requested:number;speed:number;arrival:number}|undefined;
   let waypoints:Point[]=[];
   let plannerBlocked=false,avoidSign=1;
   let fallback:{origin:Point;code:string}|undefined;
@@ -126,11 +133,33 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(document.pointerLockElement!==canvas)throw new Error('Waypoint lost pointer lock');
       const p=read();
       if(!Number.isFinite(p.x)||!Number.isFinite(p.z))throw new Error('Waypoint position is unavailable');
-      if(Math.hypot(p.x-last.x,p.z-last.z)>.035){last=p;unchanged=0;}else unchanged++;
+      const simulatedNow=simulation();
+      if(!Number.isFinite(simulatedNow)||simulatedNow<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
+      const stepSeconds=simulatedNow-simulatedAt;
+      simulatedAt=simulatedNow;
       const distance=Math.hypot(target.x-p.x,target.z-p.z);
       if(distance<=tolerance){record(p,'reached');return {reached:true,...p,distance,detours,history};}
-      if(unchanged>=4){
-        if(waypoints.length){
+      if(stepSeconds>0){
+        const movedThreshold=Math.min(.035,(progress?.speed??0)*stepSeconds*.2);
+        if(Math.hypot(p.x-last.x,p.z-last.z)>movedThreshold){last=p;unchanged=0;}else unchanged++;
+      }
+      let slowProgress=false;
+      if(progress){
+        progress.requested+=progress.speed*stepSeconds;
+        const remaining=Math.hypot(progress.goal.x-p.x,progress.goal.z-p.z);
+        // Partial collision can move the player enough to reset `unchanged`
+        // without useful progress. Compare against a bounded amount of issued
+        // input, not wall time or a count of initially empty samples.
+        // A fully stationary sequence keeps the existing four-sample recovery.
+        // This extra check handles movement that would otherwise clear it.
+        if(progress.requested>=1&&unchanged===0){
+          slowProgress=remaining>progress.arrival&&progress.distance-remaining<progress.requested*.2;
+          progress=undefined;
+        }
+      }
+      if(unchanged>=4||slowProgress){
+        if(slowProgress)record(p,'slow-progress');
+        if(waypoints.length&&unchanged>=4){
           const x=Number(held.has('KeyD'))-Number(held.has('KeyA'));
           const z=Number(held.has('KeyS'))-Number(held.has('KeyW'));
           const next={x:p.x+x*maximumStep,z:p.z+z*maximumStep};
@@ -141,6 +170,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         waypoints=!plannerBlocked&&detours<3?route(p):[];
         unchanged=0;detours++;record(p,`route:${waypoints.length}`);
         if(!waypoints.length)beginFallback(p);else fallback=undefined;
+        progress=undefined;
       }
       if(fallback&&Math.hypot(p.x-fallback.origin.x,p.z-fallback.origin.z)>=fallbackDistance){
         fallback=undefined;unchanged=0;record(p,'fallback-complete');
@@ -162,8 +192,19 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         if(Math.abs(dz)>tolerance*.6)next.add(axisKey('z',dz));
       }
       setHeld(next);
+      const goal=fallback?{
+        x:fallback.origin.x+(fallback.code==='KeyD'?fallbackDistance:fallback.code==='KeyA'?-fallbackDistance:0),
+        z:fallback.origin.z+(fallback.code==='KeyS'?fallbackDistance:fallback.code==='KeyW'?-fallbackDistance:0)
+      }:aim;
+      const arrival=(fallback||waypoints.length)? .19:tolerance;
+      if(!progress||progress.goal.x!==goal.x||progress.goal.z!==goal.z||progress.arrival!==arrival){
+        progress={goal:{...goal},distance:Math.hypot(goal.x-p.x,goal.z-p.z),requested:0,speed:0,arrival};
+      }
+      progress.speed=[...next].some(code=>code!=='ShiftLeft')?(next.has('ShiftLeft')?7.2:4.5):0;
       await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
     }
+    const finalSimulation=simulation();
+    if(!Number.isFinite(finalSimulation)||finalSimulation<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
     const p=read(),distance=Math.hypot(target.x-p.x,target.z-p.z);record(p,'deadline');
     return {reached:distance<=tolerance,...p,distance,detours,history};
   }finally {setHeld(new Set());}

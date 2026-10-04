@@ -20,7 +20,7 @@ const actual:Fixture={...saved,name:'CI frozen actor poses'};
 const actor=(id:string,asset:string,x:number,z:number,headYaw:number):Actor=>({id,asset,position:{x,z},headYaw});
 
 async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;moveActor?:boolean;intrudeAt?:number;badActors?:boolean;badPosition?:boolean;coverGoalAt?:number;uncoverGoalAt?:number;badTrees?:boolean}={}){
-  let p={...fixture.start},elapsed=0,frames=0;
+  let p={...fixture.start},elapsed=0,frames=0,simulation=0;
   const actors=structuredClone(fixture.actors),held=new Set<string>(),events:Array<{type:string;code:string}>=[];
   const physics=new FinePhysicsAuthority();registerHomeTerrain(physics,72);
   for(const collider of fixture.statics??[])physics.registerStatic(collider);
@@ -28,6 +28,7 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
   const dataset=new Proxy({},{get:(_target,key)=>{
     if(key==='playerX')return options.badPosition&&frames>0?'NaN':p.x.toFixed(4);
     if(key==='playerZ')return p.z.toFixed(4);
+    if(key==='playerInputSeconds')return String(simulation);
     if(key==='treePresentation')return options.badTrees?'{invalid':JSON.stringify((fixture.diagnosticStatics??[]).map(collider=>({collider})));
     if(key==='characterSoles'&&options.badActors)return '{invalid';
     if(key==='characterSoles')return JSON.stringify(actors.map(a=>({...a,headEnvelope:characterHeadEnvelope(a.asset)})));
@@ -47,6 +48,7 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
     if(options.uncoverGoalAt===frames)actors[0].position.x=fixture.actors[0].position.x;
     const x=Number(held.has('KeyD'))-Number(held.has('KeyA')),z=Number(held.has('KeyS'))-Number(held.has('KeyW')),length=Math.hypot(x,z);
     if(length){
+      simulation+=Math.min(.05,frameMs/1000);
       const distance=(held.has('ShiftLeft')?7.2:4.5)*Math.min(.05,frameMs/1000);
       p=physics.moveKinematic({id:'player',position:p,radius:.30,displacement:{x:x/length*distance,z:z/length*distance},
         dynamic:actors.map(a=>({id:a.id,...a.position,radius:NPC_BODY_RADIUS})),
