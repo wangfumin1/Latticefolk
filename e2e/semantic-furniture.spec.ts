@@ -57,7 +57,7 @@ for (const scenario of cases) {
     await expect.poll(async()=>Number(await status.getAttribute('data-persistence-revision'))).toBeGreaterThanOrEqual(seedAck.revision);
 
     await page.locator('#startBtn').click();
-    await lookForObject(page,scenario.title,scenario.yaw,scenario.pitch);
+    await lookForObject(page,scenario.title,scenario.yaw,scenario.pitch,'world');
     await testInfo.attach(`${scenario.name}-target`,{body:await page.screenshot(),contentType:'image/png'});
     await page.keyboard.press('KeyE');
     await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);

@@ -31,7 +31,7 @@ test('prepared opaque well is served, targeted and usable with a persisted water
     });
     expect(runtimeHash).toBe(WELL_RUNTIME_SHA256);
     await page.locator('#startBtn').click();
-    await lookForObject(page,'中央水井',0,.90);
+    await lookForObject(page,'中央水井',0,.90,'world');
     await testInfo.attach('visible-opaque-well',{body:await page.screenshot(),contentType:'image/png'});
     await page.keyboard.press('KeyE');
     await expect(page.locator('#interactionTitle')).toHaveText('中央水井');

@@ -25,7 +25,13 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   };
   const route=(start:Point):Point[]=>{
     const obstacles=actors();
-    if(!obstacles.some(a=>Math.hypot(a.position.x-start.x,a.position.z-start.z)<3))return [];
+    const trees=JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.treePresentation??'[]') as Array<{collider:Bounds}>;
+    const staticClearance=(p:Point,b:Bounds)=>Math.hypot(
+      Math.max(b.minX-p.x,0,p.x-b.maxX),Math.max(b.minZ-p.z,0,p.z-b.maxZ))-.30;
+    const constraints=[...obstacles.map(a=>(p:Point)=>clearance(p,a)),
+      ...trees.map(t=>(p:Point)=>staticClearance(p,t.collider))];
+    if(!obstacles.some(a=>Math.hypot(a.position.x-start.x,a.position.z-start.z)<3)&&
+      !trees.some(t=>staticClearance(start,t.collider)<3))return [];
     // Plan only input waypoints around observed collision envelopes. No world state is written.
     const step=.5,padding=3;
     const minX=Math.floor(Math.min(0,target.x-start.x)/step)-padding/step;
@@ -33,10 +39,10 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
     const minZ=Math.floor(Math.min(0,target.z-start.z)/step)-padding/step;
     const maxZ=Math.ceil(Math.max(0,target.z-start.z)/step)+padding/step;
     const point=(x:number,z:number)=>({x:start.x+x*step,z:start.z+z*step});
-    const edgeClear=(from:Point,to:Point,margin=.16)=>obstacles.every(a=>{
-      const initial=clearance(from,a);
+    const edgeClear=(from:Point,to:Point,margin=.16)=>constraints.every(clear=>{
+      const initial=clear(from);
       for(let t=.1;t<=1.001;t+=.1){
-        const d=clearance({x:from.x+(to.x-from.x)*t,z:from.z+(to.z-from.z)*t},a);
+        const d=clear({x:from.x+(to.x-from.x)*t,z:from.z+(to.z-from.z)*t});
         // Escape a close starting edge, then keep a small walking margin.
         if(d<Math.min(initial,margin)-1e-8||d<0)return false;
       }
@@ -47,25 +53,39 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
     let visited=0;
     while(open.length&&visited++<6000){
       open.sort((a,b)=>a.f-b.f);const n=open.shift()!;const p=point(n.x,n.z);
-      const corner={x:target.x,z:p.z};
-      const terminal=Math.hypot(p.x-target.x,p.z-target.z)<=step&&
-        edgeClear(p,corner,0)&&edgeClear(corner,target,0);
+      const distance=Math.hypot(p.x-target.x,p.z-target.z);
+      // The caller accepts a circle, not only its center or a lattice node.
+      // A live NPC may cover the center while leaving valid points inside that
+      // same original tolerance. Check a near-boundary approach point as well.
+      const radius=Math.max(0,tolerance-Math.min(.01,tolerance*.02));
+      const approach=distance>0?{x:target.x+(p.x-target.x)*radius/distance,z:target.z+(p.z-target.z)*radius/distance}:target;
+      const endpoint=distance<=step+tolerance?[target,approach].find(goal=>{
+        const corner={x:goal.x,z:p.z};
+        return edgeClear(p,goal,0)&&edgeClear(p,corner,0)&&edgeClear(corner,goal,0);
+      }):undefined;
+      const terminal=endpoint!==undefined,corner={x:(endpoint??target).x,z:p.z};
       if(Math.hypot(p.x-target.x,p.z-target.z)<=tolerance||terminal){
         const nodes:Point[]=[];let current:Node|undefined=n;
         while(current?.parent){nodes.push(point(current.x,current.z));current=current.parent;}
         nodes.reverse();
-        // Connect the exact goal, so the .5 lattice never quantizes away a legal
-        // .28-tolerance target. Both axis-aligned terminal legs are checked.
-        if(terminal)nodes.push(corner,target);
+        // Connect a checked point in the original goal region, so the lattice
+        // cannot discard a reachable narrow-tolerance goal.
+        if(endpoint)nodes.push(corner,endpoint);
         // Preserve turns but coalesce consecutive collinear cells.
         return nodes.filter((v,i)=>i===nodes.length-1||i===0||
           (v.x-nodes[i-1].x)!==(nodes[i+1].x-v.x)||(v.z-nodes[i-1].z)!==(nodes[i+1].z-v.z));
       }
-      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const x=n.x+dx,z=n.z+dz,key=`${x},${z}`,g=n.g+step;
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
+        const x=n.x+dx,z=n.z+dz,key=`${x},${z}`,g=n.g+step*Math.hypot(dx,dz);
         if(x<minX||x>maxX||z<minZ||z>maxZ||(best.get(key)??Infinity)<=g)continue;
         const q=point(x,z);if(!edgeClear(p,q))continue;
-        best.set(key,g);open.push({x,z,g,f:g+Math.abs(target.x-q.x)+Math.abs(target.z-q.z),parent:n});
+        if(dx&&dz){
+          // Native diagonal input is resolved one axis at a time by physics.
+          // Require both cardinal corner paths as well as the diagonal itself.
+          const xFirst={x:q.x,z:p.z},zFirst={x:p.x,z:q.z};
+          if(!edgeClear(p,xFirst)||!edgeClear(xFirst,q)||!edgeClear(p,zFirst)||!edgeClear(zFirst,q))continue;
+        }
+        best.set(key,g);open.push({x,z,g,f:g+Math.hypot(target.x-q.x,target.z-q.z),parent:n});
       }
     }
     return [];
@@ -133,9 +153,9 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(fallback){
         next.add(fallback.code);
       }else if(waypoints.length){
-        const axis=Math.abs(dx)>Math.abs(dz)?'x':'z',delta=axis==='x'?dx:dz;
-        if(Math.abs(delta)>maximumStep)next.add('ShiftLeft');
-        next.add(axisKey(axis,delta));
+        if(Math.hypot(dx,dz)>maximumStep)next.add('ShiftLeft');
+        if(Math.abs(dx)>.12)next.add(axisKey('x',dx));
+        if(Math.abs(dz)>.12)next.add(axisKey('z',dz));
       }else{
         if(distance>1.8)next.add('ShiftLeft');
         if(Math.abs(dx)>tolerance*.6)next.add(axisKey('x',dx));

@@ -239,7 +239,7 @@ test('real playable scene keeps God View observer-only and uses authoritative gr
   await expect.poll(()=>injectedSaveFailure,{timeout:8_000}).toBe(true);
   // A clean player HUD must still surface a real failed autosave.
   await expect(page.locator('#log')).toBeVisible();
-  await expect(page.locator('#log')).toContainText('世界自动保存失败');
+  await expect(page.locator('#log')).toContainText('World autosave failed: HTTP 503');
   await expect.poll(async()=>(await runtime(page)).movableDirty,{timeout:8_000}).toBe(true);
   releaseSaveRetry();
 

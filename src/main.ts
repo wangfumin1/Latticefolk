@@ -1102,17 +1102,17 @@ class TownGame {
       if(!response.ok)throw new Error(`HTTP ${response.status}`);
       const data=await response.json() as {snapshot:WorldPersistenceSnapshot|null;revision?:unknown;stats?:unknown};
       const revision=Number(data.revision);
-      if(!Number.isSafeInteger(revision)||revision<0)throw new Error('Invalid persistence revision from server');
+      if(!Number.isSafeInteger(revision)||revision<0)throw new Error(i18n.t('persistence.invalidRevision'));
       this.persistenceRevision=revision;
       this.persistenceConflict=false;
       if(data.snapshot){
         this.restoreWorldState(data.snapshot);
-        this.log(`已恢复世界存档 · revision ${revision} · day ${data.snapshot.meta.day} · ${data.snapshot.coarseChunks.length} coarse chunks · ${data.snapshot.fineChunks.length} visited fine chunks`);
+        this.log(i18n.t('persistence.restored',{revision,day:data.snapshot.meta.day,coarse:data.snapshot.coarseChunks.length,fine:data.snapshot.fineChunks.length}));
       }else{
-        this.log(`未发现已有世界存档，将从当前 world seed 开始 · revision ${revision}`);
+        this.log(i18n.t('persistence.newWorld',{revision}));
       }
     }catch(error){
-      this.log(`世界存档加载失败，继续使用当前运行时：${error instanceof Error?error.message:String(error)}`);
+      this.log(i18n.t('persistence.loadFailed',{error:error instanceof Error?error.message:String(error)}));
     }finally{
       this.persistenceReady=true;
       this.lastPersistenceSaveAt=now();
@@ -1256,20 +1256,20 @@ class TownGame {
           this.persistenceConflict=true;
           this.persistenceSaveQueued=false;
           throw new Error(Number.isSafeInteger(currentRevision)
-            ?`revision conflict (local ${expectedRevision}, server ${currentRevision}); reload required`
-            :`revision conflict (local ${expectedRevision}); reload required`);
+            ?i18n.t('persistence.conflict',{local:expectedRevision,server:currentRevision})
+            :i18n.t('persistence.conflictUnknown',{local:expectedRevision}));
         }
         if(!response.ok)throw new Error(`HTTP ${response.status}`);
         const saved=await response.json() as {revision?:unknown};
         const revision=Number(saved.revision);
         if(!Number.isSafeInteger(revision)||revision!==expectedRevision+1){
-          throw new Error('Invalid persistence revision acknowledgement');
+          throw new Error(i18n.t('persistence.invalidAcknowledgement'));
         }
         this.persistenceRevision=revision;
         this.portables.checkpoint.acknowledge(itemTransferVersion);
         lastSaveSucceeded=true;
       }catch(error){
-        this.log(`世界自动保存失败：${error instanceof Error?error.message:String(error)}`);
+        this.log(i18n.t('persistence.saveFailed',{error:error instanceof Error?error.message:String(error)}));
       }finally{
         this.persistenceSaveInFlight=false;
       }
@@ -1320,7 +1320,7 @@ class TownGame {
       const snapshot=this.buildFinalWorldSnapshot();
       const payload=JSON.stringify({snapshot,expectedRevision:this.persistenceRevision});
       const accepted=navigator.sendBeacon('/api/world/state',new Blob([payload],{type:'application/json'}));
-      if(!accepted)this.log(`最终存档未进入浏览器发送队列 · ${new TextEncoder().encode(payload).byteLength} bytes`);
+      if(!accepted)this.log(i18n.t('persistence.beaconRejected',{bytes:new TextEncoder().encode(payload).byteLength}));
     }catch{}
   }
 
@@ -3555,6 +3555,7 @@ class TownGame {
     ui.world.dataset.shadowView=JSON.stringify(this.sunShadow.diagnostics());
     ui.world.dataset.playerBodyPresent=String(this.physicsDynamicColliders().some(body=>body.id==='player'));
     ui.world.dataset.cameraMode=this.cameraMode;
+    ui.world.dataset.cameraYaw=new THREE.Euler().setFromQuaternion(this.camera.quaternion,'YXZ').y.toFixed(6);
     ui.world.dataset.discoveredChunks=String(world.chunks);
     ui.world.dataset.materializedChunks=String(world.materializedChunks);
     ui.world.dataset.coarseDecidedChunks=String(world.decidedChunks);
