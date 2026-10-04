@@ -13,7 +13,7 @@ function fixture(){
  return {w,document,capture,read,reference:capture(1),status:document.querySelector<HTMLElement>('#worldStatus')!,close:()=>w.close()};
 }
 test('one read-only sample contains every original language/menu/state condition',()=>{
- const f=fixture(),before=f.document.documentElement.outerHTML;assert.deepEqual(f.read(f.reference),{lang:'ja',modeHint:'観察者',mode:'firstPerson',playerBody:'true',discovered:72,materialized:0,sameCanvas:true,menuOpen:true,sameButtons:true,actionText:'働く',samePosition:true});assert.equal(f.document.documentElement.outerHTML,before);f.close();
+ const f=fixture(),before=f.document.documentElement.outerHTML;assert.deepEqual(f.read(f.reference),{lang:'ja',modeHint:'観察者',mode:'firstPerson',playerBody:'true',discovered:72,materialized:0,sameCanvas:true,menuOpen:true,sameButtons:true,actionText:'働く',inventory:undefined,details:undefined,title:undefined,focus:'',samePosition:true});assert.equal(f.document.documentElement.outerHTML,before);f.close();
 });
 test('delayed language and label changes stay observable on each fresh poll',()=>{
  const f=fixture();f.document.documentElement.lang='en';f.document.querySelectorAll('button')[1].textContent='Work';let s=f.read(f.reference);assert.equal(s.lang,'en');assert.equal(s.actionText,'Work');f.document.documentElement.lang='ja';s=f.read(f.reference);assert.equal(s.lang,'ja');assert.equal(s.actionText,'Work','language alone does not manufacture translated text');f.document.querySelectorAll('button')[1].textContent='働く';assert.equal(f.read(f.reference).actionText,'働く');f.close();
@@ -42,4 +42,23 @@ test('real Playwright compound polling waits until asynchronous fields agree tog
 test('real Playwright compound polling still fails a persistently dismissed menu',async()=>{
  const f=fixture();f.document.querySelector('#interactionMenu')!.classList.add('hidden');
  await assert.rejects(async()=>{await expect.poll(()=>f.read(f.reference),{timeout:50,intervals:[5]}).toMatchObject({lang:'ja',actionText:'働く',menuOpen:true});},/menuOpen/);f.close();
+});
+
+
+test('HUD labels, authored title and focus share the current locale sample without masking drift',()=>{
+ const f=fixture();
+ f.document.body.insertAdjacentHTML('beforeend','<div id="inventory">Inventory 10</div><div id="npcPanel">Position 1, 2 · Tags work · Interactions Work</div><b id="interactionTitle">原始工作台</b><select id="localeSelect"><option>English</option></select>');
+ const select=f.document.querySelector<HTMLSelectElement>('#localeSelect')!;select.focus();
+ const before=f.document.documentElement.outerHTML;
+ const english=f.read(f.reference);
+ assert.equal(english.inventory,'Inventory 10');assert.equal(english.details,'Position 1, 2 · Tags work · Interactions Work');assert.equal(english.title,'原始工作台');assert.equal(english.focus,'localeSelect');
+ assert.equal(f.document.documentElement.outerHTML,before);assert.equal(f.document.activeElement,select);
+ f.document.documentElement.lang='ja';
+ const pending=f.read(f.reference);assert.equal(pending.lang,'ja');assert.equal(pending.inventory,'Inventory 10','locale alone cannot manufacture a translated HUD');
+ f.document.querySelector('#inventory')!.textContent='所持品 10';f.document.querySelector('#npcPanel')!.textContent='位置 1, 2 · タグ work · 操作 働く';
+ const translated=f.read(f.reference);assert.equal(translated.inventory,'所持品 10');assert.equal(translated.details,'位置 1, 2 · タグ work · 操作 働く');assert.equal(translated.title,'原始工作台');assert.equal(translated.focus,'localeSelect');
+ f.document.querySelector<HTMLButtonElement>('button')!.focus();assert.notEqual(f.read(f.reference).focus,'localeSelect','sampling does not restore lost focus');
+ f.document.querySelector('#interactionTitle')!.textContent='Unexpected rename';assert.equal(f.read(f.reference).title,'Unexpected rename');
+ f.document.querySelector('#inventory')!.remove();assert.equal(f.read(f.reference).inventory,undefined,'a missing HUD cannot pass by returning stale data');
+ f.close();
 });
