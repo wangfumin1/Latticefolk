@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 import { I18n } from '../src/i18n.js';
+import { captureLocaleDom, readLocaleDom } from './helpers/locale-dom.js';
 import { lookForObject } from './helpers/relative-look.js';
 
 // Fixtures set a legal saved starting position before boot. All subsequent targeting,
@@ -68,22 +69,22 @@ for (const scenario of cases) {
     if(scenario.name==='workbench-work'){
       // A locale change is a UI operation, not a new playable session. Keep the
       // actual open menu/buttons and the original action/persistence assertions.
-      const canvas=await page.locator('#game canvas').elementHandle();
-      const buttons=await actions.elementHandles();
-      const position=await status.evaluate(element=>({x:element.dataset.playerX,z:element.dataset.playerZ}));
+      const reference=await page.evaluateHandle(captureLocaleDom,scenario.action);
       let navigations=0;const onNavigation=()=>{navigations++;};page.on('framenavigated',onNavigation);
       for(const locale of ['ja','es','zh-CN','en'] as const){
         await page.locator('#localeSelect').selectOption(locale);
-        await expect(page.locator('html')).toHaveAttribute('lang',locale);
-        await expect(actions.nth(scenario.action)).toHaveText(new I18n(locale).t('interaction.work'));
-        if(locale==='ja')await testInfo.attach('workbench-language-ja',{body:await page.screenshot(),contentType:'image/png'});
-        await expect(page.locator('#interactionMenu')).not.toHaveClass(/hidden/);
-        expect(await buttons[scenario.action].evaluate(element=>element===document.querySelectorAll('#interactionActions button')[1])).toBe(true);
+        await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({
+          lang:locale,actionText:new I18n(locale).t('interaction.work'),menuOpen:true,
+          sameButtons:true,sameCanvas:true,samePosition:true,mode:'firstPerson'
+        });
+        if(locale==='ja'){
+          await testInfo.attach('workbench-language-ja',{body:await page.screenshot(),contentType:'image/png'});
+          await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({menuOpen:true,sameButtons:true});
+        }
       }
       page.off('framenavigated',onNavigation);expect(navigations).toBe(0);
-      expect(await canvas!.evaluate(element=>element===document.querySelector('#game canvas'))).toBe(true);
-      expect(await status.evaluate(element=>({x:element.dataset.playerX,z:element.dataset.playerZ}))).toEqual(position);
-      await expect(status).toHaveAttribute('data-camera-mode','firstPerson');
+      await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({sameCanvas:true,samePosition:true,mode:'firstPerson',menuOpen:true,sameButtons:true});
+      await reference.dispose();
       await testInfo.attach('workbench-language-switch-preserved-menu',{body:await page.screenshot(),contentType:'image/png'});
     }
     await actions.nth(scenario.action).click();
