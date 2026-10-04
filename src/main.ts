@@ -255,6 +255,7 @@ class TownGame {
   cameraMode: 'firstPerson'|'god' = 'firstPerson';
   perceptionEpoch = 0;
   playerPosition: Vec2 = {x:0,z:7};
+  playerInputSeconds=0; // Read-only diagnostic of actual player input simulation.
   playerTravel?: Vec2;
   playerBlockedNpcs = new Set<string>();
   firstPersonRotation = new THREE.Euler(0,0,0,'YXZ');
@@ -1024,6 +1025,7 @@ class TownGame {
         constraints:[...this.npcs.values()].filter(a=>!a.removed).map(a=>playerHeadConstraint(`npc:${a.state.id}`,a.characterAsset,a.mesh.position,a.mesh.rotation.y))
       });
       let resolved=this.physics.moveKinematic(moveInput());
+      this.playerInputSeconds+=dt;
       const movableHit=resolved.dynamicHits.find(id=>id.startsWith('object:'));
       if(movableHit&&this.tryPushMovableObject(movableHit.slice('object:'.length),{x:move.x,z:move.z})){
         resolved=this.physics.moveKinematic(moveInput());
@@ -3566,6 +3568,7 @@ class TownGame {
     ui.world.dataset.terrainSurfaces=String(physicsStats.terrainSurfaces);
     ui.world.dataset.playerX=this.playerPosition.x.toFixed(4);
     ui.world.dataset.playerZ=this.playerPosition.z.toFixed(4);
+    ui.world.dataset.playerInputSeconds=String(this.playerInputSeconds);
     ui.world.dataset.playerGroundingError=playerGroundingError.toFixed(5);
     ui.world.dataset.npcGroundingMaxError=npcGroundingMaxError.toFixed(5);
     ui.world.dataset.wildlifeGroundingMaxError=wildlifeGroundingMaxError.toFixed(5);
