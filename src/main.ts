@@ -41,6 +41,7 @@ import { resolveContactAction } from './world/contactAction';
 import { registerFineTerrainForChunk, registerHomeTerrain } from './world/fineTerrain';
 import { feedWildlifeForTaming, inheritedWildlifeDomestication, isWildlifeDomesticationEligible, normalizeWildlifeDomestication, setWildlifeBreedingPermission, setWildlifeDomesticationCommand, wildlifeBreedingAllowed, wildlifeDomesticationDecisionState, wildlifeHasActiveOwnerCommand, wildlifePairBreedingAllowed } from './world/domestication';
 import { I18n, SUPPORTED_LOCALES } from './i18n';
+import { refreshLocaleText } from './ui/runtimeLocale';
 import { appendHudLog, visibleHudLogs, type HudLogEntry, type HudLogAudience } from './ui/hudDiagnostics';
 import type {
   DecisionAction, DecisionRequest, DecisionResponse, DialogueRequest, DialogueResponse,
@@ -54,14 +55,15 @@ const clamp = (v:number,min:number,max:number) => Math.max(min,Math.min(max,v));
 const dist = (a:Vec2,b:Vec2) => Math.hypot(a.x-b.x,a.z-b.z);
 const now = () => performance.now();
 const i18n = new I18n(localStorage.getItem('latticefolk.locale') || navigator.language);
+document.documentElement.lang=i18n.locale;
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <div id="game"></div>
 <div id="crosshair">+</div>
-<div id="modeBar"><button id="modeBtn">${i18n.t('mode.god')}</button><span id="modeHint">${i18n.t('mode.first')}</span><select id="localeSelect" aria-label="Language">${SUPPORTED_LOCALES.map(x=>`<option value="${x.code}" ${x.code===i18n.locale?'selected':''}>${x.label}</option>`).join('')}</select></div>
+<div id="modeBar"><button id="modeBtn" data-i18n="mode.god">${i18n.t('mode.god')}</button><span id="modeHint" data-i18n="mode.first">${i18n.t('mode.first')}</span><select id="localeSelect" aria-label="Language">${SUPPORTED_LOCALES.map(x=>`<option value="${x.code}" ${x.code===i18n.locale?'selected':''}>${x.label}</option>`).join('')}</select></div>
 <div id="hud">
-  <div class="brand">${i18n.t('brand')}</div>
+  <div class="brand" data-i18n="brand">${i18n.t('brand')}</div>
   <div id="clock"></div>
   <div id="decisionStatus"></div>
   <div id="worldStatus"></div>
@@ -72,10 +74,10 @@ app.innerHTML = `
 <div id="evolutionPanel" class="panel evolution hidden"></div>
 <div id="log" class="panel log hidden"></div>
 <div id="admin" class="panel admin hidden">
-  <div class="panel-title">${i18n.t('console.title')} <span>${i18n.t('console.close')}</span></div>
+  <div class="panel-title"><div data-i18n="console.title">${i18n.t('console.title')}</div><span data-i18n="console.close">${i18n.t('console.close')}</span></div>
   <div id="adminStatus"></div>
   <div class="admin-section" id="jevBudgetPanel">
-    <div class="admin-section-title">${i18n.t('budget.title')}</div>
+    <div class="admin-section-title" data-i18n="budget.title">${i18n.t('budget.title')}</div>
     <div class="budget-grid">
       <label>calls/min <input id="budgetCallsMin" type="number" min="0" step="1" /></label>
       <label>tokens/min <input id="budgetTokensMin" type="number" min="0" step="1000" /></label>
@@ -86,27 +88,27 @@ app.innerHTML = `
       <label>cache ms <input id="budgetCacheTtl" type="number" min="0" step="250" /></label>
     </div>
     <div class="row budget-presets">
-      <button data-budget-preset="economy">${i18n.t('budget.economy')}</button>
-      <button data-budget-preset="balanced">${i18n.t('budget.balanced')}</button>
-      <button data-budget-preset="quality">${i18n.t('budget.quality')}</button>
-      <button id="budgetApplyBtn">${i18n.t('budget.apply')}</button>
+      <button data-budget-preset="economy" data-i18n="budget.economy">${i18n.t('budget.economy')}</button>
+      <button data-budget-preset="balanced" data-i18n="budget.balanced">${i18n.t('budget.balanced')}</button>
+      <button data-budget-preset="quality" data-i18n="budget.quality">${i18n.t('budget.quality')}</button>
+      <button id="budgetApplyBtn" data-i18n="budget.apply">${i18n.t('budget.apply')}</button>
     </div>
     <div id="budgetLive" class="small"></div>
   </div>
-  <label>${i18n.t('console.importFormat')}
-    <select id="importFormat"><option value="plain">${i18n.t('console.plain')}</option><option value="jsonl">${i18n.t('console.jsonl')}</option><option value="json">${i18n.t('console.json')}</option></select>
+  <label><span data-i18n="console.importFormat">${i18n.t('console.importFormat')}</span>
+    <select id="importFormat"><option value="plain" data-i18n="console.plain">${i18n.t('console.plain')}</option><option value="jsonl" data-i18n="console.jsonl">${i18n.t('console.jsonl')}</option><option value="json" data-i18n="console.json">${i18n.t('console.json')}</option></select>
   </label>
   <input id="importFile" type="file" accept=".txt,.json,.jsonl,.csv" />
   <textarea id="importText" placeholder="每行一条完整台词；或：\nline<TAB>greet,happy<TAB>你好。\nfragment:opener<TAB>greet<TAB>嘿，"></textarea>
-  <div class="row"><button id="importBtn">${i18n.t('console.import')}</button><button id="pauseBtn">${i18n.t('console.pause')}</button></div>
-  <div class="small">${i18n.t('controls.first')}<br>${i18n.t('controls.god')}</div>
+  <div class="row"><button id="importBtn" data-i18n="console.import">${i18n.t('console.import')}</button><button id="pauseBtn" data-i18n="console.pause">${i18n.t('console.pause')}</button></div>
+  <div class="small"><span data-i18n="controls.first">${i18n.t('controls.first')}</span><br><span data-i18n="controls.god">${i18n.t('controls.god')}</span></div>
 </div>
 <div id="startOverlay">
   <div class="start-card">
-    <h1>${i18n.t('start.title')}</h1>
-    <p>${i18n.t('start.desc')}</p>
-    <button id="startBtn">${i18n.t('start.enter')}</button>
-    <div>${i18n.t('start.controls')}</div>
+    <h1 data-i18n="start.title">${i18n.t('start.title')}</h1>
+    <p data-i18n="start.desc">${i18n.t('start.desc')}</p>
+    <button id="startBtn" data-i18n="start.enter">${i18n.t('start.enter')}</button>
+    <div data-i18n="start.controls">${i18n.t('start.controls')}</div>
   </div>
 </div>
 <div id="speechLayer"></div>
@@ -271,6 +273,9 @@ class TownGame {
     new THREE.LineBasicMaterial({color:0xfff176,transparent:true,opacity:.8})
   );
   lastHealthPoll = 0;
+  budgetInputVersion=0;
+  budgetSavedVersion=0;
+  budgetApplyVersion=0;
   decisionProvider = 'fallback';
   decisionCalls = 0;
   gltfLoader = new GLTFLoader();
@@ -866,7 +871,8 @@ class TownGame {
     this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
     this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
     document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
-    ui.localeSelect.addEventListener('change',()=>{localStorage.setItem('latticefolk.locale',ui.localeSelect.value);location.reload();});
+    ui.localeSelect.addEventListener('change',()=>this.changeLocale(ui.localeSelect.value));
+    document.querySelectorAll<HTMLInputElement>('#jevBudgetPanel input').forEach(input=>input.addEventListener('input',()=>{this.budgetInputVersion++;}));
     document.querySelector('#budgetApplyBtn')!.addEventListener('click',()=>this.applyBudgetFromUi());
     document.querySelectorAll<HTMLButtonElement>('[data-budget-preset]').forEach(btn=>btn.addEventListener('click',()=>this.applyBudgetPreset(btn.dataset.budgetPreset||'balanced')));
 
@@ -930,6 +936,35 @@ class TownGame {
   }
 
 
+  changeLocale(locale:string) {
+    i18n.setLocale(locale);
+    this.locale=i18n.locale;
+    localStorage.setItem('latticefolk.locale',this.locale);
+    ui.localeSelect.value=this.locale;
+    document.documentElement.lang=this.locale;
+    ui.modeBtn.dataset.i18n=this.cameraMode==='god'?'mode.first':'mode.god';
+    ui.modeHint.dataset.i18n=this.cameraMode==='god'?'mode.observer':'mode.first';
+    document.querySelector<HTMLElement>('#pauseBtn')!.dataset.i18n=this.aiPaused?'console.resume':'console.pause';
+    refreshLocaleText(document,key=>i18n.t(key));
+    this.refreshInteractionLabels();
+    this.updatePrompt();
+    this.updateLocalizedUi();
+  }
+
+  refreshInteractionLabels() {
+    if(!this.interactionOpen)return;
+    if(this.interactionWildlifeId){
+      const state=this.wildlife.get(this.interactionWildlifeId)?.state;
+      const domestication=state?.domestication;
+      if(!state||!domestication)return;
+      ui.interactionTitle.textContent=`${i18n.t('domestication.title')} · ${this.wildlifeName(state.species)}`;
+      ui.interactionMeta.textContent=`${i18n.t('domestication.progress')} ${domestication.tameProgress.toFixed(0)}/100 · ${i18n.t('domestication.owner')} ${domestication.ownerId||i18n.t('domestication.unowned')} · ${i18n.t('domestication.command')} ${i18n.t(`domestication.command.${domestication.command}`)} · ${i18n.t('domestication.breeding')} ${i18n.t(domestication.breedingAllowed?'domestication.breeding.on':'domestication.breeding.off')}`;
+    }else if(this.interactionObjectId){
+      const object=this.objects.get(this.interactionObjectId);
+      if(object)ui.interactionTitle.textContent=this.objectDisplayName(object.state);
+    }
+  }
+
   cancelPlayerTargeting() {
     for(const agent of this.npcs.values()) {
       if(agent.task?.targetNpcId!=='player' && agent.state.targetNpcId!=='player') continue;
@@ -972,7 +1007,7 @@ class TownGame {
   selectGodEntity() {
     const entity=this.pickEntity(this.godPointer,Infinity);
     this.selectedEntity=entity;
-    if(entity){const name=entity.type==='npc'?this.npcs.get(entity.id)?.state.name:entity.type==='wildlife'?this.wildlifeName(this.wildlife.get(entity.id)!.state.species):this.objects.get(entity.id)?.state.name;this.toast(`已选择：${name||entity.id}`);}
+    if(entity){const name=entity.type==='npc'?this.npcs.get(entity.id)?.state.name:entity.type==='wildlife'?this.wildlifeName(this.wildlife.get(entity.id)!.state.species):(this.objects.has(entity.id)?this.objectDisplayName(this.objects.get(entity.id)!.state):undefined);this.toast(`已选择：${name||entity.id}`);}
   }
 
   entityPosition(entity:{type:'npc'|'object'|'wildlife';id:string}):Vec2|undefined {
@@ -3190,20 +3225,21 @@ class TownGame {
     ui.interactionMeta.textContent=`${i18n.t('domestication.progress')} ${domestication.tameProgress.toFixed(0)}/100 · ${i18n.t('domestication.owner')} ${domestication.ownerId||i18n.t('domestication.unowned')} · ${i18n.t('domestication.command')} ${i18n.t(`domestication.command.${domestication.command}`)} · ${i18n.t('domestication.breeding')} ${i18n.t(domestication.breedingAllowed?'domestication.breeding.on':'domestication.breeding.off')}`;
     ui.interactionActions.innerHTML='';
 
-    const add=(label:string,run:()=>void)=>{
+    const add=(key:string,run:()=>void)=>{
       const button=document.createElement('button');
-      button.textContent=label;
+      button.dataset.i18n=key;
+      button.textContent=i18n.t(key);
       button.addEventListener('click',()=>{run();this.closeInteractionMenu(true);});
       ui.interactionActions.appendChild(button);
     };
 
     if(!domestication.ownerId){
-      add(i18n.t('domestication.feed'),()=>this.feedWildlifeForTaming(animal));
+      add('domestication.feed',()=>this.feedWildlifeForTaming(animal));
     }else if(domestication.ownerId==='player'){
       for(const command of ['follow','stay','graze','none'] as WildlifeDomesticationCommand[]){
-        add(i18n.t(`domestication.command.${command}`),()=>this.commandOwnedWildlife(animal,command));
+        add(`domestication.command.${command}`,()=>this.commandOwnedWildlife(animal,command));
       }
-      add(i18n.t(domestication.breedingAllowed?'domestication.disableBreeding':'domestication.enableBreeding'),()=>this.toggleOwnedWildlifeBreeding(animal));
+      add(domestication.breedingAllowed?'domestication.disableBreeding':'domestication.enableBreeding',()=>this.toggleOwnedWildlifeBreeding(animal));
     }
     ui.interaction.classList.remove('hidden');
   }
@@ -3274,13 +3310,15 @@ class TownGame {
   openInteractionMenu(o:RuntimeObject,actions:InteractionCapability[]) {
     this.interactionOpen=true;
     this.interactionObjectId=o.state.id;
+    this.interactionWildlifeId=undefined;
     ui.overlay.classList.add('hidden');
     if(this.controls.isLocked)this.controls.unlock();
-    ui.interactionTitle.textContent=o.state.name;
+    ui.interactionTitle.textContent=this.objectDisplayName(o.state);
     ui.interactionMeta.textContent=`${o.state.kind} · ${o.state.tags.join(' / ')}`;
     ui.interactionActions.innerHTML='';
     for(const action of actions){
       const button=document.createElement('button');
+      button.dataset.i18n=`interaction.${action}`;
       button.textContent=this.interactionLabel(action);
       button.addEventListener('click',()=>{
         const current=this.objects.get(this.interactionObjectId||'');
@@ -3414,15 +3452,19 @@ class TownGame {
     if(this.cameraMode==='firstPerson'&&this.hoverEntity?.type==='object'&&!this.playerOverlapsObjectTrigger(this.hoverEntity.id)){
       this.hoverEntity=undefined;
     }
+    this.updatePrompt();
+  }
+
+  updatePrompt() {
     if(this.cameraMode==='god'){
       if(!this.hoverEntity){ui.prompt.textContent='';return;}
-      const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):this.objects.get(this.hoverEntity.id)?.state.name;
+      const name=this.hoverEntity.type==='npc'?this.npcs.get(this.hoverEntity.id)?.state.name:this.hoverEntity.type==='wildlife'?this.wildlifeName(this.wildlife.get(this.hoverEntity.id)!.state.species):(this.objects.has(this.hoverEntity.id)?this.objectDisplayName(this.objects.get(this.hoverEntity.id)!.state):undefined);
       ui.prompt.textContent=i18n.t('prompt.god',{name:name||''});return;
     }
     if(!this.hoverEntity){ui.prompt.textContent='';return;}
     if(this.hoverEntity.type==='npc'){const n=this.npcs.get(this.hoverEntity.id)!;ui.prompt.textContent=i18n.t('prompt.talk',{name:n.state.name});}
     else if(this.hoverEntity.type==='wildlife'){const w=this.wildlife.get(this.hoverEntity.id)!;const key=isWildlifeDomesticationEligible(w.state.species)?'prompt.domesticated':'prompt.wildlife';ui.prompt.textContent=i18n.t(key,{name:this.wildlifeName(w.state.species)});}
-    else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:o.state.name,count});}
+    else {const o=this.objects.get(this.hoverEntity.id)!;const count=o.state.capabilities?.length||1;ui.prompt.textContent=i18n.t('prompt.object',{name:this.objectDisplayName(o.state),count});}
   }
 
   updateUi() {
@@ -3593,12 +3635,16 @@ class TownGame {
     ui.world.dataset.licensedVisualTargets=String(this.visualTargets.length);
     ui.world.dataset.licensedVisualsResolved=String(this.visualTargets.filter(target=>target.group.children.length>0).length);
     ui.world.textContent=`世界 已发现 ${world.chunks} · 活动 ${world.activeChunks}@${world.activeCenter} · 细化 ${world.materializedChunks} · 物理 ${activePhysicsBodies} bodies / ${physicsStats.staticColliders} static / ${physicsStats.triggers} triggers / ${physicsStats.terrainSurfaces} terrain · 野生动物 ${world.wildlifePopulation.toFixed(0)} · 植物量 ${world.plantBiomass.toFixed(0)} · 食物网 ${world.trophicPrimary.toFixed(2)}→${world.trophicHerbivory.toFixed(2)}→${world.trophicPredation.toFixed(2)} · 竞争 ${world.nicheCompetition.toFixed(0)} (${world.strongestCompetition}) · 疾病压力 ${world.wildlifeDiseasePressure.toFixed(0)} (${world.strongestDiseaseTransmission}) · 捕食压力 ${world.wildlifePredatorPressure.toFixed(0)} (${world.strongestPredatorPressure}) · chunk决策 ${world.decidedChunks}/${world.chunks} · region ${world.regionDecisions} · world ${world.worldPriority}/${world.worldConnectivity}/${world.worldGrowth} · 流 ${world.recentFlowCount} · ${world.pending?'批量决策中':world.lastSource.toUpperCase()} · 生态 ${world.avgEcology.toFixed(0)} · 繁荣 ${world.avgProsperity.toFixed(0)} · ${world.lastFlowSummary}`;
+    this.updateLocalizedUi();
+  }
+
+  updateLocalizedUi() {
     ui.clock.textContent=`Day ${this.day} · ${this.gameTimeText()} · ${i18n.t(`season.${this.worldSeason()}`)} · ${i18n.t(`weather.${this.weather}`)}`;
     ui.inv.textContent=this.cameraMode==='god'?i18n.t('observer'):`背包 🍎${this.playerInventory.apple} 🍞${this.playerInventory.bread} 🪵${this.playerInventory.wood} 🌾${this.playerInventory.grain} 🥣${this.playerInventory.flour} 💧${this.playerInventory.water} 🪵${this.playerInventory.plank} 🪨${this.playerInventory.stone} 🔧${this.playerInventory.tool} ◉${this.playerInventory.coin}`;
     const entity=this.cameraMode==='god'?(this.selectedEntity||this.hoverEntity):this.hoverEntity;
     if(entity?.type==='npc'){
       const a=this.npcs.get(entity.id)!;const n=a.state;const d=a.lastDecision;
-      const target=d?.targetNpcId?this.npcs.get(d.targetNpcId)?.state.name||d.targetNpcId:d?.targetObjectId?this.objects.get(d.targetObjectId)?.state.name||d.targetObjectId:'—';
+      const target=d?.targetNpcId?this.npcs.get(d.targetNpcId)?.state.name||d.targetNpcId:d?.targetObjectId?(this.objects.has(d.targetObjectId)?this.objectDisplayName(this.objects.get(d.targetObjectId)!.state):d.targetObjectId):'—';
       const inv=n.inventory.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'空';
       const memories=n.memories.slice(-3).reverse().map(m=>`<div class="memory">• ${this.escape(m.summary)}</div>`).join('')||'<span>暂无显著记忆</span>';
       ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(n.name)}</b><span>${n.role}</span></div><div>心情 ${n.mood} · 饥饿 ${n.hunger.toFixed(0)} · 精力 ${n.energy.toFixed(0)} · 社交 ${n.social.toFixed(0)}</div><div>当前行为 <b>${n.currentAction}</b> · 金钱 ${n.money}</div><div>背包 ${inv}</div><div class="npc-goal">${this.escape(n.goal)}</div>${d?`<div class="decision"><b>最近决策</b> ${d.action} → ${this.escape(String(target))}<br>${d.source.toUpperCase()} · confidence ${(d.confidence*100).toFixed(0)}% · ${d.stateShift}${d.socialIntent?` · ${d.socialIntent}`:''}<br><span>${this.escape(d.reasonCode)}</span></div>`:'<div class="decision"><span>等待首次决策…</span></div>'}<div class="memories"><b>短期记忆</b>${memories}</div>`;
@@ -3612,7 +3658,7 @@ class TownGame {
         ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.wildlifeName(s.species))}</b><span>${s.sex} · G${s.generation}</span></div>${(()=>{const profile=wildlifeSpeciesProfile(s.species);return `<div>family ${profile.organismFamily} · form ${profile.form.kind}${profile.archetypeId?` · archetype ${this.escape(profile.archetypeId)}`:''} · movement ${profile.movement.mode}/${profile.movement.gait} · accel ${profile.movement.accelerationRate.toFixed(1)}×/s · turn ${profile.movement.turnRate.toFixed(1)}rad/s</div><div>capabilities ${profile.capabilities.map(action=>this.escape(action)).join(' / ')}</div>`;})()}${(()=>{const d=normalizeWildlifeDomestication(s.species,s.domestication);return d?`<div>${i18n.t('domestication.progress')} ${d.tameProgress.toFixed(0)}/100 · ${i18n.t('domestication.owner')} ${this.escape(d.ownerId||i18n.t('domestication.unowned'))} · ${i18n.t('domestication.command')} ${i18n.t(`domestication.command.${d.command}`)} · ${i18n.t('domestication.breeding')} ${i18n.t(d.breedingAllowed?'domestication.breeding.on':'domestication.breeding.off')}</div>`:``;})()}<div>${i18n.t('wildlife.health')} ${s.health.toFixed(0)} · ${i18n.t('wildlife.hunger')} ${s.hunger.toFixed(0)} · ${i18n.t('wildlife.thirst')} ${s.thirst.toFixed(0)} · ${i18n.t('wildlife.energy')} ${s.energy.toFixed(0)}</div><div>${i18n.t('wildlife.action')} <b>${s.currentAction}</b> · ${i18n.t('wildlife.age')} ${s.ageDays.toFixed(0)}d · ${i18n.t('wildlife.disease')} ${(s.diseaseLoad||0).toFixed(0)}</div><div>${s.motherId?`mother ${this.escape(s.motherId)} · `:''}${s.fatherId?`father ${this.escape(s.fatherId)} · `:''}${s.pregnantUntilDay?`pregnant → Day ${s.pregnantUntilDay.toFixed(1)}`:''}${lineage?` · offspring ${lineage.offspringCount}`:''}</div><div>speed ${s.traits.speed.toFixed(2)} · size ${s.traits.size.toFixed(2)} · fertility ${s.traits.fertility.toFixed(2)} · wariness ${s.traits.wariness.toFixed(2)}</div>${s.phenotype?`<div>morph L ${s.phenotype.morphology.bodyLength.toFixed(2)} · H ${s.phenotype.morphology.bodyHeight.toFixed(2)} · leg ${s.phenotype.morphology.legLength.toFixed(2)} · head ${s.phenotype.morphology.headScale.toFixed(2)} · behavior forage ${s.phenotype.behavior.forageDrive.toFixed(2)} · migrate ${s.phenotype.behavior.migrationDrive.toFixed(2)} · risk ${s.phenotype.behavior.riskTolerance.toFixed(2)} · recover ${s.phenotype.behavior.recoveryDrive.toFixed(2)}</div><div>${(()=>{const fn=wildlifeFunctionalPhenotype(s.phenotype);return `function speed ×${fn.movementSpeedMultiplier.toFixed(2)} · move cost ×${fn.movementEnergyMultiplier.toFixed(2)} · maintenance ×${fn.maintenanceMultiplier.toFixed(2)} · forage ×${fn.forageEfficiency.toFixed(2)} · rest ×${fn.recoveryEfficiency.toFixed(2)}`;})()}</div>`:''}${s.organismGenome?`<div>family ${s.organismGenome.family} · niche grass ×${s.organismGenome.niche.grass.toFixed(2)} shrub ×${s.organismGenome.niche.shrub.toFixed(2)} fruit ×${s.organismGenome.niche.fruit.toFixed(2)} crop ×${s.organismGenome.niche.crop.toFixed(2)}</div><div>${(()=>{const locomotion=wildlifeOrganismLocomotion(s.organismGenome!);return `genome locomotion stride ×${s.organismGenome!.locomotion.stride.toFixed(2)} · endurance ×${s.organismGenome!.locomotion.endurance.toFixed(2)} · speed ×${locomotion.speedMultiplier.toFixed(2)} · energy ×${locomotion.energyMultiplier.toFixed(2)}`;})()}</div>`:'' }${coarsePopulation?`<div>${i18n.t('evolution.competition')} ${(coarsePopulation.competitionPressure||0).toFixed(0)} · ${i18n.t('evolution.diseasePressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifeDisease?.speciesPressure[s.species]??coarsePopulation.diseaseLoad??0).toFixed(0)} · ${i18n.t('evolution.predatorPressure')} ${(this.coarseWorld.chunks.get(s.chunkId)?.wildlifePredatorPressure?.speciesPressure[s.species]??coarsePopulation.predatorPressure??0).toFixed(0)} · K ${coarsePopulation.carryingCapacity.toFixed(1)}</div>`:''}${s.representedPopulation?`<div>${i18n.t('evolution.representedPopulation')} ${s.representedPopulation.toFixed(2)}</div>`:''}${s.targetChunkId?`<div>${i18n.t('evolution.migrationTarget')} ${this.escape(s.targetChunkId)}</div>`:''}`;
       }else ui.npc.classList.add('hidden');
     } else if(entity?.type==='object'){
-      const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(o.name)}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
+      const o=this.objects.get(entity.id)!.state;const caps=(o.capabilities||[]).map(x=>this.interactionLabel(x)).join(' / ')||'查看';const stored=o.storage?.filter(x=>x.count>0).map(x=>`${this.itemName(x.kind)}×${x.count}`).join('、')||'';ui.npc.classList.remove('hidden');ui.npc.innerHTML=`<div class="npc-head"><b>${this.escape(this.objectDisplayName(o))}</b><span>${o.kind}</span></div><div>位置 ${o.position.x.toFixed(1)}, ${o.position.z.toFixed(1)}</div><div>标签 ${o.tags.map(x=>this.escape(x)).join(' / ')}</div><div>交互 ${this.escape(caps)}</div>${stored?`<div>存储 ${this.escape(stored)}</div>`:''}${o.item?`<div>资源 ${this.itemName(o.item)}</div>`:''}`;
     } else ui.npc.classList.add('hidden');
     this.renderEvolutionPanel();
     const logs=visibleHudLogs(this.logs,this.cameraMode,!ui.admin.classList.contains('hidden'));
@@ -3665,10 +3711,12 @@ class TownGame {
     const set=(id:string,v:number)=>{const el=document.querySelector<HTMLInputElement>(id);if(el)el.value=String(v);};
     set('#budgetCallsMin',p.calls);set('#budgetTokensMin',p.minute);set('#budgetTokensHour',p.hour);set('#budgetTokensDay',p.day);
     set('#budgetUsdDay',p.usd);set('#budgetConfidence',p.confidence);set('#budgetCacheTtl',p.cache);
+    this.budgetInputVersion++;
     void this.applyBudgetFromUi();
   }
 
   async applyBudgetFromUi() {
+    const inputVersion=this.budgetInputVersion,applyVersion=++this.budgetApplyVersion;
     const num=(id:string)=>Number(document.querySelector<HTMLInputElement>(id)?.value||0);
     const payload={
       maxCallsPerMinute:num('#budgetCallsMin'),
@@ -3682,22 +3730,25 @@ class TownGame {
     try{
       const r=await fetch('/api/decision/budget',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
       const out=await r.json();if(!r.ok)throw new Error(out.error||'budget update failed');
-      this.renderBudget(out,true);this.toast(i18n.t('budget.updated'));
-    }catch(e){this.toast(i18n.t('budget.failed',{error:e instanceof Error?e.message:String(e)}));}
+      if(applyVersion!==this.budgetApplyVersion)return;
+      if(inputVersion===this.budgetInputVersion)this.budgetSavedVersion=inputVersion;
+      this.renderBudget(out,true,{inputVersion,applyVersion});this.toast(i18n.t('budget.updated'));
+    }catch(e){if(applyVersion!==this.budgetApplyVersion)return;this.toast(i18n.t('budget.failed',{error:e instanceof Error?e.message:String(e)}));}
   }
 
-  renderBudget(budget:any,syncInputs=false) {
+  renderBudget(budget:any,syncInputs=false,request?:{inputVersion:number;applyVersion:number}) {
     if(!budget||budget.unavailable){ui.budgetLive.textContent='当前 provider 不提供 Jev token 预算。';return;}
     const t=budget.inputTokens||{},calls=budget.calls||{},cost=budget.estimatedUsd||{},cfg=budget.config||{};
     ui.budgetLive.innerHTML=`输入 tokens：分钟 <b>${Number(t.minute||0).toLocaleString()}</b> · 小时 <b>${Number(t.hour||0).toLocaleString()}</b> · 今日 <b>${Number(t.day||0).toLocaleString()}</b><br>估算今日费用 <b>${Number(cost.day||0).toFixed(4)}</b> · calls ${calls.minute||0}/min · NPC ${calls.npc||0} / 对话 ${calls.dialogue||0} / chunk ${calls.chunk||0} / region ${calls.region||0} / world ${calls.world||0} / wildlife ${calls.wildlife||0}<br>缓存命中 ${budget.cacheHits||0} · 预算阻断 ${budget.blocked||0} · 低置信回退 ${budget.lowConfidenceFallbacks||0}`;
-    if(syncInputs&&!document.activeElement?.matches?.('#jevBudgetPanel input')){
+    const currentRequest=!request||(request.inputVersion===this.budgetInputVersion&&request.applyVersion===this.budgetApplyVersion);
+    if(syncInputs&&currentRequest&&this.budgetInputVersion===this.budgetSavedVersion&&!document.activeElement?.matches?.('#jevBudgetPanel input')){
       const set=(id:string,v:unknown)=>{const el=document.querySelector<HTMLInputElement>(id);if(el&&v!==undefined)el.value=String(v);};
       set('#budgetCallsMin',cfg.maxCallsPerMinute);set('#budgetTokensMin',cfg.maxInputTokensPerMinute);set('#budgetTokensHour',cfg.maxInputTokensPerHour);
       set('#budgetTokensDay',cfg.maxInputTokensPerDay);set('#budgetUsdDay',cfg.maxUsdPerDay);set('#budgetConfidence',cfg.minConfidence);set('#budgetCacheTtl',cfg.cacheTtlMs);
     }
   }
 
-  async refreshHealth(){this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true);}catch{ui.decision.textContent=i18n.t('backend.offline');}}
+  async refreshHealth(){const budgetRequest={inputVersion:this.budgetInputVersion,applyVersion:this.budgetApplyVersion};this.lastHealthPoll=now();try{const r=await fetch('/api/health');const j=await r.json();const d=j.decision||{};const s=d.status||{};this.decisionProvider=String(d.active||'unknown');this.decisionCalls=Number(s.calls||0);const local=this.decisionProvider==='fallback';const configured=s.configured!==false;delete ui.decision.dataset.i18n;ui.decision.textContent=local?'Fallback · 本地规则':configured?`${this.decisionProvider.toUpperCase()} · calls ${this.decisionCalls} · ${s.lastLatencyMs||0}ms`:`${this.decisionProvider.toUpperCase()} 未配置 · 安全回退`;const endpoint=s.endpoint?` · endpoint ${this.escape(String(s.endpoint))}`:'';const limiter=s.limiter?`<br><b>限流</b> ${s.limiter.usedLastMinute||0}/${s.limiter.max||'∞'} calls/min`:'';ui.adminStatus.innerHTML=`<b>Decision provider</b> ${this.escape(this.decisionProvider)}${endpoint}<br><b>调用</b> ${s.calls||0} · failures ${s.failures||0}${s.inputTokens!==undefined?` · input tokens ${Number(s.inputTokens).toLocaleString()}`:''}<br><b>语料</b> ${j.dialogue?.total||0} 条（完整 ${j.dialogue?.lines||0} / 片段 ${j.dialogue?.fragments||0}）${limiter}`;this.renderBudget(s.budget,true,budgetRequest);}catch{ui.decision.dataset.i18n='backend.offline';ui.decision.textContent=i18n.t('backend.offline');}}
 
   coarseWildlifePopulation(species:WildlifeSpecies) {
     let total=0;
@@ -3853,6 +3904,7 @@ class TownGame {
   toast(text:string){ui.toast.textContent=text;ui.toast.classList.add('show');setTimeout(()=>ui.toast.classList.remove('show'),2200);}
   addInventory(inv:NpcState['inventory'],kind:ItemKind,count:number){const x=inv.find(i=>i.kind===kind);if(x)x.count+=count;else inv.push({kind,count});}
   itemName(k:ItemKind){return i18n.t(`item.${k}`);}
+  objectDisplayName(state:WorldObjectState){return state.kind==='dropped_item'&&state.item?this.parcelLabel(state.item,droppedItemCount(state)):state.name;}
   parcelLabel(kind:ItemKind,count:number){return droppedParcelLabel(this.locale,this.itemName(kind),count);}
   escape(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]!));}
 

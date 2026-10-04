@@ -1,5 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
+import { I18n } from '../src/i18n.js';
+import { captureLocaleDom, readLocaleDom } from './helpers/locale-dom.js';
 import { lookForObject } from './helpers/relative-look.js';
 
 // Fixtures set a legal saved starting position before boot. All subsequent targeting,
@@ -64,6 +66,27 @@ for (const scenario of cases) {
     await expect(page.locator('#interactionTitle')).toHaveText(scenario.title);
     const actions = page.locator('#interactionActions button');
     await expect(actions).toHaveCount(scenario.count);
+    if(scenario.name==='workbench-work'){
+      // A locale change is a UI operation, not a new playable session. Keep the
+      // actual open menu/buttons and the original action/persistence assertions.
+      const reference=await page.evaluateHandle(captureLocaleDom,scenario.action);
+      let navigations=0;const onNavigation=()=>{navigations++;};page.on('framenavigated',onNavigation);
+      for(const locale of ['ja','es','zh-CN','en'] as const){
+        await page.locator('#localeSelect').selectOption(locale);
+        await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({
+          lang:locale,actionText:new I18n(locale).t('interaction.work'),menuOpen:true,
+          sameButtons:true,sameCanvas:true,samePosition:true,mode:'firstPerson'
+        });
+        if(locale==='ja'){
+          await testInfo.attach('workbench-language-ja',{body:await page.screenshot(),contentType:'image/png'});
+          await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({menuOpen:true,sameButtons:true});
+        }
+      }
+      page.off('framenavigated',onNavigation);expect(navigations).toBe(0);
+      await expect.poll(()=>page.evaluate(readLocaleDom,reference)).toMatchObject({sameCanvas:true,samePosition:true,mode:'firstPerson',menuOpen:true,sameButtons:true});
+      await reference.dispose();
+      await testInfo.attach('workbench-language-switch-preserved-menu',{body:await page.screenshot(),contentType:'image/png'});
+    }
     await actions.nth(scenario.action).click();
     await expect(page.locator('#toast')).toContainText(scenario.toast);
 
