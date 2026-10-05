@@ -18,22 +18,25 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   };
   type Actor={position:Point;headYaw:number;headEnvelope:Bounds};
   const actors=()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.characterSoles??'[]') as Actor[];
-  const clearance=(p:Point,a:Actor)=>{
+  const headClearance=(p:Point,a:Actor)=>{
     const e=a.headEnvelope,c=Math.cos(a.headYaw),s=Math.sin(a.headYaw);
     const dx=p.x-a.position.x,dz=p.z-a.position.z;
     const x=c*dx-s*dz,z=s*dx+c*dz;
     const qx=Math.abs(x-(e.minX+e.maxX)/2)-(e.maxX-e.minX)/2;
     const qz=Math.abs(z-(e.minZ+e.maxZ)/2)-(e.maxZ-e.minZ)/2;
-    return Math.min(Math.hypot(dx,dz)-.62,
-      Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-.30);
+    return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-.30;
   };
+  const bodyClearance=(p:Point,a:Actor)=>Math.hypot(p.x-a.position.x,p.z-a.position.z)-.62;
+  const clearance=(p:Point,a:Actor)=>Math.min(bodyClearance(p,a),headClearance(p,a));
   const route=(start:Point):Point[]=>{
     const obstacles=actors();
     const trees=JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.treePresentation??'[]') as Array<{collider:Bounds}>;
     const staticClearance=(p:Point,b:Bounds)=>Math.hypot(
       Math.max(b.minX-p.x,0,p.x-b.maxX),Math.max(b.minZ-p.z,0,p.z-b.maxZ))-.30;
-    const constraints=[...obstacles.map(a=>(p:Point)=>clearance(p,a)),
-      ...trees.map(t=>(p:Point)=>staticClearance(p,t.collider))];
+    const constraints=[...obstacles.flatMap(a=>[
+      {clear:(p:Point)=>bodyClearance(p,a),recoverOverlap:true},
+      {clear:(p:Point)=>headClearance(p,a),recoverOverlap:true}
+    ]),...trees.map(t=>({clear:(p:Point)=>staticClearance(p,t.collider),recoverOverlap:false}))];
     if(!obstacles.some(a=>Math.hypot(a.position.x-start.x,a.position.z-start.z)<3)&&
       !trees.some(t=>staticClearance(start,t.collider)<3))return [];
     // Plan only input waypoints around observed collision envelopes. No world state is written.
@@ -43,12 +46,16 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
     const minZ=Math.floor(Math.min(0,target.z-start.z)/step)-padding/step;
     const maxZ=Math.ceil(Math.max(0,target.z-start.z)/step)+padding/step;
     const point=(x:number,z:number)=>({x:start.x+x*step,z:start.z+z*step});
-    const edgeClear=(from:Point,to:Point,margin=.16)=>constraints.every(clear=>{
-      const initial=clear(from);
+    const edgeClear=(from:Point,to:Point,margin=.16)=>constraints.every(({clear,recoverOverlap})=>{
+      const initial=clear(from);let previous=initial;
+      if(!Number.isFinite(initial))return false;
       for(let t=.1;t<=1.001;t+=.1){
         const d=clear({x:from.x+(to.x-from.x)*t,z:from.z+(to.z-from.z)*t});
         // Escape a close starting edge, then keep a small walking margin.
-        if(d<Math.min(initial,margin)-1e-8||d<0)return false;
+        if(!Number.isFinite(d))return false;
+        if(recoverOverlap&&previous<0){if(d<=previous+1e-9)return false;}
+        else if(d<Math.min(Math.max(initial,0),margin)-1e-8||d<0)return false;
+        previous=d;
       }
       return true;
     });

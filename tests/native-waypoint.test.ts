@@ -164,3 +164,10 @@ test('a moving NPC that keeps the entire tolerance region occupied cannot turn g
 test('malformed observed tree footprints throw and release keys',async()=>{
   await assert.rejects(replay(actual,100,{badTrees:true}),/JSON|property|position/i);
 });
+
+const restoredOverlap=JSON.parse(fs.readFileSync(new URL('./fixtures/native-waypoint-overlap-ci.json',import.meta.url),'utf8')) as Fixture;
+for(const frameMs of [800,1200,1400])test(`God-return overlap from CI exits through unchanged physics at ${frameMs}ms steps`,async()=>{
+  const {result,elapsed}=await replay(restoredOverlap,frameMs);
+  assert.equal(result.reached,true,JSON.stringify(result));
+  assert.ok(result.distance<=restoredOverlap.tolerance!);assert.ok(elapsed<=restoredOverlap.timeoutMs!);
+});
