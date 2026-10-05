@@ -7,7 +7,8 @@ import type {
 } from '../src/types.js';
 import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence } from '../src/world/evolution.js';
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
-import { validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
+import { readWorldRandomness } from '../src/world/worldRandom.js';
+import { WorldSnapshotValidationError, validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
 
 type Row = Record<string, unknown>;
 
@@ -233,6 +234,15 @@ export class WorldPersistence {
       if(currentRevision!==expectedRevision)throw new WorldPersistenceConflictError(expectedRevision,currentRevision);
       const nextRevision=currentRevision+1;
       if(!Number.isSafeInteger(nextRevision))throw new Error('World persistence revision exhausted');
+
+      const previous=this.db.prepare("SELECT meta_json FROM world_meta WHERE slot = 'default'").get() as Row|undefined;
+      if(previous){
+        const meta=JSON.parse(String(previous.meta_json)) as WorldPersistenceMeta;
+        const prior=readWorldRandomness(meta.randomness),incoming=readWorldRandomness(data.meta.randomness);
+        if((meta.randomness!==undefined&&data.meta.randomness===undefined)||prior.seed!==incoming.seed||prior.version!==incoming.version){
+          throw new WorldSnapshotValidationError(['snapshot.meta.randomness: cannot replace or omit stored world random authority']);
+        }
+      }
 
       upsertMeta.run(data.version,JSON.stringify(data.meta),savedAt);
 

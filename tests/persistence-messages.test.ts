@@ -1,3 +1,4 @@
+import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -33,13 +34,13 @@ function fixture(locale:LocaleCode,reply:Reply,beaconAccepted=false){
   const snapshot={version:1,meta:{day:0},coarseChunks:[],fineChunks:[]};
   const fetch=async(url:string,init?:RequestInit)=>{requests.push({url,init});return{ok:reply.status>=200&&reply.status<300,status:reply.status,json:async()=>reply.data};};
   const navigator={sendBeacon:(url:string,body:Blob)=>{beacons.push({url,body});return beaconAccepted;}};
-  const RuntimeClass=new Function('i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
+  const RuntimeClass=new Function(...Object.keys(worldRandom),'i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(...Object.values(worldRandom),i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
   const runtime:Runtime=new RuntimeClass();
   const checkpoint={pending:false,capture:()=>17,acknowledge:(value:number)=>acknowledged.push(value)};
   Object.assign(runtime,{logs:[],persistenceReady:true,persistenceRevision:5,persistenceConflict:false,
     persistenceSaveInFlight:false,persistenceSaveQueued:false,movableDirty:true,movableSaveTimer:undefined,movableSaveRetryMs:1500,
     portables:{checkpoint},flushWildlifeHabitatExposure(){},buildWorldSnapshot:()=>snapshot,buildFinalWorldSnapshot:()=>snapshot,
-    restoreWorldState:(value:unknown)=>restored.push(value),updateFineChunkMaterialization(){},scheduleMovablePersistence:(delay:number)=>retryDelays.push(delay)});
+    initializeWorld(){},restoreWorldState:(value:unknown)=>restored.push(value),updateFineChunkMaterialization(){},scheduleMovablePersistence:(delay:number)=>retryDelays.push(delay)});
   return{runtime,i18n,requests,acknowledged,retryDelays,restored,beacons,snapshot,checkpoint};
 }
 const labels:Record<LocaleCode,{save:string;load:string;restored:string;newWorld:string;conflict:string;reload:string;beacon:string;invalidRevision:string;invalidAcknowledgement:string}>={

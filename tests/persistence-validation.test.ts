@@ -381,3 +381,47 @@ test('additive NPC heading persists for home/fine characters and rejects nonfini
     }
   } finally {store.close();}
 });
+
+for(const value of [null,{},[],{version:2,seed:'s'},{version:'1',seed:'s'},{version:1,seed:17},{version:1,seed:''},{version:1,seed:' '},{version:1,seed:'x'.repeat(257)}])test(`reject invalid randomness metadata ${JSON.stringify(value)}`,()=>{
+  const snapshot=validSnapshot();Object.assign(snapshot.meta,{randomness:value});
+  assert.throws(()=>validateWorldPersistenceSnapshot(snapshot),WorldSnapshotValidationError);
+});
+for(const where of ['home','fine-npc','fine-wildlife','transfer'])for(const value of [null,'0',-1,.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1])test(`${where} rejects invalid random cursor ${String(value)}`,()=>{
+  const snapshot=validSnapshot();const state=where==='home'?snapshot.homeNpcs[0]:where==='fine-npc'?snapshot.fineChunks[0].npcStates[0]:where==='fine-wildlife'?snapshot.fineChunks[0].wildlifeStates![0]:snapshot.wildlifeTransfers![0].state;
+  Object.assign(state,{randomEventCursor:value});assert.throws(()=>validateWorldPersistenceSnapshot(snapshot),WorldSnapshotValidationError);
+});
+test('legacy fields and safe integer cursor bounds remain valid',()=>{
+  const snapshot=validSnapshot();validateWorldPersistenceSnapshot(snapshot);
+  snapshot.meta.randomness={version:1,seed:'saved-seed'};
+  snapshot.homeNpcs[0].randomEventCursor=Number.MAX_SAFE_INTEGER;snapshot.fineChunks[0].npcStates[0].randomEventCursor=0;
+  snapshot.fineChunks[0].wildlifeStates![0].randomEventCursor=13;snapshot.wildlifeTransfers![0].state.randomEventCursor=28;
+  assert.equal(validateWorldPersistenceSnapshot(snapshot),snapshot);
+});
+test('seeded SQLite rows preserve random authority, CAS priority and rejected-write atomicity',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-random-authority-')),file=path.join(dir,'world.sqlite');let store:WorldPersistence|undefined;
+  try{
+    store=new WorldPersistence(file);const snapshot=validSnapshot();
+    snapshot.meta.randomness={version:1,seed:'saved-seed'};
+    snapshot.homeNpcs[0].randomEventCursor=7;snapshot.fineChunks[0].npcStates[0].randomEventCursor=13;
+    snapshot.fineChunks[0].wildlifeStates![0].randomEventCursor=17;snapshot.wildlifeTransfers![0].state.randomEventCursor=29;
+    saveCurrent(store,snapshot);const revision=store.revision();const before=logicalTables(file);
+    for(const mutation of [(s:WorldPersistenceSnapshot)=>{delete s.meta.randomness;},(s:WorldPersistenceSnapshot)=>{s.meta.randomness!.seed='other';}]){
+      const bad=structuredClone(snapshot);mutation(bad);
+      assert.throws(()=>store!.save(bad,revision-1),WorldPersistenceConflictError);
+      assert.deepEqual(logicalTables(file),before);
+      assert.throws(()=>store!.save(bad,revision),WorldSnapshotValidationError);
+      assert.deepEqual(logicalTables(file),before);
+    }
+    for(const mutation of [(s:WorldPersistenceSnapshot)=>Object.assign(s.meta.randomness!,{version:2}),(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;}]){
+      const bad=structuredClone(snapshot);mutation(bad);assert.throws(()=>saveCurrent(store!,bad),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);
+    }
+    const final=structuredClone(snapshot);final.coarseChunks=[];final.fineChunks=[];final.homeNpcs[0].randomEventCursor=11;
+    saveCurrent(store,final);store.close();store=new WorldPersistence(file);const loaded=store.load()!;
+    assert.deepEqual(loaded.meta.randomness,snapshot.meta.randomness);assert.equal(loaded.homeNpcs[0].randomEventCursor,11);
+    assert.equal(loaded.fineChunks[0].npcStates[0].randomEventCursor,13);assert.equal(loaded.fineChunks[0].wildlifeStates![0].randomEventCursor,17);
+    assert.equal(loaded.wildlifeTransfers![0].state.randomEventCursor,29);assert.deepEqual(loaded.fineChunks,snapshot.fineChunks);
+    store.clear();const legacy=validSnapshot();saveCurrent(store,legacy);legacy.meta.randomness={version:1,seed:'different'};
+    assert.throws(()=>saveCurrent(store!,legacy),WorldSnapshotValidationError);
+    legacy.meta.randomness.seed='latticefolk-default';saveCurrent(store,legacy);assert.deepEqual(store.load()!.meta.randomness,legacy.meta.randomness);
+  }finally{store?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});

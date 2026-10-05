@@ -1,3 +1,4 @@
+import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -12,7 +13,7 @@ import {validateWorldPersistenceSnapshot,WorldSnapshotValidationError} from '../
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
 const methods=new Set(['buildWorldSnapshot','buildFinalWorldSnapshot','flushWorldBeacon','initializePersistence','restoreWorldState','updateTime','executePlayerInteraction']);
-const fields=new Set(['day','minuteOfDay','weather','weatherEpoch','playerPosition','playerInventory']);
+const fields=new Set(['day','minuteOfDay','weather','weatherEpoch','playerPosition','playerInventory','randomness']);
 const selected:string[]=[];
 for(const node of ast.statements)if(ts.isClassDeclaration(node)&&node.name?.text==='TownGame')for(const member of node.members){
   if((ts.isMethodDeclaration(member)&&methods.has(member.name.getText(ast)))||(ts.isPropertyDeclaration(member)&&fields.has(member.name.getText(ast))))selected.push(member.getText(ast));
@@ -24,12 +25,13 @@ type Runtime={day:number;minuteOfDay:number;weather:string;weatherEpoch:number;p
 function fixture(roll=.95){
   let draws=0;
   const io={snapshot:null as WorldPersistenceSnapshot|null,beacons:[] as {url:string;body:Blob}[]};
-  const math=Object.create(Math) as Math;math.random=()=>{draws++;return roll;};
+  const math=Object.create(Math) as Math;math.random=()=>{throw new Error('ambient randomness');};
+  const randomDependencies={...worldRandom,keyedRandom:()=>()=>{draws++;return roll;}};
   const navigator={sendBeacon:(url:string,body:Blob)=>{io.beacons.push({url,body});return true;}};
   const fetch=async(url:string)=>{assert.equal(url,'/api/world/state');return{ok:true,json:async()=>({snapshot:io.snapshot,revision:6})};};
-  const RuntimeClass=new Function('Math','THREE','clamp','restoredPlayerPosition','navigator','fetch','i18n','now',code)(math,THREE,(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x)),restoredPlayerPosition,navigator,fetch,{t:(key:string)=>key},()=>5000);
+  const RuntimeClass=new Function(...Object.keys(randomDependencies),'Math','THREE','clamp','restoredPlayerPosition','navigator','fetch','i18n','now',code)(...Object.values(randomDependencies),math,THREE,(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x)),restoredPlayerPosition,navigator,fetch,{t:(key:string)=>key},()=>5000);
   const runtime:Runtime=new RuntimeClass();
-  Object.assign(runtime,{camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},scene:new THREE.Scene(),coarseWorld:{chunks:new Map(),restoreKnownChunks(){},ensureWindowAround(){}},groundHeightAt(){return 0},npcs:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,reconcileLineageOffspring(){},event(){},log(){},toast(){},updateFineChunkMaterialization(){},persistenceReady:true,persistenceConflict:false,persistenceRevision:6,portables:{checkpoint:{pending:false},restoreHome(){return false}},cameraMode:'firstPerson',playerOverlapsObjectTrigger(){return true}});
+  Object.assign(runtime,{initializeWorld(){},camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},scene:new THREE.Scene(),coarseWorld:{chunks:new Map(),restoreKnownChunks(){},ensureWindowAround(){}},groundHeightAt(){return 0},npcs:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,reconcileLineageOffspring(){},event(){},log(){},toast(){},updateFineChunkMaterialization(){},persistenceReady:true,persistenceConflict:false,persistenceRevision:6,portables:{checkpoint:{pending:false},restoreHome(){return false}},cameraMode:'firstPerson',playerOverlapsObjectTrigger(){return true}});
   return{runtime,io,draws:()=>draws};
 }
 const snapshotKinds=['full','final','beacon'] as const;
