@@ -157,6 +157,7 @@ export class CoarseWorldRuntime {
   private readonly maxDecisionScanPerWake=256;
   private requestTimeouts=0;
   private decisionContextGeneration=0;
+  private decisionContextController=new AbortController();
   private presentationBridge?:CoarsePresentationBridge;
 
   constructor(
@@ -274,7 +275,7 @@ export class CoarseWorldRuntime {
       this.decisionBaselines.delete(state.id);
       restoredAny=true;
     }
-    if(restoredAny)this.decisionContextGeneration++;
+    if(restoredAny)this.invalidateDecisionContext();
     for(const id of this.activeChunkIds){
       const chunk=this.chunks.get(id);
       if(!chunk)continue;
@@ -509,25 +510,50 @@ export class CoarseWorldRuntime {
     };
   }
 
+  private invalidateDecisionContext() {
+    this.decisionContextGeneration++;
+    const previous=this.decisionContextController;
+    this.decisionContextController=new AbortController();
+    previous.abort();
+  }
+
   private async postDecision(url:string,body:unknown):Promise<unknown> {
     const controller=new AbortController();
+    const contextSignal=this.decisionContextController.signal;
     let timeout:ReturnType<typeof setTimeout>|undefined;
-    let timedOut=false;
+    let settled=false;
     const deadline=new Promise<never>((_,reject)=>{
       timeout=setTimeout(()=>{
-        timedOut=true;
+        if(settled)return;
+        settled=true;
+        this.requestTimeouts++;
         controller.abort();
         reject(new Error(`decision request timed out: ${url}`));
       },this.requestDeadlineMs);
     });
+    let cancel=()=>{};
+    const cancelled=new Promise<never>((_,reject)=>{
+      cancel=()=>{
+        if(settled)return;
+        settled=true;
+        if(timeout!==undefined)clearTimeout(timeout);
+        controller.abort();
+        reject(new Error(`decision context invalidated: ${url}`));
+      };
+      contextSignal.addEventListener('abort',cancel,{once:true});
+    });
     const request=(async()=>{
       const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      if(controller.signal.aborted)throw new Error(`decision request aborted: ${url}`);
       if(!response.ok)throw new Error(`decision request failed: ${url}`);
       return await response.json() as unknown;
     })();
-    try{return await Promise.race([request,deadline]);}
-    catch(error){if(timedOut)this.requestTimeouts++;throw error;}
-    finally{if(timeout!==undefined)clearTimeout(timeout);}
+    try{return await Promise.race([request,deadline,cancelled]);}
+    finally{
+      settled=true;
+      if(timeout!==undefined)clearTimeout(timeout);
+      contextSignal.removeEventListener('abort',cancel);
+    }
   }
 
   private async requestRegions(ctx:UpdateContext) {
@@ -622,8 +648,10 @@ export class CoarseWorldRuntime {
       if(accepted>0){this.lastSource=raw.source;this.lastBatchSize=accepted;completed=true;}
       else{this.lastSource='offline';this.lastBatchSize=0;}
     }catch{
-      this.lastSource='offline';
-      this.lastBatchSize=0;
+      if(requestGeneration===this.decisionContextGeneration){
+        this.lastSource='offline';
+        this.lastBatchSize=0;
+      }
     }finally{
       this.pending=false;
       const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates):15_000;
@@ -644,7 +672,7 @@ export class CoarseWorldRuntime {
     const wasMaterialized=this.materialized.has(chunkId);
     if(wasMaterialized===value)return;
     if(value)this.materialized.add(chunkId);else this.materialized.delete(chunkId);
-    this.decisionContextGeneration++;
+    this.invalidateDecisionContext();
     const marker=this.markers.get(chunkId);
     if(marker)marker.visible=!value;
     if(!value)this.wakeChunkDecisionDeadline();
