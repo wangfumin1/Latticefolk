@@ -401,6 +401,7 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
     v.number(meta.day,'snapshot.meta.day',{min:0});
     v.number(meta.minuteOfDay,'snapshot.meta.minuteOfDay',{min:0,max:1439.999999});
     v.enum(meta.weather,'snapshot.meta.weather',WEATHER);
+    v.optionalNumber(meta,'weatherEpoch','snapshot.meta',{min:-1,max:3,integer:true});
     validateVec2(v,meta.playerPosition,'snapshot.meta.playerPosition');
     validateInventory(v,meta.playerInventory,'snapshot.meta.playerInventory');
   }

@@ -1181,6 +1181,7 @@ class TownGame {
         day:this.day,
         minuteOfDay:this.minuteOfDay,
         weather:this.weather,
+        weatherEpoch:this.weatherEpoch,
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },
@@ -1197,7 +1198,14 @@ class TownGame {
     if(snapshot.version!==1)return;
     this.day=Math.max(1,Math.floor(snapshot.meta.day||1));
     this.minuteOfDay=Math.max(0,Number(snapshot.meta.minuteOfDay)||0);
-    this.weather=String(snapshot.meta.weather||'clear');
+    const savedWeather=snapshot.meta.weather;
+    const validWeather=savedWeather==='clear'||savedWeather==='cloudy'||savedWeather==='rain';
+    this.weather=validWeather?savedWeather:'clear';
+    const savedWeatherEpoch=snapshot.meta.weatherEpoch;
+    this.weatherEpoch=validWeather
+      ?typeof savedWeatherEpoch==='number'&&Number.isInteger(savedWeatherEpoch)&&savedWeatherEpoch>=-1&&savedWeatherEpoch<=3
+        ?savedWeatherEpoch:Math.floor(this.minuteOfDay/360)
+      :-1;
     this.playerInventory={...this.playerInventory,...snapshot.meta.playerInventory};
     this.playerPosition=restoredPlayerPosition(snapshot.meta.playerPosition);
     this.camera.position.x=this.playerPosition.x;
@@ -1340,6 +1348,7 @@ class TownGame {
         day:this.day,
         minuteOfDay:this.minuteOfDay,
         weather:this.weather,
+        weatherEpoch:this.weatherEpoch,
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },

@@ -1277,6 +1277,8 @@ export interface WorldPersistenceMeta {
   day: number;
   minuteOfDay: number;
   weather: string;
+  /** Last processed six-hour weather block; -1 means selection is pending. */
+  weatherEpoch?: number;
   playerPosition: Vec2;
   playerInventory: Record<ItemKind, number>;
 }
