@@ -28,7 +28,7 @@ export interface JevBudgetSnapshot {
   pricePerBillionInputTokensUsd: number;
 }
 
-type Usage = { at:number; tokens:number; kind:JevCallKind };
+type Usage = { at:number; tokens:number; kind:JevCallKind; pending?:boolean };
 
 const PRICE_PER_BILLION_INPUT_TOKENS_USD = 42;
 const n=(name:string,fallback:number)=> {
@@ -88,27 +88,32 @@ export class JevBudgetController {
 
   private prune(){
     const cutoff=Date.now()-86_400_000;
-    this.usage=this.usage.filter(x=>x.at>=cutoff);
+    this.usage=this.usage.filter(x=>x.pending||x.at>=cutoff);
   }
 
   private sum(ms:number){
     const cutoff=Date.now()-ms;
-    return this.usage.filter(x=>x.at>=cutoff).reduce((s,x)=>s+x.tokens,0);
+    return this.usage.filter(x=>x.pending||x.at>=cutoff).reduce((s,x)=>s+x.tokens,0);
   }
 
   private count(ms:number){
     const cutoff=Date.now()-ms;
-    return this.usage.filter(x=>x.at>=cutoff).length;
+    return this.usage.filter(x=>x.pending||x.at>=cutoff).length;
   }
 
   private weight(kind:JevCallKind){
     return kind==='npc'?this.config.npcWeight:kind==='dialogue'?this.config.dialogueWeight:kind==='chunk'?this.config.chunkWeight:kind==='region'?this.config.regionWeight:kind==='world'?this.config.worldWeight:this.config.wildlifeWeight;
   }
 
+  private reservationTokens(kind:JevCallKind,estimatedTokens:number){
+    // A class weight may add headroom, but cannot discount known input cost.
+    return Math.max(estimatedTokens,Math.ceil(estimatedTokens*this.weight(kind)));
+  }
+
   canCall(kind:JevCallKind,estimatedTokens:number){
     if(!this.config.enabled)return {ok:true as const};
     this.prune();
-    const weighted=Math.ceil(estimatedTokens*this.weight(kind));
+    const weighted=this.reservationTokens(kind,estimatedTokens);
     const minuteTokens=this.sum(60_000);
     const hourTokens=this.sum(3_600_000);
     const dayTokens=this.sum(86_400_000);
@@ -124,11 +129,38 @@ export class JevBudgetController {
     return {ok:true as const};
   }
 
-  record(kind:JevCallKind,tokens:number){
+  private addUsage(kind:JevCallKind,tokens:number,pending=false){
     const safe=Math.max(0,Math.round(tokens));
-    this.usage.push({at:Date.now(),tokens:safe,kind});
+    const usage:Usage={at:Date.now(),tokens:safe,kind,pending};
+    this.usage.push(usage);
     this.lifetimeTokens+=safe;this.lifetimeCalls++;this.byKind[kind]++;
     this.prune();
+    return usage;
+  }
+
+  // Synchronous check-and-reserve: no caller may await between admission and accounting.
+  reserve(kind:JevCallKind,estimatedTokens:number){
+    const gate=this.canCall(kind,estimatedTokens);
+    if(!gate.ok)return gate;
+    const usage=this.addUsage(kind,this.reservationTokens(kind,estimatedTokens),true);
+    return {ok:true as const,settle:(actualTokens?:number)=>{
+      if(!usage.pending)return usage.tokens;
+      // An attempted request with unknown usage may still have been billed.
+      const actual=typeof actualTokens==='number'&&Number.isFinite(actualTokens)&&actualTokens>=0
+        ?Math.round(actualTokens):Math.round(estimatedTokens);
+      this.lifetimeTokens+=actual-usage.tokens;
+      usage.tokens=actual;
+      usage.pending=false;
+      // Keep unresolved requests reserved across window rollover, then begin the
+      // completed-usage window when their cost becomes known (including failure).
+      usage.at=Date.now();
+      this.prune();
+      return actual;
+    }};
+  }
+
+  record(kind:JevCallKind,tokens:number){
+    this.addUsage(kind,tokens);
   }
   recordCacheHit(){this.cacheHits++;}
   recordLowConfidence(){this.lowConfidenceFallbacks++;}

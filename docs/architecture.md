@@ -146,7 +146,7 @@ Region aggregation summarizes neighboring chunks into population, settlements, f
 
 World aggregation summarizes all known regions and selects a long-horizon priority, connectivity posture, and growth posture. Region and World decisions never directly write population or resources. Deterministic simulation interprets them as bounded modifiers on settlement growth, conserved flows, ecology recovery, and danger reduction.
 
-Jev calls use lower Region/World budget weights because those layers run less often and should consume a smaller share of paid input tokens.
+Region/World Jev calls share the same input-token and USD budget as other call classes. Their configured class weights do not reduce the raw token estimate reserved for a request; weights above one add conservative admission headroom. Lower call frequency and bounded payloads reduce paid input usage.
 
 
 ## Dynamic coarse-world streaming
@@ -209,7 +209,7 @@ When a chunk materializes, a representative subset of its populations becomes pe
 - generation and birth-day metadata;
 - local movement, grazing/foraging, drinking, resting, fleeing, hunting, and mate-seeking behavior.
 
-Wildlife decisions are batched (up to six animals per provider request). Jev receives only bounded feasible actions and supplied resource/animal candidates; deterministic game code owns need changes, damage, death, resource consumption, reproduction, inheritance, mutation, and population accounting. Wildlife calls have a lower independent budget weight.
+Wildlife decisions are batched (up to six animals per provider request). Jev receives only bounded feasible actions and supplied resource/animal candidates; deterministic game code owns need changes, damage, death, resource consumption, reproduction, inheritance, mutation, and population accounting. Wildlife calls use the shared budget with a configurable class weight. Admission reserves at least the raw input-token estimate, so a low weight cannot discount paid input cost.
 
 Fine reproduction creates persistent descendants by averaging parental traits plus bounded deterministic mutation. On chunk collapse, fine births/deaths are scaled back into the coarse population, while individual animals remain in the fine-chunk SQLite cache for future revisits.
 
