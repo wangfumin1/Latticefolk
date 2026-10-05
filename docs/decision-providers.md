@@ -43,9 +43,13 @@ Budget controls:
 - maximum estimated USD spend per day
 - minimum confidence before a result is accepted
 - response cache TTL
-- relative budget weights for NPC, dialogue, and distant-chunk calls
+- per-class budget weights for NPC, dialogue, chunk, region, world, and wildlife calls
 
 The current public TypeSafe pricing is based on input tokens. Latticefolk uses the response's `usage.input_tokens` when present; when it is absent, it records a conservative local estimate so the guard remains useful.
+
+All six Jev call classes share one synchronous admission/reservation boundary. A valid cache hit returns before admission. On a cache miss, the controller immediately counts one attempted call and reserves the greater of the raw token estimate and the rounded-up class-weighted estimate against the minute/hour/day token and daily estimated-USD limits. In-flight reservations remain counted across window rollover until the request settles.
+
+Settlement replaces the reservation with finite, nonnegative reported input tokens (including zero). Missing or invalid usage, network/timeout failures, HTTP errors, and unreadable JSON retain one call and the unweighted local token estimate because the request may have reached the provider. Settlement occurs once, releases the in-flight state, and starts the completed-usage rolling window at settlement time. Local serialization or signal preparation failures before admission consume no allowance. Snapshots include reserved usage while requests are in flight; completed usage remains unweighted. Class weights at or below one cannot discount estimated input cost; weights above one add conservative admission headroom. Configuration values are unchanged. Reported usage above the raw estimate is recorded in full and governs subsequent admission.
 
 Call optimization currently includes:
 

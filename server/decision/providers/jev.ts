@@ -125,10 +125,6 @@ export class JevDecisionProvider implements DecisionProvider {
   private async call(kind:JevCallKind,state: unknown, questions: Record<string, unknown>): Promise<JevResponse> {
     if (!this.key) throw new Error('TYPESAFE_API_KEY is not configured');
     const payload={ model:this.model, state, questions };
-    const estimated=this.budget.estimateTokens(payload);
-    const gate=this.budget.canCall(kind,estimated);
-    if(!gate.ok)throw new Error(`Jev budget guard: ${gate.reason}`);
-
     const cacheKey=this.cacheKey(kind,payload);
     const cached=this.cache.get(cacheKey);
     if(cached&&cached.expires>Date.now()){
@@ -137,27 +133,35 @@ export class JevDecisionProvider implements DecisionProvider {
     }
     if(cached)this.cache.delete(cacheKey);
 
-    const started = performance.now();
-    const response = await fetch(this.endpoint, {
+    // Prepare fallible local work before reserving a real provider attempt.
+    const estimated=this.budget.estimateTokens(payload);
+    const request:RequestInit={
       method:'POST',
       headers:{ 'authorization':`Bearer ${this.key}`, 'content-type':'application/json' },
       body:JSON.stringify(payload),
       signal:AbortSignal.timeout(this.timeout),
-    });
-    this.lastLatencyMs = Math.round(performance.now() - started);
+    };
+    const started = performance.now();
+    const reservation=this.budget.reserve(kind,estimated);
+    if(!reservation.ok)throw new Error(`Jev budget guard: ${reservation.reason}`);
     this.calls++;
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Jev HTTP ${response.status}: ${text.slice(0, 300)}`);
+    let actual:number|undefined;
+    try{
+      const response = await fetch(this.endpoint,request);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jev HTTP ${response.status}: ${text.slice(0, 300)}`);
+      }
+      const json = await response.json() as JevResponse;
+      this.lastModel = json.model || this.model;
+      actual=json.usage?.input_tokens;
+      const ttl=this.budget.getConfig().cacheTtlMs;
+      if(ttl>0)this.cache.set(cacheKey,{expires:Date.now()+ttl,value:json});
+      return json;
+    }finally{
+      this.lastLatencyMs = Math.round(performance.now() - started);
+      this.inputTokens += reservation.settle(actual);
     }
-    const json = await response.json() as JevResponse;
-    this.lastModel = json.model || this.model;
-    const actual=Math.max(0,Number(json.usage?.input_tokens||estimated));
-    this.inputTokens += actual;
-    this.budget.record(kind,actual);
-    const ttl=this.budget.getConfig().cacheTtlMs;
-    if(ttl>0)this.cache.set(cacheKey,{expires:Date.now()+ttl,value:json});
-    return json;
   }
 
   async decide(req: DecisionRequest): Promise<DecisionResponse> {
