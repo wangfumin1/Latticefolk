@@ -296,3 +296,22 @@ test('server evolution stats use persisted world time for living fitness eligibi
   store.close();
   fs.rmSync(dir,{recursive:true,force:true});
 });
+
+test('weather phase survives meta JSON save and database reopen',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-weather-phase-'));
+  const file=path.join(dir,'world.sqlite');let store:WorldPersistence|undefined;
+  try{
+    store=new WorldPersistence(file);
+    const snapshot:WorldPersistenceSnapshot={version:1,meta:{day:4,minuteOfDay:779,weather:'clear',playerPosition:{x:0,z:7},playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},coarseChunks:[],fineChunks:[],homeNpcs:[],homeObjects:[]};
+    saveCurrent(store,snapshot);assert.equal(store.load()?.meta.weatherEpoch,undefined,'legacy metadata remains optional');
+    for(const weatherEpoch of [-1,0,1,2,3]){
+      snapshot.meta.weatherEpoch=weatherEpoch;saveCurrent(store,snapshot);
+      assert.deepEqual(store.load()?.meta,snapshot.meta,'stored phase must not be inferred from minuteOfDay');
+    }
+    // A pending phase must survive even when the saved minute is in a later block.
+    snapshot.meta.weatherEpoch=1;saveCurrent(store,snapshot);const revision=store.revision();store.close();store=undefined;
+    store=new WorldPersistence(file);assert.equal(store.revision(),revision);assert.deepEqual(store.load()?.meta,snapshot.meta);
+    assert.throws(()=>saveCurrent(store!,{...snapshot,meta:{...snapshot.meta,weatherEpoch:4}}));
+    assert.equal(store.revision(),revision);assert.equal(store.load()?.meta.weatherEpoch,1);
+  }finally{store?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
