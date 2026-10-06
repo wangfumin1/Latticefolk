@@ -39,10 +39,15 @@ const hudView=async(page:Page)=>(await readView(page,false)).hud;
 // instance or changes its renderer, clock, input, visibility or shadow settings.
 async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise<T>):Promise<T>{
   const errors:string[]=[];
-  const evidence:Record<string,unknown>={profilingPerturbsTiming:true,samplingIntervalUs:10_000,
-    note:'Diagnostic sampling and protocol reads add cost. This is not an unprofiled frame-performance acceptance result.'};
+  const evidence:Record<string,unknown>={profilingPerturbsTiming:true,nativeTraceBufferKiB:8192,
+    note:'Native tracing and protocol reads add cost. This is not an unprofiled frame-performance acceptance result.'};
   let session:Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>|undefined;
-  let renderers:string|undefined,profiling=false,failed=false,result:T|undefined,originalError:unknown,profile:unknown;
+  let renderers:string|undefined,tracing=false,failed=false,result:T|undefined,originalError:unknown,trace:Buffer|undefined;
+  const bounded=async<T>(operation:Promise<T>,milliseconds:number):Promise<T>=>{
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{return await Promise.race([operation,new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>reject(new Error('Native trace collection deadline exceeded')),milliseconds);})]);}
+    finally{if(timer)clearTimeout(timer);}
+  };
   const failure=(error:unknown)=>{if(errors.length<8)errors.push((error instanceof Error?error.message:String(error)).slice(0,1024));};
   const read=async()=>{
     const metrics=await session!.send('Performance.getMetrics');
@@ -84,10 +89,12 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
         const found=await session.send('Runtime.queryObjects',{prototypeObjectId:prototype.result.objectId,objectGroup:'streamed-frame-cost'});
         renderers=found.objects.objectId;
       }else failure('Renderer prototype unavailable from the already-loaded module');
-      await session.send('Profiler.enable');
-      await session.send('Profiler.setSamplingInterval',{interval:10_000});
       evidence.before=await read();
-      await session.send('Profiler.start');profiling=true;
+      // Playwright retains its own screenshots/snapshots. CDP Tracing does not
+      // own that lifecycle, and an already-active native trace is left alone.
+      await session.send('Tracing.start',{transferMode:'ReturnAsStream',streamFormat:'json',streamCompression:'none',
+        traceConfig:{recordMode:'recordContinuously',traceBufferSizeInKb:8192,enableSampling:false,
+          includedCategories:['toplevel','devtools','devtools.timeline','cc','viz','gpu','gpu.capture','disabled-by-default-gpu.service']}});tracing=true;
     }catch(error){failure(error);}
     evidence.actionStartWallMs=Date.now();
     try{result=await action();}catch(error){failed=true;originalError=error;}
@@ -95,11 +102,52 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
   }finally{
     if(session){
       try{
-        if(profiling){try{profile=(await session.send('Profiler.stop')).profile;}catch(error){failure(error);}}
+        if(tracing){
+          let stream:string|undefined;
+          let completed!:(value:{dataLossOccurred:boolean;stream?:string})=>void;
+          const completion=new Promise<{dataLossOccurred:boolean;stream?:string}>(resolve=>{completed=resolve;});
+          const onComplete=(value:{dataLossOccurred:boolean;stream?:string})=>{stream=value.stream;completed(value);};
+          try{
+            let listening=false,listenerError:unknown;
+            try{session.on('Tracing.tracingComplete',onComplete);listening=true;}catch(error){listenerError=error;}
+            const endRequest=session.send('Tracing.end');
+            if(!listening){await bounded(endRequest,5000);throw listenerError;}
+            const [,end]=await bounded(Promise.all([endRequest,completion]),5000);
+            evidence.traceDataLoss=end.dataLossOccurred;
+            if(!stream)throw new Error('Native trace completed without a stream');
+            const chunks:Buffer[]=[];let bytes=0,eof=false;
+            const deadline=Date.now()+8000;
+            while(!eof){
+              if(chunks.length>=64)throw new Error('Native trace stream exceeds 64 reads');
+              const remaining=deadline-Date.now();if(remaining<=0)throw new Error('Native trace stream deadline exceeded');
+              const part=await bounded(session.send('IO.read',{handle:stream,size:256*1024}),remaining);
+              const chunk=Buffer.from(part.data,part.base64Encoded?'base64':'utf8');bytes+=chunk.length;
+              evidence.traceReadBytes=bytes;
+              if(bytes>8*1024*1024){evidence.traceTruncated=true;throw new Error('Native trace stream exceeds 8MiB');}
+              if(!chunk.length&&!part.eof)throw new Error('Native trace stream made no progress');
+              chunks.push(chunk);eof=part.eof;
+            }
+            trace=Buffer.concat(chunks);
+            const data=JSON.parse(trace.toString('utf8')) as {traceEvents?:{name?:string;cat?:string;ph?:string;dur?:number;pid?:number;tid?:number}[]};
+            const costs=new Map<string,{name:string;cat:string;pid?:number;tid?:number;count:number;durationUs:number}>();
+            for(const event of data.traceEvents??[]){
+              if(event.ph!=='X'||!Number.isFinite(event.dur))continue;
+              const name=String(event.name??'').slice(0,160),cat=String(event.cat??'').slice(0,160),key=JSON.stringify([event.pid,event.tid,name,cat]);
+              const cost=costs.get(key)??{name,cat,pid:event.pid,tid:event.tid,count:0,durationUs:0};
+              cost.count++;cost.durationUs+=event.dur!;costs.set(key,cost);
+            }
+            evidence.traceEventCount=data.traceEvents?.length??0;
+            evidence.longestCompleteEvents=[...costs.values()].sort((a,b)=>b.durationUs-a.durationUs).slice(0,40);
+            evidence.eventDurationNote='Complete X events only; nested and concurrent durations overlap and cannot be summed as frame time.';
+          }catch(error){evidence.traceTruncated=true;trace=undefined;failure(error);}
+          finally{
+            try{session.off('Tracing.tracingComplete',onComplete);}catch(error){failure(error);}
+            if(stream){try{await bounded(session.send('IO.close',{handle:stream}),2000);}catch(error){failure(error);}}
+          }
+        }
         try{evidence.after=await read();}catch(error){failure(error);}
       }finally{
         const cleanup=await Promise.allSettled([
-          Promise.resolve().then(()=>session!.send('Profiler.disable')),
           Promise.resolve().then(()=>session!.send('Performance.disable')),
           Promise.resolve().then(()=>session!.send('Runtime.releaseObjectGroup',{objectGroup:'streamed-frame-cost'}))]);
         for(const item of cleanup)if(item.status==='rejected')failure(item.reason);
@@ -110,8 +158,8 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
   if(failed){
     evidence.errors=errors;
     let compressed:Buffer|undefined;
-    try{if(profile)compressed=gzipSync(Buffer.from(JSON.stringify(profile)));}catch(error){failure(error);}
-    evidence.profileBytes=compressed?.length??0;evidence.profileOmitted=Boolean(profile&&(!compressed||compressed.length>256*1024));
+    try{if(trace)compressed=gzipSync(trace);}catch(error){failure(error);}
+    evidence.traceBytes=compressed?.length??0;evidence.traceOmitted=Boolean(tracing&&(!compressed||compressed.length>256*1024));
     // Evidence failure must never replace the original movement/assertion error.
     try{
       let body:Buffer|undefined,reason:string|undefined,originalSummaryBytes:number|undefined;
@@ -120,12 +168,13 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
         if(body.length>64*1024){body=undefined;reason='summary_exceeds_64KiB';}
       }catch(error){failure(error);reason='summary_serialization_failed';}
       body??=Buffer.from(JSON.stringify({summaryOmitted:true,reason,originalSummaryBytes,
-        profilingPerturbsTiming:true,samplingIntervalUs:10_000,actionStartWallMs:evidence.actionStartWallMs,
-        actionEndWallMs:evidence.actionEndWallMs,profileBytes:evidence.profileBytes,profileOmitted:evidence.profileOmitted,errors}));
+        profilingPerturbsTiming:true,nativeTraceBufferKiB:8192,actionStartWallMs:evidence.actionStartWallMs,
+        actionEndWallMs:evidence.actionEndWallMs,traceBytes:evidence.traceBytes,traceOmitted:evidence.traceOmitted,
+        traceTruncated:evidence.traceTruncated,traceDataLoss:evidence.traceDataLoss,errors}));
       await info.attach('streamed-frame-costs',{body,contentType:'application/json'});
     }catch{}
     if(compressed&&compressed.length<=256*1024){
-      try{await info.attach('streamed-frame-profile',{body:compressed,contentType:'application/gzip'});}catch{}
+      try{await info.attach('streamed-native-trace',{body:compressed,contentType:'application/gzip'});}catch{}
     }
     throw originalError;
   }
