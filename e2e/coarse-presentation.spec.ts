@@ -43,6 +43,7 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
     note:'Native tracing and protocol reads add cost. This is not an unprofiled frame-performance acceptance result.'};
   let session:Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>|undefined;
   let renderers:string|undefined,tracing=false,failed=false,result:T|undefined,originalError:unknown,trace:Buffer|undefined;
+  let browserFeatures:Record<string,string>|undefined,backendRenderer:string|undefined;
   const bounded=async<T>(operation:Promise<T>,milliseconds:number):Promise<T>=>{
     let timer:ReturnType<typeof setTimeout>|undefined;
     try{return await Promise.race([operation,new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>reject(new Error('Native trace collection deadline exceeded')),milliseconds);})]);}
@@ -70,10 +71,32 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
       if(reply.exceptionDetails)failure(reply.exceptionDetails.text);else rendererInfo=reply.result.value;
     }
     if(environment.exceptionDetails)failure(environment.exceptionDetails.text);
+    if(typeof environment.result.value?.renderer==='string')backendRenderer=environment.result.value.renderer.slice(0,512);
     return {metrics:metrics.metrics,environment:environment.result.value,rendererInfo};
+  };
+  const attachBackend=async()=>{
+    try{
+      const body=Buffer.from(JSON.stringify({renderer:backendRenderer??null,featureStatus:browserFeatures??null,
+        errors:errors.map(error=>error.slice(0,128))}));
+      if(body.length<=64*1024)await info.attach('streamed-renderer-backend',{body,contentType:'application/json'});
+    }catch{}
   };
   try{
     try{
+      let browserSession:typeof session;
+      let pendingBrowserSession:Promise<NonNullable<typeof session>>|undefined;
+      try{
+        pendingBrowserSession=page.context().browser()?.newBrowserCDPSession();
+        if(!pendingBrowserSession)throw new Error('Browser GPU feature status unavailable');
+        browserSession=await bounded(pendingBrowserSession,2000);
+        const {gpu}=await bounded(browserSession.send('SystemInfo.getInfo'),2000);
+        browserFeatures=Object.fromEntries(['gpu_compositing','webgl','webgl2','rasterization','opengl','vulkan'].map(key=>
+          [key,typeof gpu.featureStatus?.[key]==='string'?gpu.featureStatus[key].slice(0,128):'unavailable']));
+      }catch(error){failure(error);}
+      finally{
+        try{if(browserSession)await bounded(browserSession.detach(),2000);}catch(error){failure(error);}
+        if(!browserSession)void pendingBrowserSession?.then(late=>late.detach()).catch(()=>{});
+      }
       session=await page.context().newCDPSession(page);
       await session.send('Performance.enable',{timeDomain:'timeTicks'});
       // Reuse the exact already-loaded module URL. queryObjects reads its live
@@ -176,8 +199,9 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
     if(compressed&&compressed.length<=256*1024){
       try{await info.attach('streamed-native-trace',{body:compressed,contentType:'application/gzip'});}catch{}
     }
-    throw originalError;
+    await attachBackend();throw originalError;
   }
+  await attachBackend();
   return result as T;
 }
 
