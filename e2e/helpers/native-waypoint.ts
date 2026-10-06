@@ -1,9 +1,11 @@
 /** Self-contained because Playwright serializes this function into Chromium.
  * Only ordinary keyboard listeners are driven; positions and calibrated NPC head
  * envelopes are read from the existing diagnostic DOM, never written. */
-export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
-  target:{x:number;z:number};timeoutMs:number;tolerance:number;
+export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSeconds}: {
+  target:{x:number;z:number};timeoutMs:number;tolerance:number;maxInputSeconds?:number;
 }) {
+  if(maxInputSeconds!==undefined&&(!Number.isFinite(maxInputSeconds)||maxInputSeconds<=0||!Number.isFinite(timeoutMs)||timeoutMs<=0))
+    throw new Error('Waypoint input and wall budgets must be positive and finite');
   type Point={x:number;z:number};
   type Bounds={minX:number;maxX:number;minZ:number;maxZ:number};
   const canvas=document.querySelector('#game canvas');
@@ -114,8 +116,25 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   const begin=performance.now(),deadline=begin+timeoutMs;
   const maximumStep=7.2*.05; // Existing sprint speed and production dt cap.
   let last=read(),unchanged=0,detours=0;
+  let observedPosition={...last};
   let simulatedAt=simulation();
   if(!Number.isFinite(simulatedAt)||simulatedAt<0)throw new Error('Waypoint simulation observation is unavailable');
+  const simulationBegin=simulatedAt;
+  let stopReason='wall-budget';
+  const budgetEvidence=(reason:string)=>maxInputSeconds===undefined?{}:{
+    inputSeconds:simulatedAt-simulationBegin,elapsedMs:performance.now()-begin,stopReason:reason
+  };
+  // A collision still consumes accepted direction-input time. The wall timer
+  // also releases input when RAF stops, provided the page event loop can run.
+  const nextFrame=()=>maxInputSeconds===undefined
+    ?new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))
+    :new Promise<void>((resolve,reject)=>{
+      let settled=false;
+      let frame:number|undefined;
+      const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);if(frame!==undefined)cancelAnimationFrame(frame);resolve();};
+      const timer=setTimeout(finish,Math.max(0,deadline-performance.now()));
+      try{frame=requestAnimationFrame(finish);}catch(error){settled=true;clearTimeout(timer);reject(error);}
+    });
   let progress:{goal:Point;distance:number;requested:number;speed:number;arrival:number}|undefined;
   let waypoints:Point[]=[];
   let plannerBlocked=false,avoidSign=1;
@@ -137,7 +156,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   };
   const axisKey=(axis:'x'|'z',delta:number)=>axis==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW');
   try {
-    while(performance.now()<deadline){
+    while(maxInputSeconds!==undefined||performance.now()<deadline){
       if(document.pointerLockElement!==canvas)throw new Error('Waypoint lost pointer lock');
       const p=read();
       if(!Number.isFinite(p.x)||!Number.isFinite(p.z))throw new Error('Waypoint position is unavailable');
@@ -145,8 +164,20 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(!Number.isFinite(simulatedNow)||simulatedNow<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
       const stepSeconds=simulatedNow-simulatedAt;
       simulatedAt=simulatedNow;
+      const inputSeconds=simulatedNow-simulationBegin;
+      if(maxInputSeconds!==undefined){
+        if(stepSeconds===0&&Math.hypot(p.x-observedPosition.x,p.z-observedPosition.z)>1e-6)
+          throw new Error('Waypoint position changed without observed direction input');
+        if(performance.now()>deadline)break;
+        if(inputSeconds>maxInputSeconds+1e-9){stopReason='input-budget';break;}
+      }
+      observedPosition=p;
       const distance=Math.hypot(target.x-p.x,target.z-p.z);
-      if(distance<=tolerance){record(p,'reached');return {reached:true,...p,distance,detours,history};}
+      if(distance<=tolerance){record(p,'reached');return {reached:true,...p,distance,detours,history,...budgetEvidence('reached')};}
+      if(maxInputSeconds!==undefined){
+        if(performance.now()>=deadline)break;
+        if(inputSeconds>=maxInputSeconds-1e-9){stopReason='input-budget';break;}
+      }
       if(stepSeconds>0){
         const movedThreshold=Math.min(.035,(progress?.speed??0)*stepSeconds*.2);
         if(Math.hypot(p.x-last.x,p.z-last.z)>movedThreshold){last=p;unchanged=0;}else unchanged++;
@@ -201,6 +232,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         if(Math.abs(dx)>tolerance*.6)next.add(axisKey('x',dx));
         if(Math.abs(dz)>tolerance*.6)next.add(axisKey('z',dz));
       }
+      if(maxInputSeconds!==undefined&&performance.now()>=deadline)break;
       setHeld(next);
       const goal=fallback?{
         x:fallback.origin.x+(fallback.code==='KeyD'?fallbackDistance:fallback.code==='KeyA'?-fallbackDistance:0),
@@ -211,11 +243,11 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         progress={goal:{...goal},distance:Math.hypot(goal.x-p.x,goal.z-p.z),requested:0,speed:0,arrival};
       }
       progress.speed=[...next].some(code=>code!=='ShiftLeft')?(next.has('ShiftLeft')?7.2:4.5):0;
-      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      await nextFrame();
     }
     const finalSimulation=simulation();
     if(!Number.isFinite(finalSimulation)||finalSimulation<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
     const p=read(),distance=Math.hypot(target.x-p.x,target.z-p.z);record(p,'deadline');
-    return {reached:distance<=tolerance,...p,distance,detours,history};
+    return {reached:maxInputSeconds===undefined&&distance<=tolerance,...p,distance,detours,history,...budgetEvidence(stopReason)};
   }finally {setHeld(new Set());}
 }

@@ -290,13 +290,13 @@ test('ordinary walking crosses the home edge into the visible layout and preserv
     expect(before.bounds).toEqual({minX:36,maxX:108,minZ:-36,maxZ:36});expect(before.fineOwners).toEqual([]);
     await startFirstPerson(page);
     const enter=await observeNativeFrames(page,info,async()=>{
-      const reached=await page.evaluate(driveNativeWaypoint,{target:{x:40,z:0},timeoutMs:10_000,tolerance:.3});expect(reached.reached).toBe(true);return reached;
+      const reached=await page.evaluate(driveNativeWaypoint,{target:{x:40,z:0},timeoutMs:45_000,tolerance:.3,maxInputSeconds:2});expect(reached.reached).toBe(true);return reached;
     });
     const entered=(await layoutViews(page)).find(x=>x.unitId==='unit_1_0')!;
     expect(entered.entities).toEqual(before.entities);expect(entered.fineOwners).toEqual(['chunk_2_0']);
     expect(await numberStatus(page,'data-player-grounding-error')).toBeLessThan(.001);
     await info.attach('streamed-layout-entered',{body:await page.screenshot(),contentType:'image/png'});
-    const leave=await page.evaluate(driveNativeWaypoint,{target:{x:34,z:0},timeoutMs:10_000,tolerance:.3});expect(leave.reached).toBe(true);
+    const leave=await page.evaluate(driveNativeWaypoint,{target:{x:34,z:0},timeoutMs:45_000,tolerance:.3,maxInputSeconds:2});expect(leave.reached).toBe(true);
     expect((await layoutViews(page)).find(x=>x.unitId==='unit_1_0')).toEqual(before);
     await expect.poll(async()=>{const response=await request.get('/api/world/state');const data=await response.json();return data.snapshot?.streamedLayouts?.some((layout:any)=>layout.unit.id==='unit_1_0')===true;},{timeout:45_000}).toBe(true);
     const persisted=await (await request.get('/api/world/state')).json();
