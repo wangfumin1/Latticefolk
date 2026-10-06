@@ -11,7 +11,7 @@ import type {LocaleCode} from '../src/types.js';
 // Stubs supply only their I/O; no translated behavior is copied into the harness.
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const wanted=new Set(['initializePersistence','saveWorldState','flushWorldBeacon','log']);
+const wanted=new Set(['initializePersistence','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','log']);
 const methods:string[]=[];
 function visit(node:ts.Node){
   if(ts.isMethodDeclaration(node)&&wanted.has(node.name.getText(ast)))methods.push(node.getText(ast));

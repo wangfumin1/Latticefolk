@@ -12,6 +12,7 @@ import { planFineChunk } from './world/materialization';
 import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from './world/streamedLayouts';
 import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './world/streamedUnits';
 import {StreamedPresentation,type StaticLayoutEntry} from './scene/streamedPresentation';
+import {farmCropRows,disposeFarmCropRows} from './scene/farmCrops';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
 import { PortableObjectRuntime } from './world/portableObjectRuntime';
@@ -299,7 +300,7 @@ class TownGame {
     create:(entry,unitId,saved)=>this.createStreamedObject(entry,unitId,saved),
     release:(unitId,objects)=>{
       const nodes=new Set<THREE.Object3D>();
-      for(const object of objects){object.mesh.traverse(node=>nodes.add(node));object.mesh.parent?.remove(object.mesh);
+      for(const object of objects){object.mesh.traverse(node=>nodes.add(node));disposeFarmCropRows(object.mesh);object.mesh.parent?.remove(object.mesh);
         if(object.mesh.userData.layoutRoad){const mesh=object.mesh as THREE.Mesh;mesh.geometry.dispose();const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];materials.forEach(m=>m.dispose());}}
       this.visualTargets=this.visualTargets.filter(target=>!nodes.has(target.group));this.physics.clearChunk(unitId);
     }});
@@ -558,13 +559,10 @@ class TownGame {
     this.attachVisualTarget({
       group:soil,asset:'farmSoil',height:.12,targetWidth:4,targetDepth:2.7,fit:'exactBounds'
     });
-    const rows=[-1.25,-.42,.42,1.25];
-    for(const x of rows)for(const z of [-.72,0,.72]){
-      const crop=new THREE.Group();
-      crop.position.set(x,.12,z); // The sourced soil's top, not four centimetres below it.
-      root.add(crop);
-      this.attachVisualTarget({group:crop,asset:'farmWheat',height:.72});
-    }
+    const crops=new THREE.Group();
+    crops.position.y=.12; // The sourced soil's top.
+    root.add(crops);
+    this.attachVisualTarget({group:crops,asset:'farmWheat',height:.72});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(root);
     return root;
   }
@@ -802,8 +800,8 @@ class TownGame {
       :this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
     if(!isTree)model.rotation.y=target.rotationY||0;
     model.position.z+=target.offsetZ??0;
-    target.group.clear();
-    target.group.add(model);
+    disposeFarmCropRows(target.group);target.group.clear();
+    target.group.add(target.asset==='farmWheat'?farmCropRows(model):model);
     for(let owner:THREE.Object3D|null=target.group;owner;owner=owner.parent)if(owner.userData.entityId){
       owner.userData.visualRevision=(owner.userData.visualRevision||0)+1;break;
     }
@@ -1129,12 +1127,18 @@ class TownGame {
   }
 
   scheduleMovablePersistence(delayMs=700) {
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
     if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
     this.movableSaveTimer=window.setTimeout(()=>{
       this.movableSaveTimer=undefined;
-      this.persistenceSaveQueued=true;
       void this.saveWorldState();
     },Math.max(250,delayMs));
+  }
+
+  clearMovablePersistenceQueue() {
+    if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
+    this.movableSaveTimer=undefined;
+    this.persistenceSaveQueued=false;
   }
 
   updateGodCamera(dt:number) {
@@ -1174,6 +1178,7 @@ class TownGame {
       }
     }catch(error){
       this.persistenceLoadBlocked=true;
+      this.clearMovablePersistenceQueue();
       this.log(i18n.t('persistence.loadFailed',{error:error instanceof Error?error.message:String(error)}));
     }finally{
       this.persistenceReady=true;
@@ -1311,7 +1316,8 @@ class TownGame {
   }
 
   async saveWorldState() {
-    if(!this.persistenceReady||this.persistenceConflict||this.persistenceLoadBlocked)return;
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
+    if(!this.persistenceReady)return;
     if(this.persistenceSaveInFlight){
       this.persistenceSaveQueued=true;
       return;
@@ -1336,7 +1342,7 @@ class TownGame {
           const conflict=await response.json().catch(()=>({})) as {currentRevision?:unknown};
           const currentRevision=Number(conflict.currentRevision);
           this.persistenceConflict=true;
-          this.persistenceSaveQueued=false;
+          this.clearMovablePersistenceQueue();
           throw new Error(Number.isSafeInteger(currentRevision)
             ?i18n.t('persistence.conflict',{local:expectedRevision,server:currentRevision})
             :i18n.t('persistence.conflictUnknown',{local:expectedRevision}));
@@ -1356,6 +1362,7 @@ class TownGame {
         this.persistenceSaveInFlight=false;
       }
     }while(this.persistenceSaveQueued&&this.persistenceReady&&!this.persistenceConflict&&!this.persistenceLoadBlocked);
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
     if(lastSaveSucceeded){
       this.movableSaveRetryMs=1500;
       if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
@@ -1481,7 +1488,7 @@ class TownGame {
       if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
       if(chunk)this.materializeFineChunk(chunk);
     }catch(error){
-      this.persistenceLoadBlocked=true;this.persistenceSaveQueued=false;
+      this.persistenceLoadBlocked=true;this.clearMovablePersistenceQueue();
       this.streamedLayoutError=error instanceof Error?error.message:String(error);
       this.log(i18n.t('persistence.loadFailed',{error:this.streamedLayoutError}));
     }
@@ -1523,7 +1530,7 @@ class TownGame {
         money:Math.max(2,Math.round(3+chunk.prosperity/7)),inventory:structuredClone(p.inventory),
         relationships:{},memories:[],currentAction:'idle',goal:'在这里生活并照顾自己的日常需要',lastDecisionAt:0
       };
-      state.position=this.fineSpawnPosition(state.position,chunk);state.home={...state.position};
+      state.position=this.fineSpawnPosition(state.position,chunk,p.characterAsset);state.home={...state.position};
       this.spawnFineNpc(state,p.characterAsset);runtime.npcIds.push(state.id);
     }
 
@@ -1591,14 +1598,19 @@ class TownGame {
     return [...this.objects.values()].find(o=>o.state.chunkId===owner&&wanted.some(tag=>o.state.tags.includes(tag)))?.state.id;
   }
 
-  fineSpawnPosition(position:Vec2,chunk:CoarseChunkState):Vec2 {
-    if(!this.physics.isBlocked(position.x,position.z,.3))return position;
+  fineSpawnPosition(position:Vec2,chunk:CoarseChunkState,characterAsset?:string):Vec2 {
+    const occupied=characterAsset?[...this.npcs.values()].filter(n=>!n.removed).map(n=>n.mesh.position):[];
+    const clear=(point:Vec2)=>!this.physics.isBlocked(point.x,point.z,.3)
+      &&(!characterAsset||(playerHeadClearance(characterAsset,point,0,this.playerPosition)>=0
+        &&occupied.every(other=>Math.hypot(other.x-point.x,other.z-point.z)>=NPC_BODY_RADIUS*2)));
+    if(clear(position))return position;
     const center={x:chunk.cx*24,z:chunk.cz*24};
     for(let radius=0;radius<=11;radius++)for(let z=-radius;z<=radius;z++)for(let x=-radius;x<=radius;x++){
       if(Math.max(Math.abs(x),Math.abs(z))!==radius)continue;
       const point={x:center.x+x,z:center.z+z};
-      if(!this.physics.isBlocked(point.x,point.z,.3))return point;
+      if(clear(point))return point;
     }
+    if(characterAsset)throw new Error(`No clear NPC spawn in ${chunk.id}`);
     return position;
   }
 

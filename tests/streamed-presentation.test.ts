@@ -10,6 +10,8 @@ import * as portable from '../src/world/portableObjects.js';
 import * as baking from '../src/scene/bakingOven.js';
 import * as water from '../src/scene/waterPatch.js';
 import * as trees from '../src/scene/treePresentation.js';
+import * as crops from '../src/scene/farmCrops.js';
+import {playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
 import {StreamedPresentation} from '../src/scene/streamedPresentation.js';
 import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
 import {FinePhysicsAuthority} from '../src/world/finePhysics.js';
@@ -27,7 +29,7 @@ import type {NpcState,WorldPersistenceSnapshot,WorldObjectState} from '../src/ty
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
 const names=new Set(['tryPushMovableObject','createStreamedObject','syncStreamedPresentation','updateFineChunkMaterialization','materializeFineChunk','collapseFineChunk',
-  'updateObjects','saveWorldState','flushWorldBeacon','fineWorkplaceForRole','fineSpawnPosition','fineMetrics','buildWorldSnapshot','buildFinalWorldSnapshot','restoreWorldState','initializePersistence',
+  'updateObjects','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','fineWorkplaceForRole','fineSpawnPosition','fineMetrics','buildWorldSnapshot','buildFinalWorldSnapshot','restoreWorldState','initializePersistence',
   'addBuilding','buildingInteractionProfile','addObject','addAssetObject','addFarmPlotObject','semanticAssetSpec','registerWorldObjectPhysics','defaultCapabilities']);
 const members:string[]=[];
 for(const n of ast.statements)if(ts.isClassDeclaration(n)&&n.name?.text==='TownGame')for(const m of n.members){
@@ -37,7 +39,7 @@ assert.equal(members.length,names.size+1);
 const code=ts.transpileModule(`return class Runtime {objects=new Map();${members.join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 function fixture(snapshot:WorldPersistenceSnapshot|null=null){
   const io={snapshot,gets:0,writes:0,beacons:0,epoch:Date.now(),store:undefined as WorldPersistence|undefined,writeGate:undefined as Promise<void>|undefined};
-  const deps={Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
+  const deps={Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
     clamp:(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x)),now:()=>1000,i18n:{t:(key:string)=>key},fetch:async(_url:string,init?:{method?:string;body?:string})=>{
       if(init?.method==='POST'){io.writes++;const data=JSON.parse(init.body!);if(io.writeGate)await io.writeGate;const saved=io.store!.save(data.snapshot,data.expectedRevision);return{ok:true,status:200,json:async()=>saved};}
       io.gets++;return{ok:true,json:async()=>({revision:io.store?.revision()??3,snapshot:io.store?.load()??io.snapshot})};
@@ -209,8 +211,43 @@ test('a full-save acknowledgement cannot start a queued write after a streaming 
     let release!:()=>void;io.writeGate=new Promise<void>(resolve=>{release=resolve;});
     const saving=r.saveWorldState();assert.equal(io.writes,1);
     r.playerPosition={x:24,z:0};r.updateFineChunkMaterialization();assert.equal(r.persistenceLoadBlocked,true);
-    r.persistenceSaveQueued=true; // A previously scheduled movable timer can fire before the outstanding ACK.
+    r.persistenceSaveQueued=true; // A stale queued flag must also settle when the outstanding ACK arrives.
     release();await saving;
     assert.equal(io.writes,1);assert.equal(store.revision(),2);assert.deepEqual(store.load()!.fineChunks.find(c=>c.chunkId==='chunk_5_0')!.objectStates,[tree]);
+    assert.equal(r.persistenceSaveQueued,false);assert.equal(r.persistenceSaveInFlight,false);
   }finally{store.close();}
+});
+
+test('fresh residents clear the saved player while cached residents retain their positions across return and reload',async()=>{
+  for(const player of [{x:49.8,z:-1.9},{x:45.5,z:-4}]){
+  const first=fixture(),snapshot=json(first.r.buildWorldSnapshot());
+  snapshot.coarseChunks=units.streamedUnitOwnerCells(1,0).map(owner=>({...owner,biome:'plains',settlementLevel:2,population:23,
+    food:68,wood:57,water:71,ecology:73,danger:18,prosperity:66,strategy:'trade_route',migrationPolicy:'attract',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:3,wildlife:[]}));
+  snapshot.meta.playerPosition=player;first.io.snapshot=snapshot;first.r.spawnWildlife=()=>false;
+  await first.r.initializePersistence();assert.equal(first.r.streamedLayoutError,undefined);assert.equal(first.r.npcs.size,12);
+  for(const npc of first.r.npcs.values())assert.ok(playerHeadClearance(npc.characterAsset,npc.state.position,0,first.r.playerPosition)>=0);
+  const actors=[...first.r.npcs.values()] as any[];
+  for(let i=0;i<actors.length;i++)for(let j=i+1;j<actors.length;j++){
+    const a=actors[i].state.position,b=actors[j].state.position;
+    assert.ok(Math.hypot(a.x-b.x,a.z-b.z)>=NPC_BODY_RADIUS*2,'new residents cannot reserve the same body space');
+  }
+  const positions=()=>[...first.r.npcs.values()].map((npc:any)=>({id:npc.state.id,position:{...npc.state.position}}));
+  const expected=positions(),saved=json(first.r.buildWorldSnapshot());
+  saved.meta.playerPosition={...first.r.npcs.get('chunk_2_0_npc_01').state.position};
+  const next=fixture(saved);next.r.spawnWildlife=()=>false;await next.r.initializePersistence();
+  const restored=()=>[...next.r.npcs.values()].map((npc:any)=>({id:npc.state.id,position:{...npc.state.position}}));
+  assert.deepEqual(restored(),expected);
+  next.r.playerPosition={x:56,z:6};next.r.updateFineChunkMaterialization();assert.deepEqual(restored(),expected);
+  next.r.playerPosition={x:0,z:7};next.r.updateFineChunkMaterialization();assert.equal(next.r.npcs.size,0);
+  next.r.playerPosition={...saved.meta.playerPosition};next.r.updateFineChunkMaterialization();assert.deepEqual(restored(),expected);
+  }
+});
+
+test('a bounded new-resident spawn failure reaches the streaming write protection instead of persisting a missing population',async()=>{
+  const f=fixture(),snapshot=json(f.r.buildWorldSnapshot());snapshot.meta.playerPosition={x:48,z:0};
+  snapshot.coarseChunks=units.streamedUnitOwnerCells(1,0).map(owner=>({...owner,biome:'plains',settlementLevel:1,population:12,
+    food:65,wood:50,water:60,ecology:55,danger:10,prosperity:65,strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:0,wildlife:[]}));
+  f.io.snapshot=snapshot;f.r.physics.isBlocked=()=>true;await f.r.initializePersistence();
+  assert.match(f.r.streamedLayoutError,/No clear NPC spawn/);assert.equal(f.r.persistenceLoadBlocked,true);assert.equal(f.r.npcs.size,0);
+  await f.r.saveWorldState();f.r.flushWorldBeacon();assert.equal(f.io.writes,0);assert.equal(f.io.beacons,0);
 });
