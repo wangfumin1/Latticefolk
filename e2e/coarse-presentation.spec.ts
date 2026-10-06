@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import {setTimeout as wait} from 'node:timers/promises';
+import {gzipSync} from 'node:zlib';
 import { startFirstPerson } from './helpers/native-start.js';
 import { captureLocaleDom, readLocaleDom } from './helpers/locale-dom.js';
 import {driveNativeWaypoint} from './helpers/native-waypoint.js';
@@ -33,6 +34,103 @@ const readView=(page:Page,includeLayouts=true)=>page.evaluate(includeLayouts=>{
   };
 },includeLayouts);
 const hudView=async(page:Page)=>(await readView(page,false)).hud;
+
+// This observes the existing renderer through CDP; it never publishes a game
+// instance or changes its renderer, clock, input, visibility or shadow settings.
+async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise<T>):Promise<T>{
+  const errors:string[]=[];
+  const evidence:Record<string,unknown>={profilingPerturbsTiming:true,samplingIntervalUs:10_000,
+    note:'Diagnostic sampling and protocol reads add cost. This is not an unprofiled frame-performance acceptance result.'};
+  let session:Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>|undefined;
+  let renderers:string|undefined,profiling=false,failed=false,result:T|undefined,originalError:unknown,profile:unknown;
+  const failure=(error:unknown)=>{if(errors.length<8)errors.push((error instanceof Error?error.message:String(error)).slice(0,1024));};
+  const read=async()=>{
+    const metrics=await session!.send('Performance.getMetrics');
+    const environment=await session!.send('Runtime.evaluate',{returnByValue:true,expression:`(() => {
+      const canvas=document.querySelector('#game canvas'),gl=canvas?.getContext('webgl2');
+      const extension=gl?.getExtension('WEBGL_debug_renderer_info');
+      return {wallMs:Date.now(),browserMs:performance.now(),visibility:document.visibilityState,focused:document.hasFocus(),
+        inputSeconds:Number(document.querySelector('#worldStatus')?.dataset.playerInputSeconds),
+        gpuTimerAvailable:Boolean(gl?.getExtension('EXT_disjoint_timer_query_webgl2')),
+        renderer:gl?gl.getParameter(extension?extension.UNMASKED_RENDERER_WEBGL:gl.RENDERER):null,
+        vendor:gl?gl.getParameter(extension?extension.UNMASKED_VENDOR_WEBGL:gl.VENDOR):null};
+    })()`});
+    let rendererInfo:unknown;
+    if(renderers){
+      const reply=await session!.send('Runtime.callFunctionOn',{objectId:renderers,returnByValue:true,functionDeclaration:`function(){
+        return {rendererCount:this.length,renderers:this.slice(0,4).map(renderer=>({render:{...renderer.info.render},memory:{...renderer.info.memory},
+          programs:renderer.info.programs?.length,autoReset:renderer.info.autoReset,
+          shadow:{enabled:renderer.shadowMap.enabled,type:renderer.shadowMap.type,autoUpdate:renderer.shadowMap.autoUpdate}}))};
+      }`});
+      if(reply.exceptionDetails)failure(reply.exceptionDetails.text);else rendererInfo=reply.result.value;
+    }
+    if(environment.exceptionDetails)failure(environment.exceptionDetails.text);
+    return {metrics:metrics.metrics,environment:environment.result.value,rendererInfo};
+  };
+  try{
+    try{
+      session=await page.context().newCDPSession(page);
+      await session.send('Performance.enable',{timeDomain:'timeTicks'});
+      // Reuse the exact already-loaded module URL. queryObjects reads its live
+      // instances and may cause GC, so it runs before the measured action.
+      const prototype=await session.send('Runtime.evaluate',{objectGroup:'streamed-frame-cost',awaitPromise:true,expression:`(async()=>{
+        const url=performance.getEntriesByType('resource').map(entry=>entry.name).find(name=>{
+          const value=new URL(name);return value.origin===location.origin&&/\\/node_modules\\/\\.vite\\/deps\\/three\\.js$/.test(value.pathname);
+        });
+        return url?(await import(url)).WebGLRenderer.prototype:null;
+      })()`});
+      if(prototype.exceptionDetails)failure(prototype.exceptionDetails.text);
+      if(prototype.result.objectId){
+        const found=await session.send('Runtime.queryObjects',{prototypeObjectId:prototype.result.objectId,objectGroup:'streamed-frame-cost'});
+        renderers=found.objects.objectId;
+      }else failure('Renderer prototype unavailable from the already-loaded module');
+      await session.send('Profiler.enable');
+      await session.send('Profiler.setSamplingInterval',{interval:10_000});
+      evidence.before=await read();
+      await session.send('Profiler.start');profiling=true;
+    }catch(error){failure(error);}
+    evidence.actionStartWallMs=Date.now();
+    try{result=await action();}catch(error){failed=true;originalError=error;}
+    finally{evidence.actionEndWallMs=Date.now();}
+  }finally{
+    if(session){
+      try{
+        if(profiling){try{profile=(await session.send('Profiler.stop')).profile;}catch(error){failure(error);}}
+        try{evidence.after=await read();}catch(error){failure(error);}
+      }finally{
+        const cleanup=await Promise.allSettled([
+          Promise.resolve().then(()=>session!.send('Profiler.disable')),
+          Promise.resolve().then(()=>session!.send('Performance.disable')),
+          Promise.resolve().then(()=>session!.send('Runtime.releaseObjectGroup',{objectGroup:'streamed-frame-cost'}))]);
+        for(const item of cleanup)if(item.status==='rejected')failure(item.reason);
+        try{await session.detach();}catch(error){failure(error);}
+      }
+    }
+  }
+  if(failed){
+    evidence.errors=errors;
+    let compressed:Buffer|undefined;
+    try{if(profile)compressed=gzipSync(Buffer.from(JSON.stringify(profile)));}catch(error){failure(error);}
+    evidence.profileBytes=compressed?.length??0;evidence.profileOmitted=Boolean(profile&&(!compressed||compressed.length>256*1024));
+    // Evidence failure must never replace the original movement/assertion error.
+    try{
+      let body:Buffer|undefined,reason:string|undefined,originalSummaryBytes:number|undefined;
+      try{
+        body=Buffer.from(JSON.stringify(evidence,null,2));originalSummaryBytes=body.length;
+        if(body.length>64*1024){body=undefined;reason='summary_exceeds_64KiB';}
+      }catch(error){failure(error);reason='summary_serialization_failed';}
+      body??=Buffer.from(JSON.stringify({summaryOmitted:true,reason,originalSummaryBytes,
+        profilingPerturbsTiming:true,samplingIntervalUs:10_000,actionStartWallMs:evidence.actionStartWallMs,
+        actionEndWallMs:evidence.actionEndWallMs,profileBytes:evidence.profileBytes,profileOmitted:evidence.profileOmitted,errors}));
+      await info.attach('streamed-frame-costs',{body,contentType:'application/json'});
+    }catch{}
+    if(compressed&&compressed.length<=256*1024){
+      try{await info.attach('streamed-frame-profile',{body:compressed,contentType:'application/gzip'});}catch{}
+    }
+    throw originalError;
+  }
+  return result as T;
+}
 
 test('72m streamed layouts use sourced assets and God camera does not discover or materialize chunks',async({page},info)=>{
   test.setTimeout(180_000);
@@ -118,7 +216,9 @@ test('ordinary walking crosses the home edge into the visible layout and preserv
     const before=(await layoutViews(page)).find(x=>x.unitId==='unit_1_0')!;
     expect(before.bounds).toEqual({minX:36,maxX:108,minZ:-36,maxZ:36});expect(before.fineOwners).toEqual([]);
     await startFirstPerson(page);
-    const enter=await page.evaluate(driveNativeWaypoint,{target:{x:40,z:0},timeoutMs:10_000,tolerance:.3});expect(enter.reached).toBe(true);
+    const enter=await observeNativeFrames(page,info,async()=>{
+      const reached=await page.evaluate(driveNativeWaypoint,{target:{x:40,z:0},timeoutMs:10_000,tolerance:.3});expect(reached.reached).toBe(true);return reached;
+    });
     const entered=(await layoutViews(page)).find(x=>x.unitId==='unit_1_0')!;
     expect(entered.entities).toEqual(before.entities);expect(entered.fineOwners).toEqual(['chunk_2_0']);
     expect(await numberStatus(page,'data-player-grounding-error')).toBeLessThan(.001);
