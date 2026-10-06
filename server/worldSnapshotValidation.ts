@@ -4,6 +4,7 @@ import type {
   WildlifeDeathReason, WildlifeDomesticationCommand, WildlifeOrganismFamily, WildlifePhenotypeProvenance,
   WildlifeSpecies, WildlifeState, WorldPersistenceSnapshot
 } from '../src/types.js';
+import {readStreamedLayout,StreamedLayoutValidationError} from '../src/world/streamedLayouts.js';
 
 type RecordLike=Record<string,unknown>;
 
@@ -458,6 +459,25 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   });
 
   if(root.savedAt!==undefined)v.number(root.savedAt,'snapshot.savedAt',{min:0});
+  if(isRecord(root.meta)&&root.meta.streamedLayoutVersion!==undefined&&root.meta.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','unsupported version');
+  if(root.streamedLayouts!==undefined){
+    const layouts=v.array(root.streamedLayouts,'snapshot.streamedLayouts',WORLD_SNAPSHOT_LIMITS.fineChunks),seen=new Set<string>();
+    if(layouts?.length&&meta?.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','required for streamed layouts');
+    for(const [index,layout] of (layouts||[]).entries()){
+      try{
+        const value=readStreamedLayout(layout);
+        v.enum(value.seed,`snapshot.streamedLayouts[${index}].seed`,['latticefolk-default'] as const);
+        if(seen.has(value.unit.id))v.issue(`snapshot.streamedLayouts[${index}]`,'duplicate unit');seen.add(value.unit.id);
+      }catch(error){if(error instanceof StreamedLayoutValidationError)v.issue(`snapshot.streamedLayouts[${index}]`,error.message);else throw error;}
+    }
+  }
+  for(const [index,chunk] of (Array.isArray(root.fineChunks)?root.fineChunks:[]).entries()){
+    if(isRecord(chunk)&&chunk.dynamicActivated!==undefined){
+      v.bool(chunk.dynamicActivated,`snapshot.fineChunks[${index}].dynamicActivated`);
+      if(meta?.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','required for owner activation state');
+      if(chunk.dynamicActivated===false&&((Array.isArray(chunk.npcStates)&&chunk.npcStates.length)||(Array.isArray(chunk.wildlifeStates)&&chunk.wildlifeStates.length)))v.issue(`snapshot.fineChunks[${index}]`,'static-only owner cannot contain activated actors');
+    }
+  }
 
   if(v.issues.length)throw new WorldSnapshotValidationError(v.issues);
   return input as WorldPersistenceSnapshot;

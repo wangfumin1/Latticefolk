@@ -2,6 +2,8 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import type { CoarseChunkState, WorldPersistenceSnapshot } from '../src/types.js';
 import { WATER_PATCH_ASSET, WATER_PATCH_DEPTH, WATER_PATCH_SURFACE_Y, WATER_PATCH_WIDTH } from '../src/scene/waterPatch.js';
 import { startFirstPerson } from './helpers/native-start.js';
+import {createStreamedLayout} from '../src/world/streamedLayouts.js';
+import {streamedUnitOwnerCells} from '../src/world/streamedUnits.js';
 import { lookForObject } from './helpers/relative-look.js';
 
 interface WaterView {
@@ -14,6 +16,8 @@ const chunk:CoarseChunkState={
   food:50,wood:50,water:90,ecology:60,danger:5,prosperity:10,
   strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:0
 };
+const owners=streamedUnitOwnerCells(1,0).map(owner=>({...structuredClone(chunk),...owner}));
+const waterSource=createStreamedLayout(1,0,owners,[]).objectStates.find(o=>o.kind==='water_patch')!;
 const inventory=()=>({apple:0,bread:0,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0});
 
 async function seed(request:APIRequestContext){
@@ -21,8 +25,8 @@ async function seed(request:APIRequestContext){
   const revision=(await reset.json() as {revision:number}).revision;
   const snapshot:WorldPersistenceSnapshot={
     version:1,
-    meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:{x:52.8,z:5.4},playerInventory:inventory()},
-    coarseChunks:[chunk],fineChunks:[],homeNpcs:[],homeObjects:[]
+    meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:{x:waterSource.position.x-1,z:waterSource.position.z},playerInventory:inventory()},
+    coarseChunks:owners,fineChunks:[],homeNpcs:[],homeObjects:[]
   };
   const response=await request.post('/api/world/state',{data:{expectedRevision:revision,snapshot}});
   expect(response.ok()).toBe(true);
@@ -53,9 +57,9 @@ test('streamed natural water uses the sourced Kenney surface and keeps first-per
   await expect.poll(async()=>{const list=await water(page);return list.length===1&&list[0]!.resolved&&list[0]!.meshes>0;},{timeout:45_000}).toBe(true);
 
   const before=(await water(page))[0]!;
-  expect(before.chunkId).toBe(chunk.id);
+  expect(before.chunkId).toBe('chunk_4_1');
   expect(before.name).toBe('自然水洼');
-  expect(before.position.x).toBeCloseTo(53.8,8);expect(before.position.z).toBeCloseTo(5.4,8);
+  expect(before.position.x).toBeCloseTo(89.4,8);expect(before.position.z).toBeCloseTo(16.2,8);
   expect(before.asset).toBe(WATER_PATCH_ASSET);
   expect(before.primitives).toBe(0);
   expect(before.materials).toBeGreaterThan(0);
@@ -81,7 +85,7 @@ test('streamed natural water uses the sourced Kenney surface and keeps first-per
     return state.revision>seedRevision&&state.snapshot.meta.playerInventory.water===1;
   },{timeout:45_000}).toBe(true);
   const afterDraw=await saved(request);
-  const persisted=afterDraw.snapshot.fineChunks.find(entry=>entry.chunkId===chunk.id)?.objectStates.find(object=>object.kind==='water_patch');
+  const persisted=afterDraw.snapshot.fineChunks.find(entry=>entry.chunkId===waterSource.chunkId)?.objectStates.find(object=>object.kind==='water_patch');
   expect(persisted?.resourceAmount).toBe(sourceAmount);
 
   await page.reload();await startFirstPerson(page);

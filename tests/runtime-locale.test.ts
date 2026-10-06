@@ -51,7 +51,7 @@ function fixture(initial='en',fullUi=false,actualBudget=false){
  if(fullUi){
   delete r.updateLocalizedUi;r.selectedEntity=undefined;r.logs=[{text:'existing warning',audience:'player'}];
   r.camera=new THREE.PerspectiveCamera();r.camera.position.set(5,1.7,4);
-  Object.assign(r,{coarseWorld:new CoarseWorldRuntime(new THREE.Scene()),physics:{stats:()=>({terrainSurfaces:1,staticColliders:0,triggers:0})},visualTargets:[],assetLoadFailures:[],groundHeightAt:()=>0,playerInputSeconds:0,
+  Object.assign(r,{streamedPresentation:{diagnostics:()=>[]},coarseWorld:new CoarseWorldRuntime(new THREE.Scene()),physics:{stats:()=>({terrainSurfaces:1,staticColliders:0,triggers:0})},visualTargets:[],assetLoadFailures:[],groundHeightAt:()=>0,playerInputSeconds:0,
    wildlifePresentation:{getDiagnosticsSummary:()=>({pending:0,ready:0,failed:0,count:0})},portables:{diagnostics:()=>({parcels:[]})},sunShadow:{diagnostics:()=>({mapSize:2048})},physicsDynamicColliders:()=>r.cameraMode==='firstPerson'?[{id:'player'}]:[],
    wildlifeLineage:new Map(),evolutionStatistics:()=>[],coevolutionStatistics:()=>[],interactionSelectionStatistics:()=>[],activeInteractionNetwork:()=>({chunks:0,edges:[],nodes:[],coverage:{predation:0,competition:0,disease:0}})});
  }

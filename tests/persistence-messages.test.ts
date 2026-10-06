@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
+import {StreamedLayoutValidationError} from '../src/world/streamedLayouts.js';
 import {I18n,SUPPORTED_LOCALES} from '../src/i18n.js';
 import {appendHudLog,visibleHudLogs,type HudLogEntry} from '../src/ui/hudDiagnostics.js';
 import type {LocaleCode} from '../src/types.js';
@@ -33,7 +34,7 @@ function fixture(locale:LocaleCode,reply:Reply,beaconAccepted=false){
   const snapshot={version:1,meta:{day:0},coarseChunks:[],fineChunks:[]};
   const fetch=async(url:string,init?:RequestInit)=>{requests.push({url,init});return{ok:reply.status>=200&&reply.status<300,status:reply.status,json:async()=>reply.data};};
   const navigator={sendBeacon:(url:string,body:Blob)=>{beacons.push({url,body});return beaconAccepted;}};
-  const RuntimeClass=new Function('i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
+  const RuntimeClass=new Function('StreamedLayoutValidationError','i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(StreamedLayoutValidationError,i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
   const runtime:Runtime=new RuntimeClass();
   const checkpoint={pending:false,capture:()=>17,acknowledge:(value:number)=>acknowledged.push(value)};
   Object.assign(runtime,{logs:[],persistenceReady:true,persistenceRevision:5,persistenceConflict:false,
