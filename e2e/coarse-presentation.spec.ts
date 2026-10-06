@@ -94,7 +94,7 @@ async function observeNativeFrames<T>(page:Page,info:TestInfo,action:()=>Promise
       // own that lifecycle, and an already-active native trace is left alone.
       await session.send('Tracing.start',{transferMode:'ReturnAsStream',streamFormat:'json',streamCompression:'none',
         traceConfig:{recordMode:'recordContinuously',traceBufferSizeInKb:8192,enableSampling:false,
-          includedCategories:['toplevel','devtools','devtools.timeline','cc','viz','gpu','gpu.capture','disabled-by-default-gpu.service']}});tracing=true;
+          includedCategories:['devtools','gpu.capture','viz','gpu']}});tracing=true;
     }catch(error){failure(error);}
     evidence.actionStartWallMs=Date.now();
     try{result=await action();}catch(error){failed=true;originalError=error;}
