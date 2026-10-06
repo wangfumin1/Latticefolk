@@ -100,6 +100,13 @@ test('already reached target sends no keyboard events',async()=>{
   const {result,events}=await replay({...actual,target:actual.start},100);assert.equal(result.reached,true);assert.equal(events.length,0);
 });
 
+for(const frameMs of [500,1000,1200])test(`tree approach retains a necessary short corner at ${frameMs}ms rendered steps`,async()=>{
+  const tree={id:'object:tree_apple_2',minX:13.306533680823483,maxX:14.693466319176517,minZ:.8068058550468388,maxZ:2.1931941449531616};
+  const {result,elapsed}=await replay({name:'tree approach',start:{x:13.6334,z:3.5467},target:{x:13.95,z:2.35},actors:[],
+    statics:[tree],diagnosticStatics:[tree],tolerance:.28,timeoutMs:12_000},frameMs);
+  assert.equal(result.reached,true,JSON.stringify(result));assert.ok(result.distance<=.28);assert.ok(elapsed<=12_000);
+});
+
 // Independent review's old-pass/new-fail static and grid-goal counterexamples.
 const staticFixtures:Fixture[]=[
   {name:'unobserved static prop',start:{x:-3,z:0},target:{x:3,z:0},actors:[],

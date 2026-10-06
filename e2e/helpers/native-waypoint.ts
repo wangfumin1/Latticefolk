@@ -70,7 +70,8 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       // same original tolerance. Check a near-boundary approach point as well.
       const radius=Math.max(0,tolerance-Math.min(.01,tolerance*.02));
       const approach=distance>0?{x:target.x+(p.x-target.x)*radius/distance,z:target.z+(p.z-target.z)*radius/distance}:target;
-      const endpoint=distance<=step+tolerance?[target,approach].find(goal=>{
+      const endpoint=distance<=step+tolerance?[target,{x:target.x,z:p.z},{x:p.x,z:target.z},approach].find(goal=>{
+        if(Math.hypot(goal.x-target.x,goal.z-target.z)>tolerance)return false;
         const corner={x:goal.x,z:p.z};
         return edgeClear(p,goal,0)&&edgeClear(p,corner,0)&&edgeClear(corner,goal,0);
       }):undefined;
@@ -182,7 +183,9 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(fallback&&Math.hypot(p.x-fallback.origin.x,p.z-fallback.origin.z)>=fallbackDistance){
         fallback=undefined;unchanged=0;record(p,'fallback-complete');
       }
-      while(waypoints.length&&Math.hypot(waypoints[0].x-p.x,waypoints[0].z-p.z)<.19){
+      // Retain short corners that still require an axis input. A radial .19 m
+      // shortcut can discard both approach points while outside the goal circle.
+      while(waypoints.length&&Math.max(Math.abs(waypoints[0].x-p.x),Math.abs(waypoints[0].z-p.z))<=.12){
         waypoints.shift();record(p,'waypoint');
       }
       const aim=waypoints[0]??target,dx=aim.x-p.x,dz=aim.z-p.z;

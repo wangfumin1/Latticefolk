@@ -412,6 +412,19 @@ class TownGame {
       [-32,6],[-31,12],[-30,-12],[-25,-29],[-14,30],[-7,-30],[14,30],[30,15],[31,4],
       [29,-14],[22,-30],[4,-31],[-14,-27],[-31,-24],[33,-4],[-3,33]
     ] as Array<[number,number]>) this.addTreeDecoration(x,z);
+
+    this.spawnAssetDecoration('bush',-16,1,1.0,.2);
+    this.spawnAssetDecoration('bush',16,-2,1.0,1.7);
+    this.spawnAssetDecoration('bush',-5,23,1.0,.7);
+    this.spawnAssetDecoration('rock',31,8,.8,.6);
+    this.spawnAssetDecoration('rock',-30,-8,.65,2.2);
+    this.spawnAssetDecoration('flowers',-4,-7,.85,.4);
+    this.spawnAssetDecoration('flowers',5,4,.8,2.3);
+    this.spawnAssetDecoration('axe',-20.8,6.5,.9,-.4);
+    this.spawnAssetDecoration('shovel',-22.8,-10.7,.9,.5);
+    this.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);
+    this.spawnAssetDecoration('barrel',10,-8.8,1.15,0);
+    this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
   }
 
   addBuilding(name:string,x:number,z:number,w:number,d:number,_color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
@@ -759,18 +772,6 @@ class TownGame {
     }));
     this.assetLoadFailures=loaded.flatMap((result,index)=>result.status==='rejected'?[assetEntries[index]![0]]:[]);
     for(const target of this.visualTargets)this.applyVisualTarget(target);
-    this.spawnAssetDecoration('bush',-16,1,1.0,.2);
-    this.spawnAssetDecoration('bush',16,-2,1.0,1.7);
-    this.spawnAssetDecoration('bush',-5,23,1.0,.7);
-    this.spawnAssetDecoration('rock',31,8,.8,.6);
-    this.spawnAssetDecoration('rock',-30,-8,.65,2.2);
-    this.spawnAssetDecoration('flowers',-4,-7,.85,.4);
-    this.spawnAssetDecoration('flowers',5,4,.8,2.3);
-    this.spawnAssetDecoration('axe',-20.8,6.5,.9,-.4);
-    this.spawnAssetDecoration('shovel',-22.8,-10.7,.9,.5);
-    this.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);
-    this.spawnAssetDecoration('barrel',10,-8.8,1.15,0);
-    this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
     this.assetsReady=this.assetLoadFailures.length===0;
     this.log(`视觉素材：Quaternius 已加载 ${assetEntries.length-this.assetLoadFailures.length}/${assetEntries.length}（Cube World + Ultimate Fantasy RTS + Medieval Village）`,'developer');
     if(this.assetLoadFailures.length)this.log(`素材加载失败：${this.assetLoadFailures.join(', ')}；对应对象保持不可见（禁止程序化 fallback）。`);
@@ -839,13 +840,18 @@ class TownGame {
   }
 
   spawnAssetDecoration(asset:string,x:number,z:number,height:number,rotationY=0) {
-    const tpl=this.assets.get(asset);if(!tpl)return;
-    const model=tpl.scene.clone(true);this.normalizeModel(model,height);model.rotation.y=rotationY;model.position.x=x;model.position.z=z;
     const state=this.decorationState(asset,x,z);
-    model.userData={entityType:'object',entityId:state.id};
-    this.scene.add(model);
-    this.objects.set(state.id,{state,mesh:model});
+    if(this.objects.has(state.id))return;
+    const group=new THREE.Group();group.position.set(x,0,z);
+    group.userData={entityType:'object',entityId:state.id};
+    this.scene.add(group);
+    this.objects.set(state.id,{state,mesh:group});
     this.registerWorldObjectPhysics(state);
+    this.attachVisualTarget({group,asset,height,rotationY,onResolved:model=>{
+      // These authored props historically place the model root at their semantic
+      // X/Z anchor after normalization. Keep that placement inside the stable group.
+      model.position.x=0;model.position.z=0;
+    }});
   }
 
   setNpcAnimation(agent:NpcRuntime,name:string) {
