@@ -24,6 +24,7 @@ import { CharacterSoles } from './scene/characterSoles';
 import { WildlifePresentation } from './scene/wildlifePresentation';
 import { WildlifeVisualRuntime } from './scene/wildlifeVisualRuntime';
 import { SunShadowView } from './scene/sunShadow';
+import { prepareWellGeometry } from './scene/wellPresentation';
 import { characterOverlay } from './scene/characterOverlay';
 import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
 import { stepNpcYield, type NpcYieldPlan } from './world/npcYield';
@@ -770,6 +771,7 @@ class TownGame {
       const assetUrl=file.startsWith('/')?file:`${this.assetRoot}/${file}`;
       if(file.toLowerCase().endsWith('.fbx')){
         const scene=await this.fbxLoader.loadAsync(assetUrl);
+        if(key==='wellAsset')prepareWellGeometry(scene);
         this.assets.set(key,{scene,animations:scene.animations||[]});
       }else{
         const gltf=await this.gltfLoader.loadAsync(assetUrl);
