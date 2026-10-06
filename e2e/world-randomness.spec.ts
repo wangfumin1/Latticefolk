@@ -64,7 +64,6 @@ test('world seed and a completed NPC event cursor survive browser autosave and r
   expect(received.snapshot.meta.randomness).toEqual(seed.meta.randomness);expect(received.snapshot.homeNpcs.find((n:NpcState)=>n.id==='yui').randomEventCursor).toBe(42);
   await startFirstPerson(page);await restoredCursor;const after=await autosave(page,request);
   expect(after.stored.meta.randomness).toEqual(seed.meta.randomness);expect(after.stored.homeNpcs.find(n=>n.id==='yui')).toMatchObject({randomEventCursor:42,money:123,inventory:maker.inventory});
-  await info.attach('seed-cursor-after-reload',{body:await page.screenshot(),contentType:'image/png'});
   await info.attach('seed-cursor-reload',{body:Buffer.from(JSON.stringify({before:{revision:before.revision,randomness:before.stored.meta.randomness,npc:before.stored.homeNpcs.find(n=>n.id==='yui')},after:{revision:after.revision,randomness:after.stored.meta.randomness,npc:after.stored.homeNpcs.find(n=>n.id==='yui')}})),contentType:'application/json'});
 });
 
@@ -94,7 +93,6 @@ test('initial world-load deadline starts a usable world but cannot overwrite its
     await expect(status(page)).toHaveAttribute('data-persistence-save-pending','true');
     await expect(status(page)).toHaveAttribute('data-persistence-load-blocked','true');
     await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
-    await info.attach('load-timeout-protected-world',{body:await page.screenshot(),contentType:'image/png'});
     await page.goto('about:blank');expect(writes).toHaveLength(0);const stored=await readWorld(request);
     expect(stored.revision).toBe(revision);expect(stored.snapshot.meta).toEqual(seed.meta);
     await info.attach('load-timeout-storage',{body:Buffer.from(JSON.stringify({getCount,browserWrites:writes.length,stored})),contentType:'application/json'});
@@ -129,7 +127,6 @@ test('late wildlife intent cannot mutate a rematerialized entity or consume its 
     const saved=await autosave(page,request);const current=saved.stored.fineChunks.find(f=>f.chunkId===chunk.id)!.wildlifeStates!.find(w=>w.id===rabbit.id)!;
     expect(current).toMatchObject({id:rabbit.id,randomEventCursor:17,currentAction:'rest'});
     expect(saved.snapshot.fineChunks.find(f=>f.chunkId===chunk.id)!.wildlifeStates!.find(w=>w.id===rabbit.id)).toMatchObject({randomEventCursor:17,currentAction:'rest'});
-    await info.attach('late-wildlife-rematerialized',{body:await page.screenshot(),contentType:'image/png'});
     await info.attach('late-wildlife-state',{body:Buffer.from(JSON.stringify({revision:saved.revision,state:current})),contentType:'application/json'});
   }finally{release();}
 });
