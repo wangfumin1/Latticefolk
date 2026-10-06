@@ -24,6 +24,7 @@ import { CharacterSoles } from './scene/characterSoles';
 import { WildlifePresentation } from './scene/wildlifePresentation';
 import { WildlifeVisualRuntime } from './scene/wildlifeVisualRuntime';
 import { SunShadowView } from './scene/sunShadow';
+import {GodCameraInput,isGodCameraInputKey,type GodCameraInputStep} from './scene/godCameraInput';
 import { prepareWellGeometry } from './scene/wellPresentation';
 import { characterOverlay } from './scene/characterOverlay';
 import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
@@ -248,6 +249,7 @@ class TownGame {
   interactionNetworkCache?: WildlifeInteractionNetwork;
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
+  readonly godCameraInput=new GodCameraInput();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
   minuteOfDay = 8*60 + 15;
   day = 1;
@@ -876,20 +878,25 @@ class TownGame {
     addEventListener('resize',()=>{ this.camera.aspect=innerWidth/innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(innerWidth,innerHeight); });
     addEventListener('keydown',(e)=>{
       const tag=(e.target as HTMLElement | null)?.tagName;
-      if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+      if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(e.target as HTMLElement|null)?.isContentEditable){this.resetGodCameraInput();return;}
       if(e.code==='Escape'&&this.interactionOpen){e.preventDefault();this.closeInteractionMenu(true);return;}
-      if (e.code==='Tab') { e.preventDefault(); ui.admin.classList.toggle('hidden'); return; }
+      if (e.code==='Tab') { e.preventDefault(); this.resetGodCameraInput();ui.admin.classList.toggle('hidden'); return; }
       if (e.code==='KeyG') { e.preventDefault(); this.toggleCameraMode(); return; }
       if (e.code==='KeyF' && this.cameraMode==='god') { this.focusSelected(); return; }
       if (e.code==='Space' && this.cameraMode==='god') { e.preventDefault(); this.focusTown(); return; }
       if (e.code==='KeyE' && this.cameraMode==='firstPerson') { this.interact(); return; }
+      if(this.cameraMode==='god'&&isGodCameraInputKey(e.code)){this.godCameraKey(e.code,true,e.repeat);return;}
       this.keys.add(e.code);
     });
-    addEventListener('keyup',(e)=>this.keys.delete(e.code));
+    addEventListener('keyup',(e)=>{this.keys.delete(e.code);if(this.cameraMode==='god'&&isGodCameraInputKey(e.code))this.godCameraKey(e.code,false);});
+    addEventListener('blur',()=>{this.keys.clear();this.resetGodCameraInput();});
+    addEventListener('focus',()=>this.resetGodCameraInput());
+    document.addEventListener('visibilitychange',()=>{this.keys.clear();this.resetGodCameraInput();});
+    document.addEventListener('focusin',()=>{if(!this.godCameraInputAllowed())this.resetGodCameraInput();});
     document.querySelector('#startBtn')!.addEventListener('click',()=>{this.cameraMode='firstPerson';this.controls.lock();});
     ui.modeBtn.addEventListener('click',()=>this.toggleCameraMode());
-    this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
-    this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
+    this.controls.addEventListener('lock',()=>{this.resetGodCameraInput();ui.overlay.classList.add('hidden');});
+    this.controls.addEventListener('unlock',()=>{this.keys.clear();this.resetGodCameraInput();if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
     document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
     ui.localeSelect.addEventListener('change',()=>this.changeLocale(ui.localeSelect.value));
     document.querySelectorAll<HTMLInputElement>('#jevBudgetPanel input').forEach(input=>input.addEventListener('input',()=>{this.budgetInputVersion++;}));
@@ -924,6 +931,7 @@ class TownGame {
 
   enterGodMode() {
     if(this.cameraMode==='god')return;
+    this.keys.clear();this.resetGodCameraInput();
     this.playerPosition={x:this.camera.position.x,z:this.camera.position.z};
     this.firstPersonRotation.copy(this.camera.rotation);
     this.cameraMode='god';
@@ -945,6 +953,7 @@ class TownGame {
 
   enterFirstPerson() {
     if(this.cameraMode==='firstPerson')return;
+    this.keys.clear();this.resetGodCameraInput();
     this.cameraMode='firstPerson';
     this.perceptionEpoch++;
     this.orbit.enabled=false;
@@ -1009,11 +1018,13 @@ class TownGame {
 
   focusTown() {
     if(this.cameraMode!=='god')return;
+    this.resetGodCameraInput();
     this.moveGodTarget(new THREE.Vector3(0,0,0),22);
   }
 
   focusSelected() {
     if(this.cameraMode!=='god'||!this.selectedEntity)return;
+    this.resetGodCameraInput();
     const p=this.entityPosition(this.selectedEntity);if(!p)return;
     this.moveGodTarget(new THREE.Vector3(p.x,0,p.z),11);
   }
@@ -1049,7 +1060,7 @@ class TownGame {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
     this.playerTravel=undefined;this.playerBlockedNpcs.clear();
-    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
+    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera();
     if(this.persistenceReady){
       this.updateTime(dt);
       this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt});
@@ -1058,9 +1069,7 @@ class TownGame {
       this.updateWildlife(dt);
       if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
     }
-    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
-    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
-    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
+    this.updateCameraShadow();
     this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
@@ -1143,23 +1152,53 @@ class TownGame {
     this.persistenceSaveQueued=false;
   }
 
-  updateGodCamera(dt:number) {
+  resetGodCameraInput(){this.godCameraInput.reset();}
+
+  godCameraInputAllowed() {
+    const active=document.activeElement as HTMLElement|null;
+    return this.cameraMode==='god'&&!this.controls.isLocked&&!document.hidden&&document.hasFocus()&&!this.interactionOpen&&
+      ui.admin.classList.contains('hidden')&&ui.overlay.classList.contains('hidden')&&
+      !active?.matches('input,textarea,select')&&!active?.isContentEditable;
+  }
+
+  godCameraKey(code:string,down:boolean,repeat=false) {
+    if(!this.godCameraInputAllowed()){this.resetGodCameraInput();return;}
+    const step=this.godCameraInput.edge(code,down,now(),repeat);
+    if(!step)return;
+    this.orbit.update();this.applyGodCameraInput(step);this.orbit.update();
+    this.updateCameraShadow();this.updateUi();
+  }
+
+  updateCameraShadow() {
+    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
+    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
+    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
+  }
+
+  updateGodCamera() {
     this.orbit.update();
-    let f=0,r=0;if(this.keys.has('KeyW'))f+=1;if(this.keys.has('KeyS'))f-=1;if(this.keys.has('KeyD'))r+=1;if(this.keys.has('KeyA'))r-=1;
-    const speed=(this.keys.has('ShiftLeft')?20:11)*dt;
-    if(f||r){
-      const forward=this.orbit.target.clone().sub(this.camera.position);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
-      const right=new THREE.Vector3(-forward.z,0,forward.x);const move=forward.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
-      const old=this.orbit.target.clone();this.orbit.target.add(move);
-      const bounds=this.coarseWorld.activeBounds();
-      this.orbit.target.x=clamp(this.orbit.target.x,bounds.minX,bounds.maxX);
-      this.orbit.target.z=clamp(this.orbit.target.z,bounds.minZ,bounds.maxZ);
-      const actual=this.orbit.target.clone().sub(old);this.camera.position.add(actual);
-    }
-    const spin=(this.keys.has('KeyQ')?1:0)-(this.keys.has('KeyE')?1:0);
-    if(spin){const off=this.camera.position.clone().sub(this.orbit.target);off.applyAxisAngle(new THREE.Vector3(0,1,0),spin*dt*1.35);this.camera.position.copy(this.orbit.target).add(off);}
+    if(!this.godCameraInputAllowed())this.resetGodCameraInput();
+    else{const step=this.godCameraInput.consume(now());if(step)this.applyGodCameraInput(step);}
     this.orbit.update();
     // Do not materialize a player avatar while observing from god mode.
+  }
+
+  applyGodCameraInput({seconds,forward:f,right:r,spin,sprint}:GodCameraInputStep) {
+    // Keep the existing maximum camera integration step when pan and spin combine.
+    for(let elapsed=0;elapsed<seconds;elapsed+=.05){
+      const dt=Math.min(.05,seconds-elapsed);
+      const speed=(sprint?20:11)*dt;
+      if(f||r){
+        const forward=this.orbit.target.clone().sub(this.camera.position);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
+        const right=new THREE.Vector3(-forward.z,0,forward.x);const move=forward.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
+        const old=this.orbit.target.clone();this.orbit.target.add(move);
+        const bounds=this.coarseWorld.activeBounds();
+        this.orbit.target.x=clamp(this.orbit.target.x,bounds.minX,bounds.maxX);
+        this.orbit.target.z=clamp(this.orbit.target.z,bounds.minZ,bounds.maxZ);
+        const actual=this.orbit.target.clone().sub(old);this.camera.position.add(actual);
+      }
+      if(spin){const off=this.camera.position.clone().sub(this.orbit.target);off.applyAxisAngle(new THREE.Vector3(0,1,0),spin*dt*1.35);this.camera.position.copy(this.orbit.target).add(off);}
+    }
   }
 
 
@@ -3335,6 +3374,7 @@ class TownGame {
   }
 
   openWildlifeInteractionMenu(animal:WildlifeRuntime) {
+    this.resetGodCameraInput();
     const state=animal.state;
     state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     const domestication=state.domestication!;
@@ -3430,6 +3470,7 @@ class TownGame {
   }
 
   openInteractionMenu(o:RuntimeObject,actions:InteractionCapability[]) {
+    this.resetGodCameraInput();
     this.interactionOpen=true;
     this.interactionObjectId=o.state.id;
     this.interactionWildlifeId=undefined;
@@ -3453,6 +3494,7 @@ class TownGame {
   }
 
   closeInteractionMenu(relock=false) {
+    this.resetGodCameraInput();
     ui.interaction.classList.add('hidden');
     this.interactionOpen=false;
     this.interactionObjectId=undefined;

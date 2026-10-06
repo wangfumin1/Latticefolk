@@ -6,6 +6,7 @@ import ts from 'typescript';
 import * as THREE from 'three';
 import {I18n,SUPPORTED_LOCALES} from '../src/i18n.js';
 import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
+import {GodCameraInput} from '../src/scene/godCameraInput.js';
 import {visibleHudLogs} from '../src/ui/hudDiagnostics.js';
 import {worldObjectRigidBody} from '../src/world/movablePhysics.js';
 import {isBakingOven,BAKING_OVEN_ASSET} from '../src/scene/bakingOven.js';
@@ -25,7 +26,7 @@ function visit(n:ts.Node){
  ts.forEachChild(n,visit);
 }visit(ast);
 const transpile=(s:string)=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
-const wanted=['bindInput','changeLocale','refreshInteractionLabels','openInteractionMenu','openWildlifeInteractionMenu','closeInteractionMenu','updatePrompt','interactionLabel','objectDisplayName','parcelLabel','itemName','wildlifeName','playerTalk','npcTalkPlayerAuto','npcConversation','actor','applyRelation','importDialogue','updateUi','renderEvolutionPanel','renderInteractionNetworkEvidence','escape','updateLocalizedUi','renderBudget','applyBudgetFromUi','applyBudgetPreset','refreshHealth'];
+const wanted=['resetGodCameraInput','godCameraInputAllowed','bindInput','changeLocale','refreshInteractionLabels','openInteractionMenu','openWildlifeInteractionMenu','closeInteractionMenu','updatePrompt','interactionLabel','objectDisplayName','parcelLabel','itemName','wildlifeName','playerTalk','npcTalkPlayerAuto','npcConversation','actor','applyRelation','importDialogue','updateUi','renderEvolutionPanel','renderInteractionNetworkEvidence','escape','updateLocalizedUi','renderBudget','applyBudgetFromUi','applyBudgetPreset','refreshHealth'];
 const code=transpile(`return class Runtime {${wanted.map(k=>{assert.ok(methods.has(k),k);return methods.get(k);}).join('\n')}}`);
 function fixture(initial='en',fullUi=false,actualBudget=false){
  const i18n=new I18n(initial),html=new Function('i18n','SUPPORTED_LOCALES',`return ${template}`)(i18n,SUPPORTED_LOCALES);
@@ -38,7 +39,7 @@ function fixture(initial='en',fullUi=false,actualBudget=false){
  const canvas=document.createElement('canvas');document.querySelector('#game')!.append(canvas);
  const clockFragment=methods.get('updateLocalizedUi')!.split('    ui.clock.textContent=')[1].split('    const entity=')[0];
  const renderClock=new Function('ui','i18n',transpile(`return function(){ui.clock.textContent=${clockFragment}}`))(ui,i18n);
- Object.assign(r,{locale:i18n.locale,cameraMode:'firstPerson',aiPaused:false,perceptionEpoch:17,keys:new Set(),interactionOpen:false,
+ Object.assign(r,{locale:i18n.locale,cameraMode:'firstPerson',aiPaused:false,perceptionEpoch:17,keys:new Set(),godCameraInput:new GodCameraInput(),interactionOpen:false,
   playerPosition:{x:5,z:4},playerInventory:{coin:12,bread:2},day:3,weather:'clear',selectedEntity:{type:'object',id:'well'},hoverEntity:undefined,
   npcs:new Map(),wildlife:new Map(),objects:new Map(),renderer:{domElement:canvas},camera:{position:new THREE.Vector3(5,1.7,4)},orbit:{enabled:false},
   controls:{isLocked:false,addEventListener(){},lock(){locks++;this.isLocked=true;},unlock(){unlocks++;this.isLocked=false;}},
