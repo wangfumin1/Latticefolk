@@ -1,3 +1,9 @@
+import * as actorActivation from '../src/world/actorActivation.js';
+import * as actorPlacement from '../src/world/actorPlacement.js';
+import * as actorBounds from '../src/scene/actorSpawnBounds.js';
+import {sourceGltf} from './helpers/source-gltf.js';
+import {SPAWN_SOURCE_GEOMETRY} from '../src/scene/spawnSourceGeometry.js';
+import {normalizeBakingOven} from '../scripts/lib/baking-oven-assets.mjs';
 import * as actorGeneration from '../src/world/actorGeneration.js';
 import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
@@ -34,7 +40,8 @@ const {JSDOM}=createRequire(import.meta.url)('jsdom');
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
 const names=new Set(['createFineNpcVisual','spawnFineNpc','syncKnownActorPresentation','tryPushMovableObject','createStreamedObject','syncStreamedPresentation','updateFineChunkMaterialization','materializeFineChunk','collapseFineChunk',
-  'updateObjects','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','fineWorkplaceForRole','fineSpawnPosition','fineMetrics','buildWorldSnapshot','buildFinalWorldSnapshot','restoreWorldState','initializePersistence',
+  'updateObjects','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','fineWorkplaceForRole','firstActorContact','fineMetrics','buildWorldSnapshot','buildFinalWorldSnapshot','restoreWorldState','initializePersistence',
+  'addTreeDecoration','syncStaticObjectCollider','applyVisualTarget','normalizeModel','physicsDynamicColliders','wildlifePhysicsRadius',
   'addBuilding','buildingInteractionProfile','addObject','addAssetObject','addFarmPlotObject','semanticAssetSpec','registerWorldObjectPhysics','defaultCapabilities']);
 const members:string[]=[];
 for(const n of ast.statements)if(ts.isClassDeclaration(n)&&n.name?.text==='TownGame')for(const m of n.members){
@@ -45,7 +52,7 @@ const code=ts.transpileModule(`return class Runtime {objects=new Map();${members
 function fixture(snapshot:WorldPersistenceSnapshot|null=null,realActors=false){
   const io={snapshot,gets:0,writes:0,beacons:0,epoch:Date.now(),store:undefined as WorldPersistence|undefined,writeGate:undefined as Promise<void>|undefined};
   const document=new JSDOM('<div id="speech"></div>').window.document;
-  const deps={...actorGeneration,...worldRandom,document,ui:{speechLayer:document.querySelector('#speech')},StreamedActors,Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
+  const deps={...actorActivation,...actorPlacement,...actorBounds,...actorGeneration,...worldRandom,document,ui:{speechLayer:document.querySelector('#speech')},StreamedActors,Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
     clamp:(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x)),now:()=>1000,i18n:{t:(key:string)=>key},fetch:async(_url:string,init?:{method?:string;body?:string})=>{
       if(init?.method==='POST'){io.writes++;const data=JSON.parse(init.body!);if(io.writeGate)await io.writeGate;const saved=io.store!.save(data.snapshot,data.expectedRevision);return{ok:true,status:200,json:async()=>saved};}
       io.gets++;return{ok:true,json:async()=>({revision:io.store?.revision()??3,snapshot:io.store?.load()??io.snapshot})};
@@ -119,6 +126,20 @@ test('god camera observation cannot discover more units or seize coarse ownershi
   const {r}=fixture();await r.initializePersistence();const layoutsBefore=layouts.layoutIdentity(r.streamedLayouts.snapshot()),count=r.coarseWorld.chunks.size;
   r.cameraMode='god';r.camera.position.set(480,100,480);r.updateFineChunkMaterialization();
   assert.equal(r.coarseWorld.chunks.size,count);assert.equal(layouts.layoutIdentity(r.streamedLayouts.snapshot()),layoutsBefore);assert.equal(r.coarseWorld.materialized.size,0);
+});
+
+for(const marker of [undefined,1])test(`${marker===undefined?'legacy missing':'v1'} generation marker never regenerates saved actors or explicit empty activation`,async()=>{
+  const first=fixture();await first.r.initializePersistence();
+  const snapshot=json(first.r.buildWorldSnapshot());snapshot.meta.actorGenerationVersion=marker;snapshot.meta.playerPosition={x:48,z:0};
+  const saved={id:'chunk_2_0_npc_02',chunkId:'chunk_2_0',name:'Saved resident',role:'resident',position:{x:43.90367976010826,z:2.4629100225198437},home:{x:43.90367976010826,z:2.4629100225198437},
+    mood:'calm',hunger:3,energy:80,social:50,money:987,inventory:[{kind:'wood',count:7}],relationships:{},memories:[],currentAction:'idle',goal:'Saved goal',lastDecisionAt:11,randomEventCursor:37};
+  const row=snapshot.fineChunks.find((c:any)=>c.chunkId==='chunk_2_0');row.dynamicActivated=true;row.npcStates=[saved];row.wildlifeStates=[];
+  snapshot.coarseChunks.find((c:any)=>c.id==='chunk_2_0').population=0;
+  const restored=fixture(snapshot);restored.r.physics.isBlocked=()=>true;await restored.r.initializePersistence();
+  assert.equal(restored.r.persistenceLoadBlocked,false);assert.deepEqual(restored.r.npcs.get(saved.id).state,saved);
+  row.dynamicActivated=true;row.npcStates=[];snapshot.coarseChunks.find((c:any)=>c.id==='chunk_2_0').population=40;
+  const empty=fixture(snapshot);await empty.r.initializePersistence();assert.equal(empty.r.materializedChunks.get('chunk_2_0').npcIds.length,0);
+  assert.equal(empty.r.buildWorldSnapshot().meta.actorGenerationVersion,1);
 });
 
 test('crossing beyond the visible window releases visuals and recreates only the saved layout on return',async()=>{
@@ -254,13 +275,58 @@ test('fresh residents clear the saved player while cached residents retain their
   }
 });
 
-test('a bounded new-resident spawn failure reaches the streaming write protection instead of persisting a missing population',async()=>{
+test('a blocked founding batch remains unactivated through save and can retry at the same player position',async()=>{
   const f=fixture(),snapshot=json(f.r.buildWorldSnapshot());snapshot.meta.playerPosition={x:48,z:0};
   snapshot.coarseChunks=units.streamedUnitOwnerCells(1,0).map(owner=>({...owner,biome:'plains',settlementLevel:1,population:12,
     food:65,wood:50,water:60,ecology:55,danger:10,prosperity:65,strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:0,wildlife:[]}));
-  f.io.snapshot=snapshot;f.r.physics.isBlocked=()=>true;await f.r.initializePersistence();
-  assert.match(f.r.streamedLayoutError,/No clear NPC spawn/);assert.equal(f.r.persistenceLoadBlocked,true);assert.equal(f.r.npcs.size,0);
-  await f.r.saveWorldState();f.r.flushWorldBeacon();assert.equal(f.io.writes,0);assert.equal(f.io.beacons,0);
+  f.io.snapshot=snapshot;const query=f.r.physics.isBlocked.bind(f.r.physics);f.r.physics.isBlocked=()=>true;
+  await f.r.initializePersistence();
+  assert.equal(f.r.streamedLayoutError,undefined);assert.equal(f.r.persistenceLoadBlocked,false);assert.equal(f.r.npcs.size,0);
+  assert.equal(f.r.activeFineChunkId,undefined);assert.equal(f.r.materializedChunks.size,0);assert.equal(f.r.coarseWorld.materialized.size,0);
+  assert.equal(f.r.wildlifeLineage.size,0);assert.equal(f.r.fineChunkCache.get('chunk_2_0').dynamicActivated,false);
+  const blockedOwner=f.r.coarseWorld.chunks.get('chunk_2_0'),food=blockedOwner.food;
+  Object.assign(f.r.coarseWorld,{nextDecisionAt:Infinity,nextRegionDecisionAt:Infinity,nextWorldDecisionAt:Infinity});
+  f.r.coarseWorld.update({dt:1,weather:'clear',day:1});assert.notEqual(blockedOwner.food,food);
+  const blocked=json(f.r.buildWorldSnapshot()),compact=json(f.r.buildFinalWorldSnapshot());
+  assert.equal(blocked.fineChunks.find((c:any)=>c.chunkId==='chunk_2_0').dynamicActivated,false);assert.deepEqual(compact.fineChunks,[]);
+  const store=new WorldPersistence(':memory:');try{
+    store.save(blocked,0);store.save(compact,1);
+    assert.equal(store.load()!.fineChunks.find(c=>c.chunkId==='chunk_2_0')!.dynamicActivated,false);
+  }finally{store.close();}
+  f.r.updateFineChunkMaterialization();assert.equal(f.r.materializedChunks.size,0);
+  for(const cell of f.r.coarseWorld.chunks.values())cell.wildlife=[];
+  f.r.physics.isBlocked=query;f.r.updateFineChunkMaterialization();
+  assert.equal(f.r.activeFineChunkId,'chunk_2_0');assert.equal(f.r.npcs.size,9);assert.equal(f.r.coarseWorld.materialized.size,1);
+});
+
+test('spawn reservations cover decorative trees, inactive owners, effective specs and restored home transforms',async()=>{
+  const {r}=fixture();await r.initializePersistence();r.assets=new Map();
+  const count=r.visualTargets.filter((target:any)=>target.spawnCollider).length;
+  r.addTreeDecoration(-32,6);assert.equal(r.objects.has('tree-decoration:-32:6'),false);
+  assert.equal(r.visualTargets.filter((target:any)=>target.spawnCollider).length,count+1);
+  assert.ok(r.firstActorContact().static.some((box:any)=>box.id==='tree-decoration:-32:6'));
+  assert.ok(r.visualTargets.some((target:any)=>target.spawnCollider?.chunkId==='unit_1_0'));
+  assert.equal(r.coarseWorld.materialized.size,0);
+  for(const [kind,tags,asset] of [['bench',[],'benchAsset'],['bed',[],'bedAsset'],['food_stall',[],'stallAsset'],
+    ['workstation',['guard'],'weaponStandAsset'],['workstation',['maker'],'workbenchAsset'],['workstation',['baker'],'bakingOvenAsset']] as const){
+    const id=asset==='bakingOvenAsset'?'bakery':`saved_${asset}`;
+    r.addObject({id,kind,name:id,position:{x:0,z:10},tags:[...tags],usable:true,pickupable:false});
+    const target=r.visualTargets.find((target:any)=>target.group===r.objects.get(id).mesh);
+    assert.equal(target.asset,asset);assert.ok(target.spawnCollider);
+    const snapshot=json(r.buildWorldSnapshot()),saved=snapshot.homeObjects.find((o:any)=>o.id===id);saved.position={x:20,z:15};
+    r.restoreWorldState(snapshot);assert.deepEqual(r.objects.get(id).state.position,saved.position);
+    const before=r.firstActorContact().static.filter((box:any)=>box.id===`object:${id}`);
+    assert.ok(before.some((box:any)=>box.minX<=0&&box.maxX>=0),'retain the old source collider until its late replacement');
+    const profile=SPAWN_SOURCE_GEOMETRY[asset];
+    r.assets.set(asset,await sourceGltf(profile.source.replace('public/assets/',''),asset==='bakingOvenAsset'?normalizeBakingOven:undefined));
+    r.applyVisualTarget(target);
+    assert.deepEqual(r.firstActorContact().static.filter((box:any)=>box.id===`object:${id}`),before);
+    assert.equal(r.coarseWorld.materialized.size,0);
+  }
+  r.addObject({id:'non_sync_override',kind:'bench',name:'Override',position:{x:25,z:25},tags:[],usable:true,pickupable:false},'benchAsset',.82);
+  assert.equal(r.visualTargets.find((t:any)=>t.group===r.objects.get('non_sync_override').mesh).spawnCollider,undefined);
+  const cachedCart={id:'unattached_cart',kind:'cart',name:'Cart',position:{x:30,z:30},tags:[],usable:true,pickupable:false,rigidBodyArchetype:'cart'};
+  assert.ok(r.firstActorContact([cachedCart]).dynamic.some((body:any)=>body.id==='object:unattached_cart'&&body.radius===1.05));
 });
 
 test('known NPC visuals remain across 24m ownership changes while fine simulation stays local',async()=>{

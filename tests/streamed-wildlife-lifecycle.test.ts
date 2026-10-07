@@ -1,4 +1,6 @@
 import * as worldRandom from '../src/world/worldRandom.js';
+import {pendingEntryPosition} from '../src/world/actorPlacement.js';
+import {ItemTransferCheckpoint} from '../src/world/portableObjects.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -16,12 +18,13 @@ assert.equal(members.length,names.size);
 const code=ts.transpileModule(`return class Runtime {${members.join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const fine=(chunkId:string)=>({chunkId,wildlifeIds:[] as string[],initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map(),initialWildlifeCounts:{} as Record<string,number>,groups:[]});
 function fixture(){
- const deps={...worldRandom,THREE,clamp:(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n)),...migration,normalizeWildlifePhenotype,wildlifeFunctionalPhenotype,normalizeWildlifeOrganismGenome,normalizeWildlifeDomestication,now:()=>1000,i18n:{t:(x:string)=>x}};
+ const deps={...worldRandom,pendingEntryPosition,THREE,clamp:(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n)),...migration,normalizeWildlifePhenotype,wildlifeFunctionalPhenotype,normalizeWildlifeOrganismGenome,normalizeWildlifeDomestication,now:()=>1000,i18n:{t:(x:string)=>x}};
  const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps)),r=new Runtime();
  const source={id:'chunk_2_0',cx:2,cz:0,biome:'plains',wildlife:[{species:'sheep',count:10,carryingCapacity:20,diseaseLoad:0}]};
  const target={id:'chunk_3_0',cx:3,cz:0,biome:'plains',wildlife:[{species:'sheep',count:2,carryingCapacity:20,diseaseLoad:0}]};
  const releases:string[]=[],bindings=new Map();
  Object.assign(r,{randomness:worldRandom.readWorldRandomness(undefined),scene:new THREE.Scene(),day:1,minuteOfDay:495,lineageEpoch:0,wildlife:new Map(),wildlifeTransfers:new Map(),wildlifeLineage:new Map(),materializedChunks:new Map([[source.id,fine(source.id)]]),
+  portables:{checkpoint:new ItemTransferCheckpoint()},firstActorContact:()=>({blocked:()=>false,static:[],dynamic:[]}),
   coarseWorld:{chunks:new Map([[source.id,source],[target.id,target]])},groundHeightAt:()=>0,makeProceduralAnimal:()=>new THREE.Group(),
   beginWildlifeHabitatObservation(){},endWildlifeHabitatObservation(){},recordWildlifeHabitatExposure(){},wildlifeHabitatSnapshot:()=>({}),
   ensureWildlifeLineage(s:any){let record=this.wildlifeLineage.get(s.id);if(!record){record={entityId:s.id,species:s.species};this.wildlifeLineage.set(s.id,record);}return record;},

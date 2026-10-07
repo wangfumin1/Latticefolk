@@ -1,3 +1,12 @@
+import {WorldPersistence} from '../server/worldPersistence.js';
+import os from 'node:os';
+import path from 'node:path';
+import * as units from '../src/world/streamedUnits.js';
+import {worldObjectRigidBody} from '../src/world/movablePhysics.js';
+import {ItemTransferCheckpoint} from '../src/world/portableObjects.js';
+import * as actorActivation from '../src/world/actorActivation.js';
+import * as actorPlacement from '../src/world/actorPlacement.js';
+import * as actorBounds from '../src/scene/actorSpawnBounds.js';
 import * as actorGeneration from '../src/world/actorGeneration.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +27,7 @@ import {restoredPlayerPosition} from '../src/world/portableObjects.js';
 import {restoreBuildingForLayout} from '../src/world/buildingRestore.js';
 import * as layouts from '../src/world/streamedLayouts.js';
 import {StreamedActors} from '../src/scene/streamedActors.js';
-import {playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
+import {playerHeadClearance,PLAYER_BODY_RADIUS,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
 import {isGodCameraInputKey} from '../src/scene/godCameraInput.js';
 import {isBakingOven} from '../src/scene/bakingOven.js';
 import type {DecisionResponse,NpcState,WildlifeState,WorldPersistenceSnapshot} from '../src/types.js';
@@ -26,7 +35,7 @@ import type {DecisionResponse,NpcState,WildlifeState,WorldPersistenceSnapshot} f
 // Run the production methods; presentation and external IO are the only stubs.
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const wanted=new Set(['createFineNpcVisual','createWildlifeVisual','fineSpawnPosition','fineWorkplaceForRole','clearMovablePersistenceQueue','bindInput','initializePersistence','initializeWorld','setupNpcs','materializeFineChunk','spawnFineNpc','spawnWildlife','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','flushWorldBeacon','saveWorldState','cancelPlayerTargeting','requestDecision','applyDecision','applyStateShift','npcWork','npcHarvest','completeTask','randomPassableNear','requestWildlifeBatch','applyWildlifeDecision','completeWildlifeAction','applyOwnedWildlifeCommand','materializePendingWildlifeTransfers','collapseFineChunk','completeFineWildlifeMigration','updateTime']);
+const wanted=new Set(['updateFineChunkMaterialization','createFineNpcVisual','createWildlifeVisual','firstActorContact','physicsDynamicColliders','wildlifePhysicsRadius','fineWorkplaceForRole','clearMovablePersistenceQueue','bindInput','initializePersistence','initializeWorld','setupNpcs','materializeFineChunk','spawnFineNpc','spawnWildlife','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','flushWorldBeacon','saveWorldState','cancelPlayerTargeting','requestDecision','applyDecision','applyStateShift','npcWork','npcHarvest','completeTask','randomPassableNear','requestWildlifeBatch','applyWildlifeDecision','completeWildlifeAction','applyOwnedWildlifeCommand','materializePendingWildlifeTransfers','collapseFineChunk','completeFineWildlifeMigration','updateTime']);
 const members:string[]=[];
 for(const node of ast.statements)if(ts.isClassDeclaration(node)&&node.name?.text==='TownGame')for(const member of node.members)if(ts.isMethodDeclaration(member)&&wanted.has(member.name.getText(ast)))members.push(member.getText(ast));
 assert.equal(members.length,wanted.size);
@@ -39,26 +48,26 @@ const npcRuntime=(state=npc())=>({state,mesh:new THREE.Group(),characterAsset:'f
 const animalRuntime=(state=wildlife())=>({state,mesh:new THREE.Group(),path:[],pathIndex:0,nextDecisionAt:0,actionResolved:false});
 const chunkRuntime=(chunkId:string)=>({chunkId,npcIds:[] as string[],objectIds:[] as string[],wildlifeIds:[] as string[],initialWildlifeCounts:{},initialWildlifeIds:new Set(),fixedWildlifeWeights:new Map(),groups:[],initialMetrics:metrics()});
 function fixture(seed=random.DEFAULT_WORLD_SEED){
-  const io={clock:1000,snapshot:null as WorldPersistenceSnapshot|null,requests:[] as string[],beacons:[] as Blob[],reply:null as any,wait:undefined as Promise<any>|undefined,failed:false,logs:[] as string[],signals:[] as AbortSignal[],timers:new Map<number,{callback:()=>void;delay:number}>(),nextTimer:0};
+  const io={clock:1000,snapshot:null as WorldPersistenceSnapshot|null,requests:[] as string[],beacons:[] as Blob[],reply:null as any,wait:undefined as Promise<any>|undefined,failed:false,logs:[] as string[],signals:[] as AbortSignal[],timers:new Map<number,{callback:()=>void;delay:number}>(),nextTimer:0,save:undefined as undefined|((envelope:any)=>Promise<any>)};
   const input=new EventTarget(),elements=new Map<string,EventTarget>();
   const element=(selector:string)=>{let target=elements.get(selector);if(!target){target=new EventTarget();elements.set(selector,target);}return target;};
   const hidden=new Set<string>();const overlay={classList:{add:(name:string)=>hidden.add(name),remove:(name:string)=>hidden.delete(name)}};
   const controls=Object.assign(new EventTarget(),{isLocked:false,lock(this:EventTarget&{isLocked:boolean}){this.isLocked=true;this.dispatchEvent(new Event('lock'));}});
   const math=Object.create(Math);math.random=()=>{throw new Error('ambient Math.random');};
-  const fetch=async(url:string,init?:RequestInit)=>{io.requests.push(url);if(init?.signal)io.signals.push(init.signal);if(io.failed)throw Error('offline');if(io.wait)return io.wait;return {ok:true,json:async()=>url==='/api/world/state'?{snapshot:io.snapshot,revision:4}:io.reply};};
-  const deps={...actorGeneration,...layouts,StreamedActors,playerHeadClearance,NPC_BODY_RADIUS,isGodCameraInputKey,...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
+  const fetch=async(url:string,init?:RequestInit)=>{io.requests.push(url);if(init?.method==='POST'&&io.save)return io.save(JSON.parse(String(init.body)));if(init?.signal)io.signals.push(init.signal);if(io.failed)throw Error('offline');if(io.wait)return io.wait;return {ok:true,json:async()=>url==='/api/world/state'?{snapshot:io.snapshot,revision:4}:io.reply};};
+  const deps={...actorActivation,...actorPlacement,...actorBounds,...units,worldObjectRigidBody,...actorGeneration,...layouts,StreamedActors,playerHeadClearance,PLAYER_BODY_RADIUS,NPC_BODY_RADIUS,isGodCameraInputKey,...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
     setTimeout:(callback:()=>void,delay:number)=>{const id=++io.nextTimer;io.timers.set(id,{callback,delay});return id;},clearTimeout:(id:number)=>io.timers.delete(id),
     now:()=>io.clock,Date:{now:()=>2000},clamp:(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n)),dist:(a:any,b:any)=>Math.hypot(a.x-b.x,a.z-b.z),fetch,
     i18n:{t:(key:string,values?:{error?:string})=>values?.error?`${key}: ${values.error}`:key},navigator:{sendBeacon:(_url:string,body:Blob)=>{io.beacons.push(body);return true;}},
     window:{clearTimeout:(id:number)=>io.timers.delete(id)},document:{addEventListener:input.addEventListener.bind(input),createElement:()=>({className:'',remove(){},classList:{add(){}}}),querySelector:element,querySelectorAll:()=>[]},addEventListener:input.addEventListener.bind(input),ui:{speechLayer:{appendChild(){}},modeBtn:element('mode'),localeSelect:element('locale'),overlay}};
   const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps));const runtime=new Runtime() as Record<string,any>;
   Object.assign(runtime,{streamedLayouts:new layouts.StreamedLayoutRegistry(seed),streamedNpcs:new StreamedActors<any>(a=>a.mesh.removeFromParent()),streamedWildlife:new StreamedActors<any>(a=>a.mesh.removeFromParent()),
-    streamedPresentation:{activate:()=>[],deactivate(){},has:()=>false},resetGodCameraInput(){},keys:new Set(),controls,renderer:{domElement:element('canvas')},randomness:{version:1,seed},scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},day:4,minuteOfDay:800,weather:'cloudy',weatherEpoch:2,
+    streamedPresentation:{objects:()=>[],activate:()=>[],deactivate(){},has:()=>false},resetGodCameraInput(){},keys:new Set(),controls,renderer:{domElement:element('canvas')},randomness:{version:1,seed},scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},day:4,minuteOfDay:800,weather:'cloudy',weatherEpoch:2,
     playerPosition:{x:0,z:7},playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0},cameraMode:'firstPerson',perceptionEpoch:0,inFlight:0,
     npcs:new Map(),wildlife:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,visualTargets:[],physics:new FinePhysicsAuthority(),
     coarseWorld:{chunks:new Map(),chunkSize:24,restoreKnownChunks(){},ensureWindowAround(){},setMaterialized(){},applyFineSummary(){},chunkAtWorld(){return undefined;}},
     persistenceReady:true,persistenceConflict:false,persistenceLoadBlocked:false,persistenceRevision:4,persistenceSaveInFlight:false,persistenceSaveQueued:false,
-    portables:{checkpoint:{pending:false,capture:()=>0,acknowledge(){}},restoreHome:()=>false,restoreFine(){}},
+    portables:{checkpoint:new ItemTransferCheckpoint(),restoreHome:()=>false,restoreFine(){}},
     wildlifePresentation:{register(){},remove(){},rebind:()=>false},groundHeightAt:()=>0,setupWorld(){},updateFineChunkMaterialization(){},attachVisualTarget(){},alignNpcVisualToGround(){},reconcileLineageOffspring(){},fineMetrics:metrics,
     beginWildlifeHabitatObservation(){},endWildlifeHabitatObservation(){},flushWildlifeHabitatExposure(){},makeProceduralAnimal:()=>new THREE.Group(),
     event(){},log(text:string){io.logs.push(text);},say(){},toast(){},remember(){},playActivity(){},planNpcObjectPath(){},scheduleMovablePersistence(){},gameTimeText:()=>'',wildlifeName:(s:string)=>s,findPath:(_p:any,target:any)=>[{...target}],
@@ -70,14 +79,120 @@ function fixture(seed=random.DEFAULT_WORLD_SEED){
   });
   return{runtime,io,input,elements,hidden};
 }
+function establishActorLayout(r:any,chunk:any){
+  const unit=units.streamedUnitForCoarseCell(chunk.cx,chunk.cz);
+  const cells=units.streamedUnitOwnerCells(unit.ux,unit.uz).map(cell=>r.coarseWorld.ensureChunk(cell.cx,cell.cz));
+  r.streamedLayouts.establish(unit.ux,unit.uz,cells,[]);
+}
 const stableState=(state:any)=>JSON.parse(JSON.stringify(state));
+
+function pendingCheckpointFixture(legacy=false){
+  const f=fixture(),r=f.runtime;
+  const chunk={id:'chunk_3_0',cx:3,cz:0,biome:'plains',settlementLevel:0,population:0,food:70,wood:50,water:70,ecology:70,danger:20,prosperity:30,
+    strategy:'sustain',migrationPolicy:'retain',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:0,wildlife:[{species:'sheep',count:4,carryingCapacity:10,health:80}]};
+  const state=wildlife({id:'pending-sheep',species:'sheep',chunkId:chunk.id,position:{x:72,z:0},representedPopulation:1,randomEventCursor:17});
+  const transfer={entityId:state.id,state,fromChunkId:'chunk_2_0',toChunkId:chunk.id,representedPopulation:1,transferredDay:4};
+  r.coarseWorld.chunks.set(chunk.id,chunk);r.wildlifeTransfers.set(state.id,transfer);
+  r.wildlifeLineage.set(state.id,{entityId:state.id,species:'sheep',birthDay:1,generation:0,birthChunk:'chunk_2_0',traitsAtBirth:{...state.traits},origin:'founder',offspringCount:0,reproductiveSuccess:false});
+  const crate={id:'saved-crate',chunkId:chunk.id,kind:'crate',name:'Crate',position:{x:73,z:2},tags:['storage'],usable:true,pickupable:false,storage:[{kind:'grain',count:11}]};
+  const resident=npc({id:'old-resident',chunkId:chunk.id,position:{x:68,z:5},money:987,inventory:[{kind:'wood',count:7}],randomEventCursor:37});
+  r.fineChunkCache.set(chunk.id,{dynamicActivated:legacy?undefined:false,npcStates:legacy?[resident]:[],objectStates:[crate],wildlifeStates:[]});
+  const initial=stableState(r.buildWorldSnapshot()),live=chunkRuntime(chunk.id);r.materializedChunks.set(chunk.id,live);
+  r.objects.set(crate.id,{state:crate,mesh:new THREE.Group()});live.objectIds.push(crate.id);
+  if(legacy){r.spawnFineNpc(structuredClone(resident),'male1');live.npcIds.push(resident.id);}
+  return {...f,chunk,transfer,live,initial};
+}
+
+for(const legacy of [false,true])test(`${legacy?'legacy':'static-only'} pending acceptance protects compact saves until a matching full SQLite checkpoint`,async()=>{
+  const f=pendingCheckpointFixture(legacy),r=f.runtime,dir=fs.mkdtempSync(path.join(os.tmpdir(),'lattice-pending-')),file=path.join(dir,'world.sqlite');
+  let store=new WorldPersistence(file);
+  try{
+    store.save(f.initial,0);r.persistenceRevision=1;
+    const population=f.chunk.wildlife[0].count;
+    r.materializePendingWildlifeTransfers(f.chunk,f.live,[f.transfer]);
+    assert.equal(r.wildlife.get(f.transfer.entityId).state.randomEventCursor,18);assert.equal(r.portables.checkpoint.pending,true);
+    assert.equal(r.wildlifeTransfers.size,0);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+    assert.equal(store.load()!.wildlifeTransfers![0].state.randomEventCursor,17);
+    const accepted=stableState(r.wildlife.get(f.transfer.entityId).state),version=r.portables.checkpoint.capture();
+    r.materializePendingWildlifeTransfers(f.chunk,f.live,[f.transfer]);
+    assert.deepEqual(stableState(r.wildlife.get(f.transfer.entityId).state),accepted);assert.equal(r.portables.checkpoint.capture(),version);
+    assert.equal(f.chunk.wildlife[0].count,population);
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+    await r.saveWorldState();assert.equal(r.persistenceRevision,2);assert.equal(r.portables.checkpoint.pending,false);
+    r.flushWorldBeacon();assert.equal(f.io.beacons.length,1);
+    const envelope=JSON.parse(await f.io.beacons[0].text());store.save(envelope.snapshot,envelope.expectedRevision);
+    store.close();store=new WorldPersistence(file);
+    const saved=store.load()!,row=saved.fineChunks.find(c=>c.chunkId===f.chunk.id)!;
+    assert.equal(row.wildlifeStates![0].randomEventCursor,18);assert.deepEqual(saved.wildlifeTransfers,[]);
+    assert.deepEqual(row.objectStates[0].storage,[{kind:'grain',count:11}]);
+    if(legacy){assert.equal(row.npcStates[0].money,987);assert.deepEqual(row.npcStates[0].inventory,[{kind:'wood',count:7}]);assert.equal(row.npcStates[0].randomEventCursor,37);}
+    const restored=fixture();restored.runtime.restoreWorldState(saved);
+    assert.equal(restored.runtime.fineChunkCache.get(f.chunk.id).wildlifeStates[0].randomEventCursor,18);assert.equal(restored.runtime.wildlifeTransfers.size,0);
+  }finally{store.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('an active owner retries a blocked pending entry without consuming it or creating duplicate actors',()=>{
+  const f=pendingCheckpointFixture(),r=f.runtime,before=stableState(f.transfer),query=r.physics.isBlocked.bind(r.physics);
+  r.activeFineChunkId=f.chunk.id;r.coarseWorld.chunkAtWorld=()=>f.chunk;r.streamedPresentation.unitIds=()=>['unit_1_0'];r.physics.isBlocked=()=>true;
+  const update=Object.getPrototypeOf(r).updateFineChunkMaterialization.bind(r);
+  update();assert.deepEqual(stableState(f.transfer),before);assert.equal(r.wildlife.size,0);assert.equal(r.portables.checkpoint.pending,false);
+  r.physics.isBlocked=query;update();assert.equal(r.wildlife.size,1);assert.equal(r.wildlifeTransfers.size,0);
+  assert.equal(r.wildlife.get(f.transfer.entityId).state.randomEventCursor,18);assert.equal(f.chunk.wildlife[0].count,4);
+  update();assert.equal(r.wildlife.size,1);assert.equal(r.wildlife.get(f.transfer.entityId).state.randomEventCursor,18);
+});
+
+for(const reason of ['tiny-weight','quota-exhausted','other-destination'])test(`${reason}: real first materialization retains unselected queued identity and cursor`,()=>{
+  const f=fixture(),r=f.runtime;r.initializeWorld();
+  const chunk=r.coarseWorld.chunks.get('chunk_3_0');Object.assign(chunk,{population:0,settlementLevel:0,wildlife:[{species:'sheep',count:1,carryingCapacity:12,health:80}]});
+  establishActorLayout(r,chunk);
+  const layout=r.streamedLayouts.get('unit_1_0'),id=actorGeneration.projectFineActors(chunk,layout,r.randomness).wildlife[0].id;
+  const state=wildlife({id,chunkId:chunk.id,species:'sheep',position:{x:72,z:0},sex:'female',traits:{size:2.8,speed:2,fertility:.7,wariness:.5}});
+  const transfer={entityId:id,state,fromChunkId:'chunk_2_0',toChunkId:chunk.id,representedPopulation:reason==='tiny-weight'?.005:1,transferredDay:4};
+  if(reason==='quota-exhausted'){
+    const earlier=structuredClone(transfer);earlier.entityId='earlier';earlier.state.id='earlier';earlier.transferredDay=3;
+    r.wildlifeTransfers.set('earlier',earlier);
+  }
+  if(reason==='other-destination'){transfer.fromChunkId=chunk.id;transfer.toChunkId='chunk_4_0';transfer.state.chunkId='chunk_4_0';}
+  r.wildlifeTransfers.set(id,transfer);const before=structuredClone(transfer);
+  r.materializeFineChunk(chunk);
+  assert.equal(r.materializedChunks.has(chunk.id),true);assert.equal(r.wildlife.has(id),false);
+  assert.equal(r.wildlifeTransfers.get(id),transfer);assert.deepEqual(transfer,before);assert.equal(transfer.state.randomEventCursor,17);
+  assert.equal(chunk.wildlife[0].count,1);
+});
+
+for(const failure of ['network','unknown-ack','http'])test(`${failure} cannot acknowledge a pending entry checkpoint`,async()=>{
+  const f=pendingCheckpointFixture(),r=f.runtime;
+  r.materializePendingWildlifeTransfers(f.chunk,f.live,[f.transfer]);
+  f.io.save=async()=>{if(failure==='network')throw new Error('offline');return {ok:failure!=='http',status:failure==='http'?503:200,json:async()=>({revision:'unknown'})};};
+  await r.saveWorldState();assert.equal(r.portables.checkpoint.pending,true);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+});
+
+test('a late full acknowledgement cannot release a later pending acceptance',async()=>{
+  const f=pendingCheckpointFixture(),r=f.runtime,store=new WorldPersistence(':memory:');
+  try{
+    const other=structuredClone(f.transfer);other.entityId='second-sheep';other.state.id=other.entityId;other.state.randomEventCursor=29;
+    r.wildlifeTransfers.set(other.entityId,other);r.wildlifeLineage.set(other.entityId,{...structuredClone(r.wildlifeLineage.get(f.transfer.entityId)),entityId:other.entityId});
+    const initial=stableState(r.buildWorldSnapshot());store.save(initial,0);r.persistenceRevision=1;
+    r.materializePendingWildlifeTransfers(f.chunk,f.live,[f.transfer]);
+    let release!:(value:unknown)=>void;const gate=new Promise(resolve=>{release=resolve;});
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:()=>gate};};
+    const saving=r.saveWorldState();await Promise.resolve();
+    r.materializePendingWildlifeTransfers(f.chunk,f.live,[other]);assert.equal(r.wildlife.get(other.entityId).state.randomEventCursor,30);
+    release({revision:2});await saving;
+    assert.equal(r.portables.checkpoint.pending,true);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+    assert.equal(store.load()!.wildlifeTransfers![0].state.randomEventCursor,29);
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+    await r.saveWorldState();assert.equal(r.portables.checkpoint.pending,false);assert.deepEqual(store.load()!.wildlifeTransfers,[]);
+    assert.deepEqual(store.load()!.fineChunks[0].wildlifeStates!.map(s=>s.randomEventCursor),[18,30]);assert.equal(f.chunk.wildlife[0].count,4);
+  }finally{store.close();}
+});
 test('home initialization, relationships and new fine residents/wildlife use stable identity keys without consuming cursors',()=>{
   const a=fixture(),b=fixture(),other=fixture('different');
   for(const f of [a,b,other])f.runtime.initializeWorld();
   assert.deepEqual([...a.runtime.npcs.values()].map(x=>x.state),[...b.runtime.npcs.values()].map(x=>x.state));
   assert.notDeepEqual([...a.runtime.npcs.values()].map(x=>x.state),[...other.runtime.npcs.values()].map(x=>x.state));
   const chunk=[...a.runtime.coarseWorld.chunks.values()].find((x:any)=>x.settlementLevel>0)!;
-  for(const f of [a,b])f.runtime.materializeFineChunk(structuredClone(chunk));
+  for(const f of [a,b]){establishActorLayout(f.runtime,chunk);f.runtime.materializeFineChunk(structuredClone(chunk));}
   assert.deepEqual(a.runtime.buildWorldSnapshot(),b.runtime.buildWorldSnapshot());
   for(const actor of [...a.runtime.npcs.values(),...a.runtime.wildlife.values()])assert.equal(actor.state.randomEventCursor,undefined);
 });
@@ -191,7 +306,7 @@ for(const kind of ['buildWorldSnapshot','buildFinalWorldSnapshot'])test(`${kind}
 });
 test('fresh initialization and existing saved fine needs never consume an unrelated active actor cursor',()=>{
   const f=fixture();f.runtime.initializeWorld();const home=f.runtime.npcs.get('yui');home.state.randomEventCursor=42;
-  const chunk=[...f.runtime.coarseWorld.chunks.values()].find((x:any)=>planFineChunk(x,24).residents.length>0)!;f.runtime.materializeFineChunk(chunk);
+  const chunk=[...f.runtime.coarseWorld.chunks.values()].find((x:any)=>planFineChunk(x,24).residents.length>0)!;establishActorLayout(f.runtime,chunk);f.runtime.materializeFineChunk(chunk);
   assert.ok(f.runtime.wildlife.size>0);const id=f.runtime.materializedChunks.get(chunk.id).npcIds[0];const resident=f.runtime.npcs.get(id);resident.state.hunger=3;resident.state.money=123;resident.state.randomEventCursor=14;
   f.runtime.collapseFineChunk(chunk.id);f.runtime.materializeFineChunk(chunk);
   assert.equal(f.runtime.npcs.get(id).state.hunger,3);assert.equal(f.runtime.npcs.get(id).state.money,123);assert.equal(f.runtime.npcs.get(id).state.randomEventCursor,14);assert.equal(home.state.randomEventCursor,42);

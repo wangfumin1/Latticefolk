@@ -98,8 +98,9 @@ export function restoredPlayerPosition(position: Partial<Vec2> | undefined): Vec
 
 /**
  * The compact unload snapshot omits fine rows. Until a full CAS save acknowledges
- * every fine item transfer, sending that compact snapshot would save only one side
- * (for example the player's reward but not the removed fine parcel). Skip that
+ * every fine-row transfer, sending that compact snapshot would save only one side
+ * (a parcel reward without its removal, or a pending animal's removal without its
+ * accepted fine state). Skip that
  * partial checkpoint; retain the last complete durable transaction instead.
  */
 export class ItemTransferCheckpoint {

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { CoarseChunkState } from '../../src/types.js';
-import { planFineChunk } from '../../src/world/materialization.js';
+import { projectFineActors } from '../../src/world/actorGeneration.js';
+import { prepareFirstActors } from '../../src/world/actorActivation.js';
+import { DEFAULT_WORLD_SEED } from '../../src/world/worldRandom.js';
 import {createStreamedLayout} from '../../src/world/streamedLayouts.js';
 import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from '../../src/world/streamedUnits.js';
 import { ensureWildlifePopulations } from '../../src/world/ecology.js';
@@ -18,15 +20,16 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
   const chunk = structuredClone(input);
   // This is the same normalization used by restoreKnownChunks before planning.
   ensureWildlifePopulations(chunk);
-  const plan = planFineChunk(chunk, chunkSize);
   const unit=streamedUnitForCoarseCell(chunk.cx,chunk.cz);
   const coarseChunks=streamedUnitOwnerCells(unit.ux,unit.uz).map(owner=>{
     const state={...structuredClone(input),...owner};ensureWildlifePopulations(state);return state;
   });
   const generated=createStreamedLayout(unit.ux,unit.uz,coarseChunks,[]);
+  const randomness={version:1 as const,seed:DEFAULT_WORLD_SEED};
+  const descriptors=projectFineActors(chunk,generated.layout,randomness);
   if(generated.layout.buildings.length)throw new Error('Parcel fixture requires a wilderness unit');
   const staticObjects=generated.objectStates.map(state=>({state,...generated.layout.objects.find(object=>object.id===state.id)!}));
-  if (plan.buildings.length || chunk.settlementLevel !== 0) throw new Error('Parcel fixture requires the existing wilderness plan');
+  if (chunk.settlementLevel !== 0) throw new Error('Parcel fixture requires the existing wilderness plan');
   const physics = new FinePhysicsAuthority();
   const treeColliders = [];
   for (const object of staticObjects) {
@@ -50,17 +53,20 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
       throw new Error(`Fixture must explicitly account for ${state.kind} collision`);
     }
   }
-  if(plan.residents.some(n=>physics.isBlocked(n.x,n.z,.3)))throw new Error('Parcel fixture requires unchanged, collision-free resident anchors');
-  const constraints = plan.residents.map(n => playerHeadConstraint(`npc:${n.id}`, n.characterAsset, n, 0));
-  // Include the generated wildlife bodies used by Game.physicsDynamicColliders.
-  // This checks the initial route only; live animals may subsequently cross it.
-  const wildlifeColliders=plan.wildlife.map(a=>({id:`wildlife:${a.id}`,x:a.x,z:a.z,
-    radius:Math.max(.24,Math.min(.48,.20+a.traits.size*.10))}));
-  const dynamic = [...plan.residents.map(n => ({id:`npc:${n.id}`,x:n.x,z:n.z,radius:NPC_BODY_RADIUS})),...wildlifeColliders];
   const exitX = chunk.cx * chunkSize - chunkSize / 2 - .4;
   const rejected = [];
-  for (const donor of plan.residents.filter(n => n.inventory.some(i => i.kind === 'water' && i.count > 0))) {
+  for (const donor of descriptors.residents.filter(n => n.inventory.some(i => i.kind === 'water' && i.count > 0))) {
     const start = {x:donor.x+.7,z:donor.z+1.8};
+    const accepted=prepareFirstActors(chunk,generated.layout,randomness,1,[],new Map(),{
+      blocked:physics.isBlocked.bind(physics),static:[],player:start,dynamic:[{id:'player',...start,radius:PLAYER_BODY_RADIUS}]
+    });
+    const actual=accepted?.npcs.find(n=>n.state.id===donor.id);
+    if(!accepted||!actual||actual.state.position.x!==donor.x||actual.state.position.z!==donor.z){rejected.push({id:donor.id,start,reason:'spawn correction'});continue;}
+    const constraints=accepted.npcs.map(n=>playerHeadConstraint(`npc:${n.state.id}`,n.asset,n.state.position,0));
+    // Use the same complete founding batch that fine activation will accept.
+    const wildlifeColliders=accepted.wildlife.map(a=>({id:`wildlife:${a.id}`,...a.position,
+      radius:Math.max(.24,Math.min(.48,.20+a.traits.size*.10))}));
+    const dynamic=[...accepted.npcs.map(n=>({id:`npc:${n.state.id}`,...n.state.position,radius:NPC_BODY_RADIUS})),...wildlifeColliders];
     const outbound = physics.moveKinematic({id:'player',position:start,
       displacement:{x:exitX-start.x,z:0},radius:PLAYER_BODY_RADIUS,dynamic,constraints,maxSubstep:.05});
     const returned = physics.moveKinematic({id:'player',position:{x:exitX,z:start.z},

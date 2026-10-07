@@ -14,9 +14,17 @@ if(!globalThis.ProgressEvent){
     }
   } as typeof ProgressEvent;
 }
-export async function sourceGltf(relativePath:string) {
+export async function sourceGltf(relativePath:string,transform?:(bytes:Buffer)=>Buffer) {
   const loader=new GLTFLoader();
   loader.register(()=>({name:'numeric-test-textures',loadTexture:async()=>new THREE.Texture()}));
-  const bytes=fs.readFileSync(new URL(`../../public/assets/${relativePath}`,import.meta.url));
-  return loader.parseAsync(relativePath.endsWith('.gltf')?bytes.toString('utf8'):bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer,'');
+  const file=new URL(`../../public/assets/${relativePath}`,import.meta.url),original=fs.readFileSync(file),bytes=transform?transform(original):original;
+  if(relativePath.endsWith('.gltf')){
+    const document=JSON.parse(bytes.toString('utf8'));
+    for(const buffer of document.buffers||[])if(buffer.uri&&!buffer.uri.startsWith('data:')){
+      const local=new URL(buffer.uri,file);if(local.protocol!=='file:')throw new Error('Numeric source tests require local buffers');
+      buffer.uri=`data:application/octet-stream;base64,${fs.readFileSync(local).toString('base64')}`;
+    }
+    return loader.parseAsync(JSON.stringify(document),'');
+  }
+  return loader.parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer,'');
 }

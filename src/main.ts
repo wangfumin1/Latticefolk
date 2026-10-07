@@ -7,10 +7,12 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {beginRandomEvent,keyedRandom,randomEventCursor,readWorldRandomness,snapshotRandomness,WorldRandomValidationError,type RandomSource} from './world/worldRandom';
 import {ACTOR_GENERATION_VERSION,readActorGenerationVersion} from './world/actorGeneration';
+import {prepareFirstActors,type PendingActorEntry} from './world/actorActivation';
+import {pendingEntryPosition,wildlifeBodyRadius,type ActorContact} from './world/actorPlacement';
+import {actorSpawnBounds} from './scene/actorSpawnBounds';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
-import { planFineChunk } from './world/materialization';
 import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from './world/streamedLayouts';
 import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './world/streamedUnits';
 import {StreamedPresentation,type StaticLayoutEntry} from './scene/streamedPresentation';
@@ -43,7 +45,7 @@ import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlif
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
 import { stepWildlifeMovementController } from './world/wildlifeMovementController';
-import { FinePhysicsAuthority, type DynamicCollider } from './world/finePhysics';
+import { FinePhysicsAuthority, type DynamicCollider, type StaticCollider } from './world/finePhysics';
 import { normalizeWorldObjectRigidBody, resolveMovableBodyStep, worldObjectRigidBody } from './world/movablePhysics';
 import { resolveContactAttack } from './world/contactCombat';
 import { resolveContactAction } from './world/contactAction';
@@ -166,6 +168,7 @@ interface VisualTarget {
   fit?: 'uniform'|'exactBounds';
   resolvedSize?: {x:number;y:number;z:number};
   onResolved?: (model:THREE.Object3D)=>void;
+  spawnCollider?:{id:string;chunkId?:string;initial?:StaticCollider};
 }
 interface ActionTask { approach?: NpcWorkApproach; action: DecisionAction; targetNpcId?: string; targetObjectId?: string; intent?: SocialIntent; startedAt:number; }
 interface FineMetrics { food:number; wood:number; ecology:number; prosperity:number; shrub:number; fruit:number; crop:number; }
@@ -510,6 +513,7 @@ class TownGame {
     g.position.set(x,0,z); this.scene.add(g);
     const variant = ['tree1','tree2','tree3'][Math.abs(Math.round(x*3+z*5))%3];
     this.attachVisualTarget({group:g,asset:variant,height:treeVisualHeight(variant),rotationY:(x+z)*.17,
+      spawnCollider:{id:`tree-decoration:${x}:${z}`},
       onResolved:model=>this.physics.registerStatic(treePhysics(model,`tree-decoration:${x}:${z}`,undefined,false).collider)
     });
   }
@@ -532,9 +536,11 @@ class TownGame {
     this.scene.add(g);
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
-    this.registerWorldObjectPhysics(state,physicsOwner);
+    const initial=this.registerWorldObjectPhysics(state,physicsOwner);
+    const reservesSpawn=state.kind==='tree'||(syncStaticCollider&&!state.pickupable&&!worldObjectRigidBody(state)&&state.kind!=='farm_plot'&&state.kind!=='water_patch');
     this.attachVisualTarget({
       group:g,asset,height:assetHeight,rotationY,offsetZ,targetWidth,targetDepth,fit,
+      spawnCollider:reservesSpawn?{id:`object:${state.id}`,chunkId:physicsOwner,initial}:undefined,
       onResolved:state.kind==='tree'?model=>{
         const physical=treePhysics(model,`object:${state.id}`,physicsOwner);
         this.physics.registerStatic(physical.collider);
@@ -667,12 +673,14 @@ class TownGame {
     const extent=halfExtents[state.kind];
     if(!extent||(state.pickupable&&state.kind!=='tree')||worldObjectRigidBody(state))return;
     const [halfX,halfZ]=extent;
-    this.physics.registerStatic({
+    const collider:StaticCollider={
       id:`object:${state.id}`,
       minX:state.position.x-halfX,maxX:state.position.x+halfX,
       minZ:state.position.z-halfZ,maxZ:state.position.z+halfZ,
       chunkId:physicsOwner
-    });
+    };
+    this.physics.registerStatic(collider);
+    return collider;
   }
 
   defaultCapabilities(state:WorldObjectState):InteractionCapability[] {
@@ -1500,7 +1508,7 @@ class TownGame {
   }
 
   flushWorldBeacon() {
-    // Do not persist only the reward side of an unacknowledged fine parcel transfer.
+    // Do not persist only one side of an unacknowledged fine-row transfer.
     if(!this.persistenceReady||this.persistenceConflict||this.persistenceLoadBlocked||this.portables.checkpoint.pending)return;
     try{
       const snapshot=this.buildFinalWorldSnapshot();
@@ -1607,7 +1615,12 @@ class TownGame {
       if(this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z))this.syncStreamedPresentation();
       const chunk=this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z);
       const targetId=chunk?.id;
-      if(targetId===this.activeFineChunkId)return;
+      if(chunk&&!this.streamedPresentation.unitIds().includes(streamedUnitForCoarseCell(chunk.cx,chunk.cz).id))this.syncStreamedPresentation();
+      if(targetId===this.activeFineChunkId){
+        const runtime=targetId?this.materializedChunks.get(targetId):undefined;
+        if(chunk&&runtime&&this.wildlifeTransfers.size)this.materializePendingWildlifeTransfers(chunk,runtime,[...this.wildlifeTransfers.values()].filter(t=>t.toChunkId===chunk.id));
+        return;
+      }
       if(this.activeFineChunkId&&chunk)this.transferOwnedFollowersToChunk(this.activeFineChunkId,chunk);
       if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
       if(chunk)this.materializeFineChunk(chunk);
@@ -1621,7 +1634,17 @@ class TownGame {
 
   materializeFineChunk(chunk:CoarseChunkState) {
     if(this.materializedChunks.has(chunk.id))return;
-    const plan=planFineChunk(chunk,this.coarseWorld.chunkSize,this.randomness.seed);
+    const cached=this.fineChunkCache.get(chunk.id);
+    const dynamicCached=cached?.dynamicActivated!==false?cached:undefined;
+    const pendingTransfers=[...this.wildlifeTransfers.values()].filter(transfer=>transfer.toChunkId===chunk.id)
+      .sort((a,b)=>a.transferredDay-b.transferredDay||a.entityId.localeCompare(b.entityId));
+    const layout=this.streamedLayouts.get(streamedUnitForCoarseCell(chunk.cx,chunk.cz).id);
+    let first:ReturnType<typeof prepareFirstActors>;
+    if(!dynamicCached){
+      if(!layout)throw new Error(`Missing static layout for ${chunk.id}`);
+      first=prepareFirstActors(chunk,layout,this.randomness,this.day,[...this.wildlifeTransfers.values()],this.wildlifeLineage,this.firstActorContact(cached?.objectStates));
+      if(!first)return;
+    }
     const runtime:FineChunkRuntime={
       chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},
       initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),groups:[],
@@ -1634,8 +1657,6 @@ class TownGame {
       this.camera.position.y=this.groundHeightAt(this.playerPosition.x,this.playerPosition.z)+1.7;
     }
 
-    const cached=this.fineChunkCache.get(chunk.id);
-    const dynamicCached=cached?.dynamicActivated!==false?cached:undefined;
     const staticObjects=this.streamedPresentation.activate(chunk.id);
     runtime.objectIds.push(...staticObjects.map(object=>object.state.id));
     this.portables.restoreFine(cached?.objectStates||[],chunk.id);
@@ -1648,34 +1669,9 @@ class TownGame {
         this.spawnFineNpc(state,['female1','female2','male1','male2'][index%4]!);
         runtime.npcIds.push(state.id);
       }
-    }else for(const p of plan.residents){
-      const random=keyedRandom(this.randomness,'fine-npc',p.id);
-      const state:NpcState={
-        id:p.id,chunkId:chunk.id,name:p.name,role:p.role,position:{x:p.x,z:p.z},home:{x:p.x,z:p.z},
-        workAt:this.fineWorkplaceForRole(p.role,chunk.id),mood:p.mood,hunger:25+random()*24,energy:62+random()*28,social:42+random()*32,
-        money:Math.max(2,Math.round(3+chunk.prosperity/7)),inventory:structuredClone(p.inventory),
-        relationships:{},memories:[],currentAction:'idle',goal:'在这里生活并照顾自己的日常需要',lastDecisionAt:0
-      };
-      state.position=this.fineSpawnPosition(state.position,chunk,p.characterAsset);state.home={...state.position};
-      this.spawnFineNpc(state,p.characterAsset);runtime.npcIds.push(state.id);
-    }
-
-    const pendingTransfers=[...this.wildlifeTransfers.values()]
-      .filter(transfer=>transfer.toChunkId===chunk.id)
-      .sort((a,b)=>a.transferredDay-b.transferredDay||a.entityId.localeCompare(b.entityId));
-    const pendingReplacement=new Map<WildlifeSpecies,number>();
-    if(!dynamicCached){
-      const remainingBySpecies=new Map<WildlifeSpecies,number>();
-      for(const population of chunk.wildlife||[])remainingBySpecies.set(population.species,Math.max(0,population.count));
-      for(const transfer of pendingTransfers){
-        if(this.wildlifeLineage.get(transfer.entityId)?.deathDay!==undefined)continue;
-        const species=transfer.state.species;
-        const remaining=remainingBySpecies.get(species)||0;
-        const effective=Math.min(Math.max(0,transfer.representedPopulation),remaining);
-        if(effective<=.01)continue;
-        pendingReplacement.set(species,(pendingReplacement.get(species)||0)+1);
-        remainingBySpecies.set(species,remaining-effective);
-      }
+    }else for(const {state,asset} of first!.npcs){
+      state.workAt=this.fineWorkplaceForRole(state.role,chunk.id);
+      this.spawnFineNpc(state,asset);runtime.npcIds.push(state.id);
     }
 
     if(dynamicCached){
@@ -1691,18 +1687,7 @@ class TownGame {
         }
       }
     }else{
-      for(const p of plan.wildlife){
-        const replacements=pendingReplacement.get(p.species)||0;
-        if(replacements>0){pendingReplacement.set(p.species,replacements-1);continue;}
-        const population=chunk.wildlife?.find(x=>x.species===p.species);
-        const random=keyedRandom(this.randomness,'fine-wildlife',p.id);
-        const state:WildlifeState={
-          id:p.id,chunkId:chunk.id,species:p.species,position:this.fineSpawnPosition({x:p.x,z:p.z},chunk),ageDays:p.ageDays,
-          health:clamp((population?.health??82)+(random()-.5)*8,0,100),hunger:20+random()*28,thirst:18+random()*30,energy:62+random()*28,
-          diseaseLoad:population?.diseaseLoad??0,
-          sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
-          lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
-        };
+      for(const state of first!.wildlife){
         if(this.spawnWildlife(state)){
           runtime.wildlifeIds.push(state.id);
           runtime.initialWildlifeIds.add(state.id);
@@ -1711,12 +1696,12 @@ class TownGame {
         }
       }
     }
-    this.materializePendingWildlifeTransfers(chunk,runtime,pendingTransfers);
+    this.materializePendingWildlifeTransfers(chunk,runtime,pendingTransfers,first?.pending);
 
     runtime.initialMetrics=this.fineMetrics(runtime);
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
-    this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`,'developer');
+    this.log(`Materialized ${chunk.id}: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects`,'developer');
   }
 
   fineWorkplaceForRole(role:NpcRole,owner:string) {
@@ -1725,26 +1710,28 @@ class TownGame {
     return [...this.objects.values()].find(o=>o.state.chunkId===owner&&wanted.some(tag=>o.state.tags.includes(tag)))?.state.id;
   }
 
-  fineSpawnPosition(position:Vec2,chunk:CoarseChunkState,characterAsset?:string):Vec2 {
-    const occupied=characterAsset?[...this.npcs.values()].filter(n=>!n.removed).map(n=>n.mesh.position):[];
-    const clear=(point:Vec2)=>!this.physics.isBlocked(point.x,point.z,.3)
-      &&(!characterAsset||(playerHeadClearance(characterAsset,point,0,this.playerPosition)>=0
-        &&occupied.every(other=>Math.hypot(other.x-point.x,other.z-point.z)>=NPC_BODY_RADIUS*2)));
-    if(clear(position))return position;
-    const center={x:chunk.cx*24,z:chunk.cz*24};
-    for(let radius=0;radius<=11;radius++)for(let z=-radius;z<=radius;z++)for(let x=-radius;x<=radius;x++){
-      if(Math.max(Math.abs(x),Math.abs(z))!==radius)continue;
-      const point={x:center.x+x,z:center.z+z};
-      if(clear(point))return point;
+  firstActorContact(savedObjects:readonly WorldObjectState[]=[]):ActorContact {
+    const staticBounds:StaticCollider[]=[];
+    for(const target of this.visualTargets){
+      const owner=target.spawnCollider;if(!owner)continue;
+      if(owner.initial)staticBounds.push(owner.initial);
+      target.group.updateWorldMatrix(true,false);
+      staticBounds.push(actorSpawnBounds(target,target.group.matrixWorld,owner.id,owner.chunkId));
     }
-    if(characterAsset)throw new Error(`No clear NPC spawn in ${chunk.id}`);
-    return position;
+    const dynamic=this.physicsDynamicColliders(),ids=new Set(dynamic.map(body=>body.id));
+    for(const state of savedObjects){
+      const archetype=worldObjectRigidBody(state),id=`object:${state.id}`;
+      if(archetype&&!ids.has(id))dynamic.push({id,...state.position,radius:archetype.radius});
+    }
+    return {blocked:(x,z,radius)=>this.physics.isBlocked(x,z,radius),static:staticBounds,dynamic,
+      player:this.cameraMode==='firstPerson'?this.playerPosition:undefined};
   }
 
-  materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
-    for(const transfer of transfers){
+  materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[],prepared?:readonly PendingActorEntry[]) {
+    for(const transfer of [...transfers].sort((a,b)=>a.transferredDay-b.transferredDay||a.entityId.localeCompare(b.entityId))){
       if(this.wildlifeTransfers.get(transfer.entityId)!==transfer)continue;
       if(runtime.wildlifeIds.includes(transfer.entityId)||this.wildlifeLineage.get(transfer.entityId)?.deathDay!==undefined){
+        this.portables.checkpoint.markFineChange();
         this.wildlifeTransfers.delete(transfer.entityId);
         continue;
       }
@@ -1757,12 +1744,16 @@ class TownGame {
       const availableWeight=Math.max(0,population.count-alreadyFixed);
       const effectiveWeight=Math.min(Math.max(0,transfer.representedPopulation),availableWeight);
       if(effectiveWeight<=.01)continue;
+      const entry=prepared?.find(entry=>entry.transfer===transfer);
+      const position=prepared?entry?.position:pendingEntryPosition(transfer.state,chunk,this.randomness,this.firstActorContact());
+      if(!position)continue;
 
       const state=structuredClone(transfer.state);
       state.chunkId=chunk.id;
       state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
-      const random=beginRandomEvent(this.randomness,state,'transfer-entry',chunk.id);
-      state.position=this.randomPassableNear(state.position,3,random,chunk.id);
+      this.portables.checkpoint.markFineChange();
+      beginRandomEvent(this.randomness,state,'transfer-entry',chunk.id);
+      state.position={...position};
       state.representedPopulation=effectiveWeight;
       state.currentAction='wander';
       state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
@@ -4234,7 +4225,7 @@ class TownGame {
   }
 
   wildlifePhysicsRadius(state:WildlifeState) {
-    return clamp(.20+state.traits.size*.10,.24,.48);
+    return wildlifeBodyRadius(state);
   }
 
   physicsDynamicColliders(excludeId?:string):DynamicCollider[] {
