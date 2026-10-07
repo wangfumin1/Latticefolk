@@ -250,6 +250,9 @@ export class WorldPersistence {
       }
       if(previous){
         const meta=JSON.parse(String(previous.meta_json)) as WorldPersistenceMeta;
+        if(meta.actorGenerationVersion!==undefined&&(meta.actorGenerationVersion!==1||data.meta.actorGenerationVersion!==1)){
+          throw new WorldSnapshotValidationError(['snapshot.meta.actorGenerationVersion: cannot replace or omit stored actor generation contract']);
+        }
         const prior=readWorldRandomness(meta.randomness),incoming=readWorldRandomness(data.meta.randomness);
         if((meta.randomness!==undefined&&data.meta.randomness===undefined)||prior.seed!==incoming.seed||prior.version!==incoming.version){
           throw new WorldSnapshotValidationError(['snapshot.meta.randomness: cannot replace or omit stored world random authority']);

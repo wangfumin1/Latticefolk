@@ -1,3 +1,4 @@
+import * as actorGeneration from '../src/world/actorGeneration.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -45,7 +46,7 @@ function fixture(seed=random.DEFAULT_WORLD_SEED){
   const controls=Object.assign(new EventTarget(),{isLocked:false,lock(this:EventTarget&{isLocked:boolean}){this.isLocked=true;this.dispatchEvent(new Event('lock'));}});
   const math=Object.create(Math);math.random=()=>{throw new Error('ambient Math.random');};
   const fetch=async(url:string,init?:RequestInit)=>{io.requests.push(url);if(init?.signal)io.signals.push(init.signal);if(io.failed)throw Error('offline');if(io.wait)return io.wait;return {ok:true,json:async()=>url==='/api/world/state'?{snapshot:io.snapshot,revision:4}:io.reply};};
-  const deps={...layouts,StreamedActors,playerHeadClearance,NPC_BODY_RADIUS,isGodCameraInputKey,...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
+  const deps={...actorGeneration,...layouts,StreamedActors,playerHeadClearance,NPC_BODY_RADIUS,isGodCameraInputKey,...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
     setTimeout:(callback:()=>void,delay:number)=>{const id=++io.nextTimer;io.timers.set(id,{callback,delay});return id;},clearTimeout:(id:number)=>io.timers.delete(id),
     now:()=>io.clock,Date:{now:()=>2000},clamp:(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n)),dist:(a:any,b:any)=>Math.hypot(a.x-b.x,a.z-b.z),fetch,
     i18n:{t:(key:string,values?:{error?:string})=>values?.error?`${key}: ${values.error}`:key},navigator:{sendBeacon:(_url:string,body:Blob)=>{io.beacons.push(body);return true;}},
@@ -90,7 +91,7 @@ test('stored seed is selected before real coarse generation, home setup and stat
   assert.deepEqual(restored.runtime.npcs.get('ren').state,expected.runtime.npcs.get('ren').state);
   assert.equal(restored.runtime.npcs.get('mina').state.randomEventCursor,37);
 });
-for(const mutation of [(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{randomness:{version:2,seed:'s'}}),(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{randomness:{version:1,seed:''}}),(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;}])test('invalid random authority does not restore or overwrite the saved world',async()=>{
+for(const mutation of [(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{randomness:{version:2,seed:'s'}}),(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{randomness:{version:1,seed:''}}),(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;},(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{actorGenerationVersion:2}),(s:WorldPersistenceSnapshot)=>Object.assign(s.meta,{actorGenerationVersion:null})])test('invalid random or actor-generation authority does not restore or overwrite the saved world',async()=>{
   const source=fixture();source.runtime.setupNpcs();const snapshot=source.runtime.buildWorldSnapshot();mutation(snapshot);
   const f=fixture();delete f.runtime.coarseWorld;f.io.snapshot=snapshot;await f.runtime.initializePersistence();assert.equal(f.runtime.persistenceLoadBlocked,true);assert.equal(f.runtime.persistenceConflict,false);assert.equal(f.runtime.npcs.size,10);
   await f.runtime.saveWorldState();f.runtime.flushWorldBeacon();assert.deepEqual(f.io.requests,['/api/world/state']);assert.equal(f.io.beacons.length,0);

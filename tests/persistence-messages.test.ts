@@ -1,3 +1,4 @@
+import * as actorGeneration from '../src/world/actorGeneration.js';
 import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -35,7 +36,7 @@ function fixture(locale:LocaleCode,reply:Reply,beaconAccepted=false){
   const snapshot={version:1,meta:{day:0},coarseChunks:[],fineChunks:[]};
   const fetch=async(url:string,init?:RequestInit)=>{requests.push({url,init});return{ok:reply.status>=200&&reply.status<300,status:reply.status,json:async()=>reply.data};};
   const navigator={sendBeacon:(url:string,body:Blob)=>{beacons.push({url,body});return beaconAccepted;}};
-  const RuntimeClass=new Function(...Object.keys(worldRandom),'StreamedLayoutValidationError','i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(...Object.values(worldRandom),StreamedLayoutValidationError,i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
+  const RuntimeClass=new Function(...Object.keys({...worldRandom,...actorGeneration}),'StreamedLayoutValidationError','i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(...Object.values({...worldRandom,...actorGeneration}),StreamedLayoutValidationError,i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
   const runtime:Runtime=new RuntimeClass();
   const checkpoint={pending:false,capture:()=>17,acknowledge:(value:number)=>acknowledged.push(value)};
   Object.assign(runtime,{logs:[],persistenceReady:true,persistenceRevision:5,persistenceConflict:false,

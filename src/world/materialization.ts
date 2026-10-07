@@ -1,5 +1,5 @@
 import {DEFAULT_WORLD_SEED,fineLayoutKey,hashText,randomFromKey} from './worldRandom.js';
-import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
+import type { CoarseChunkState, CoarseWildlifePopulation, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
 import { wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
 export type SettlementArchetype =
@@ -74,8 +74,8 @@ export interface FineChunkPlan {
   wildlife: FineWildlifePlan[];
 }
 
-const givenNames=['澪','岚','葵','凛','悠','茜','晴','陆','纱','枫','朔','琴','灯','遥','真','铃','森','夏','冬','千'];
-const familyNames=['森','川','谷','原','石','藤','山','井','高','月','白','水'];
+export const givenNames=['澪','岚','葵','凛','悠','茜','晴','陆','纱','枫','朔','琴','灯','遥','真','铃','森','夏','冬','千'];
+export const familyNames=['森','川','谷','原','石','藤','山','井','高','月','白','水'];
 
 function archetypeFor(chunk:CoarseChunkState):SettlementArchetype {
   if(chunk.settlementLevel===0)return 'wilderness';
@@ -87,7 +87,7 @@ function archetypeFor(chunk:CoarseChunkState):SettlementArchetype {
   return 'farmstead';
 }
 
-function roleFor(index:number,level:number,biome:CoarseChunkState['biome'],archetype:SettlementArchetype):NpcRole {
+export function roleFor(index:number,level:number,biome:CoarseChunkState['biome'],archetype:SettlementArchetype):NpcRole {
   const archetypeRoles:Record<SettlementArchetype,NpcRole[]>={
     wilderness:['resident','maker'],
     farmstead:['farmer','farmer','resident','baker','guard','maker'],
@@ -103,7 +103,7 @@ function roleFor(index:number,level:number,biome:CoarseChunkState['biome'],arche
   return list[index%list.length]!;
 }
 
-function inventoryFor(role:NpcRole):InventoryItem[] {
+export function inventoryFor(role:NpcRole):InventoryItem[] {
   if(role==='farmer')return [{kind:'grain',count:2},{kind:'apple',count:1}];
   if(role==='baker')return [{kind:'bread',count:2},{kind:'flour',count:1},{kind:'water',count:1}];
   if(role==='maker')return [{kind:'wood',count:2},{kind:'stone',count:1}];
@@ -113,6 +113,13 @@ function inventoryFor(role:NpcRole):InventoryItem[] {
 }
 
 export type BuildingDef=readonly [name:string,asset:string,w:number,d:number,height:number,color:number];
+
+export const fineResidentCount=(chunk:CoarseChunkState)=>Math.min(Math.round(chunk.population),6+chunk.settlementLevel*3,12);
+export function fineWildlifeCount(population:CoarseWildlifePopulation):number {
+  if(population.count<.35)return 0;
+  const maxFine=wildlifeSpeciesProfile(population.species).fine.maxFine;
+  return Math.min(maxFine,Math.max(1,Math.round(population.count/Math.max(2,population.carryingCapacity/Math.max(1,maxFine)))));
+}
 
 export const BUILDINGS:Readonly<Record<SettlementArchetype,readonly BuildingDef[]>>={
   wilderness:[],
@@ -292,7 +299,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,worldSeed=DEFA
     }
   }
 
-  const activeResidents=Math.min(Math.round(chunk.population),6+chunk.settlementLevel*3,12);
+  const activeResidents=fineResidentCount(chunk);
   const workIds:Record<NpcRole,string|undefined>={
     farmer:`${chunk.id}_farm`,
     baker:(archetype==='market_hamlet'||archetype==='wetland_hamlet')?`${chunk.id}_bakery`:`${chunk.id}_market`,
@@ -321,8 +328,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,worldSeed=DEFA
 
   for(const population of chunk.wildlife||[]){
     const base=wildlifeSpeciesProfile(population.species).fine;
-    if(population.count<.35)continue;
-    const count=Math.min(base.maxFine,Math.max(1,Math.round(population.count/Math.max(2,population.carryingCapacity/Math.max(1,base.maxFine)))));
+    const count=fineWildlifeCount(population);
     for(let i=0;i<count;i++){
       let x=centerX,z=centerZ;
       for(let attempt=0;attempt<12;attempt++){

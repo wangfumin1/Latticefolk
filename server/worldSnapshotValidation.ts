@@ -469,6 +469,7 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   });
 
   if(root.savedAt!==undefined)v.number(root.savedAt,'snapshot.savedAt',{min:0});
+  if(isRecord(root.meta)&&root.meta.actorGenerationVersion!==undefined&&root.meta.actorGenerationVersion!==1)v.issue('snapshot.meta.actorGenerationVersion','unsupported version');
   if(isRecord(root.meta)&&root.meta.streamedLayoutVersion!==undefined&&root.meta.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','unsupported version');
   if(root.streamedLayouts!==undefined){
     const layouts=v.array(root.streamedLayouts,'snapshot.streamedLayouts',WORLD_SNAPSHOT_LIMITS.fineChunks),seen=new Set<string>();

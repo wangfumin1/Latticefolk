@@ -1,3 +1,4 @@
+import * as actorGeneration from '../src/world/actorGeneration.js';
 import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ function fixture(status=200){
   const timers=new Map<number,()=>void>(),writes:Array<{expectedRevision:number;snapshot:{edit:number}}>=[];
   let timerId=0,release!:()=>void;
   const gate=new Promise<void>(resolve=>{release=resolve;});
-  const deps={...worldRandom,window:{setTimeout(fn:()=>void){const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id:number){timers.delete(id);}},
+  const deps={...actorGeneration,...worldRandom,window:{setTimeout(fn:()=>void){const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id:number){timers.delete(id);}},
     now:()=>1000,i18n:{t:(key:string)=>key},fetch:async(_url:string,init?:{body:string})=>{
       if(!init)return{ok:false,status:503};
       const body=JSON.parse(init.body);writes.push(body);await gate;

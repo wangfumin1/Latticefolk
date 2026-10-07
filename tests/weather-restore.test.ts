@@ -1,3 +1,4 @@
+import * as actorGeneration from '../src/world/actorGeneration.js';
 import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -27,7 +28,7 @@ function fixture(roll=.95){
   let draws=0;
   const io={snapshot:null as WorldPersistenceSnapshot|null,beacons:[] as {url:string;body:Blob}[]};
   const math=Object.create(Math) as Math;math.random=()=>{throw new Error('ambient randomness');};
-  const randomDependencies={...worldRandom,keyedRandom:()=>()=>{draws++;return roll;}};
+  const randomDependencies={...actorGeneration,...worldRandom,keyedRandom:()=>()=>{draws++;return roll;}};
   const navigator={sendBeacon:(url:string,body:Blob)=>{io.beacons.push({url,body});return true;}};
   const fetch=async(url:string)=>{assert.equal(url,'/api/world/state');return{ok:true,json:async()=>({snapshot:io.snapshot,revision:6})};};
   const RuntimeClass=new Function(...Object.keys(randomDependencies),'Math','THREE','clamp','restoredPlayerPosition','navigator','fetch','i18n','now','StreamedLayoutValidationError','readStreamedLayout','assertStreamedLayoutStates',code)(...Object.values(randomDependencies),math,THREE,(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x)),restoredPlayerPosition,navigator,fetch,{t:(key:string)=>key},()=>5000,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates);

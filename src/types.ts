@@ -1286,6 +1286,8 @@ export interface WorldRandomness {
 
 export interface WorldPersistenceMeta {
   streamedLayoutVersion?: 1;
+  /** Missing legacy metadata selects actor generation v1. */
+  actorGenerationVersion?: 1;
   randomness?: WorldRandomness;
   day: number;
   minuteOfDay: number;

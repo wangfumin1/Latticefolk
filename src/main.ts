@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {beginRandomEvent,keyedRandom,randomEventCursor,readWorldRandomness,snapshotRandomness,WorldRandomValidationError,type RandomSource} from './world/worldRandom';
+import {ACTOR_GENERATION_VERSION,readActorGenerationVersion} from './world/actorGeneration';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
@@ -1249,6 +1250,7 @@ class TownGame {
       const revision=Number(data.revision);
       if(!Number.isSafeInteger(revision)||revision<0)throw new Error(i18n.t('persistence.invalidRevision'));
       this.randomness=data.snapshot?snapshotRandomness(data.snapshot):readWorldRandomness(undefined);
+      if(data.snapshot)readActorGenerationVersion(data.snapshot.meta.actorGenerationVersion);
       this.initializeWorld();
       this.persistenceRevision=revision;
       this.persistenceConflict=false;
@@ -1296,6 +1298,7 @@ class TownGame {
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
         streamedLayoutVersion:1,
+        actorGenerationVersion:ACTOR_GENERATION_VERSION,
         randomness:{...this.randomness},
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
@@ -1313,6 +1316,7 @@ class TownGame {
   restoreWorldState(snapshot:WorldPersistenceSnapshot) {
     if(snapshot.version!==1)return;
     const randomness=snapshotRandomness(snapshot);
+    readActorGenerationVersion(snapshot.meta.actorGenerationVersion);
     if(randomness.seed!==this.randomness.seed)throw new WorldRandomValidationError('World seed must be selected before initialization');
     if(snapshot.meta.streamedLayoutVersion!==undefined&&snapshot.meta.streamedLayoutVersion!==1)throw new StreamedLayoutValidationError('Unsupported layout version');
     for(const row of snapshot.fineChunks||[]){
@@ -1480,6 +1484,7 @@ class TownGame {
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
         streamedLayoutVersion:1,
+        actorGenerationVersion:ACTOR_GENERATION_VERSION,
         randomness:{...this.randomness},
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
