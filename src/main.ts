@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import {beginRandomEvent,keyedRandom,randomEventCursor,readWorldRandomness,snapshotRandomness,WorldRandomValidationError,type RandomSource} from './world/worldRandom';
 import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
@@ -318,6 +319,7 @@ class TownGame {
         if(object.mesh.userData.layoutRoad){const mesh=object.mesh as THREE.Mesh;mesh.geometry.dispose();const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];materials.forEach(m=>m.dispose());}}
       this.visualTargets=this.visualTargets.filter(target=>!nodes.has(target.group));this.physics.clearChunk(unitId);
     }});
+  randomness=readWorldRandomness(undefined);
   interactionOpen = false;
   interactionObjectId?: string;
   interactionWildlifeId?: string;
@@ -364,19 +366,23 @@ class TownGame {
     this.orbit.minPolarAngle = Math.PI * .08;
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
-    this.coarseWorld = new CoarseWorldRuntime(this.scene);
-    this.streamedLayouts=new StreamedLayoutRegistry(this.coarseWorld.seed);
     this.scene.add(this.sun.target);
-    this.setupWorld();
     this.setupSelectionOverlays();
-    this.setupNpcs();
-    void this.loadVisualAssets();
     this.bindInput();
     window.addEventListener('beforeunload',()=>this.flushWorldBeacon());
     this.refreshHealth();
-    void this.initializePersistence();
+    void this.initializePersistence().then(()=>{
+      void this.loadVisualAssets();
+      this.animate();
+    });
     this.log('Latticefolk 已启动；未配置远程决策引擎时使用本地规则 provider。','developer');
-    this.animate();
+  }
+
+  initializeWorld() {
+    this.coarseWorld = new CoarseWorldRuntime(this.scene,this.randomness.seed);
+    this.streamedLayouts=new StreamedLayoutRegistry(this.coarseWorld.seed);
+    this.setupWorld();
+    this.setupNpcs();
   }
 
   setupWorld() {
@@ -725,9 +731,10 @@ class TownGame {
       ['aki','秋','shopkeeper',14,-7,'market','calm'],
     ];
     for (const [id,name,role,x,z,workAt,mood] of seed) {
+      const random=keyedRandom(this.randomness,'home-npc',id);
       const state: NpcState = {
         id,name,role,position:{x,z},home:{x:x<0?x-3:x+3,z:z<0?z-6:z+6},workAt,mood,
-        hunger:25+Math.random()*25,energy:65+Math.random()*25,social:45+Math.random()*30,money:8+Math.floor(Math.random()*12),
+        hunger:25+random()*25,energy:65+random()*25,social:45+random()*30,money:8+Math.floor(random()*12),
         inventory:
           role==='baker'?[{kind:'bread',count:2},{kind:'flour',count:1},{kind:'water',count:1}]:
           role==='farmer'?[{kind:'apple',count:1},{kind:'grain',count:2}]:
@@ -742,10 +749,13 @@ class TownGame {
       this.attachVisualTarget({group:mesh,asset:characterAsset[id],height:1.82,rotationY:0});
       const speechEl=document.createElement('div'); speechEl.className='speech hidden'; ui.speechLayer.appendChild(speechEl);
       const nameEl=document.createElement('div'); nameEl.className='npc-name hidden'; ui.speechLayer.appendChild(nameEl);
-      this.npcs.set(id,{state,characterAsset:characterAsset[id],mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+Math.random()*5000,pendingDecision:false,speechEl,nameEl});
+      this.npcs.set(id,{state,characterAsset:characterAsset[id],mesh,path:[],pathIndex:0,nextDecisionAt:now()+1000+random()*5000,pendingDecision:false,speechEl,nameEl});
     }
     for(const a of this.npcs.values()) {
-      for(const b of this.npcs.values()) if(a!==b) a.state.relationships[b.state.id]={affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)};
+      for(const b of this.npcs.values()) if(a!==b){
+        const random=keyedRandom(this.randomness,'home-relationship',a.state.id,b.state.id);
+        a.state.relationships[b.state.id]={affinity:45+Math.round(random()*20),trust:45+Math.round(random()*20),familiarity:25+Math.round(random()*35)};
+      }
       a.state.relationships.player={affinity:50,trust:50,familiarity:5};
     }
   }
@@ -1008,12 +1018,13 @@ class TownGame {
   cancelPlayerTargeting() {
     for(const agent of this.npcs.values()) {
       if(agent.task?.targetNpcId!=='player' && agent.state.targetNpcId!=='player') continue;
+      const random=beginRandomEvent(this.randomness,agent.state,'cancel-player-target');
       agent.task=undefined;
       agent.path=[];
       agent.pathIndex=0;
       agent.state.currentAction='idle';
       agent.state.targetNpcId=undefined;
-      agent.nextDecisionAt=now()+500+Math.random()*1000;
+      agent.nextDecisionAt=now()+500+random()*1000;
     }
   }
 
@@ -1166,6 +1177,7 @@ class TownGame {
   resetGodCameraInput(){this.godCameraInput.reset();}
 
   godCameraInputAllowed() {
+    if(!this.persistenceReady||!this.coarseWorld)return false;
     const active=document.activeElement as HTMLElement|null;
     return this.cameraMode==='god'&&!this.controls.isLocked&&!document.hidden&&document.hasFocus()&&!this.interactionOpen&&
       ui.admin.classList.contains('hidden')&&ui.overlay.classList.contains('hidden')&&
@@ -1214,14 +1226,33 @@ class TownGame {
 
 
   async initializePersistence() {
+    const controller=new AbortController();
+    let timeout:ReturnType<typeof setTimeout>|undefined;
+    let settled=false;
+    const deadline=new Promise<never>((_,reject)=>{
+      timeout=setTimeout(()=>{
+        if(settled)return;
+        settled=true;
+        controller.abort();
+        reject(new Error('World state load timed out; saving disabled until reload'));
+      },8_000);
+    });
     try{
-      const response=await fetch('/api/world/state');
-      if(!response.ok)throw new Error(`HTTP ${response.status}`);
-      const data=await response.json() as {snapshot:WorldPersistenceSnapshot|null;revision?:unknown;stats?:unknown};
+      // Keep late fetch/JSON results read-only, even when the transport ignores abort.
+      const request=(async()=>{
+        const response=await fetch('/api/world/state',{signal:controller.signal});
+        if(controller.signal.aborted)throw new Error('World state load aborted');
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        return await response.json() as {snapshot:WorldPersistenceSnapshot|null;revision?:unknown;stats?:unknown};
+      })();
+      const data=await Promise.race([request,deadline]);
       const revision=Number(data.revision);
       if(!Number.isSafeInteger(revision)||revision<0)throw new Error(i18n.t('persistence.invalidRevision'));
+      this.randomness=data.snapshot?snapshotRandomness(data.snapshot):readWorldRandomness(undefined);
+      this.initializeWorld();
       this.persistenceRevision=revision;
       this.persistenceConflict=false;
+      this.persistenceLoadBlocked=false;
       if(data.snapshot){
         this.restoreWorldState(data.snapshot);
         this.log(i18n.t('persistence.restored',{revision,day:data.snapshot.meta.day,coarse:data.snapshot.coarseChunks.length,fine:data.snapshot.fineChunks.length}));
@@ -1231,8 +1262,11 @@ class TownGame {
     }catch(error){
       this.persistenceLoadBlocked=true;
       this.clearMovablePersistenceQueue();
+      if(!this.coarseWorld)this.initializeWorld();
       this.log(i18n.t('persistence.loadFailed',{error:error instanceof Error?error.message:String(error)}));
     }finally{
+      settled=true;
+      if(timeout!==undefined)clearTimeout(timeout);
       this.persistenceReady=true;
       this.lastPersistenceSaveAt=now();
       this.updateFineChunkMaterialization();
@@ -1262,6 +1296,7 @@ class TownGame {
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
         streamedLayoutVersion:1,
+        randomness:{...this.randomness},
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },
@@ -1277,6 +1312,8 @@ class TownGame {
 
   restoreWorldState(snapshot:WorldPersistenceSnapshot) {
     if(snapshot.version!==1)return;
+    const randomness=snapshotRandomness(snapshot);
+    if(randomness.seed!==this.randomness.seed)throw new WorldRandomValidationError('World seed must be selected before initialization');
     if(snapshot.meta.streamedLayoutVersion!==undefined&&snapshot.meta.streamedLayoutVersion!==1)throw new StreamedLayoutValidationError('Unsupported layout version');
     for(const row of snapshot.fineChunks||[]){
       if(row.dynamicActivated!==undefined&&(snapshot.meta.streamedLayoutVersion!==1||typeof row.dynamicActivated!=='boolean'))throw new StreamedLayoutValidationError('Invalid owner activation state');
@@ -1343,7 +1380,7 @@ class TownGame {
       runtime.mesh.rotation.y=runtime.state.heading??0;
       runtime.yieldPlan=undefined;runtime.task=undefined;runtime.path=[];runtime.pathIndex=0;
       this.alignNpcVisualToGround(runtime);
-      runtime.nextDecisionAt=now()+700+Math.random()*1800;
+      runtime.nextDecisionAt=now()+700+keyedRandom(this.randomness,'restore-npc-wake',saved.id,randomEventCursor(saved.randomEventCursor))()*1800;
     }
 
     for(const saved of snapshot.homeObjects||[]){
@@ -1418,7 +1455,7 @@ class TownGame {
     if(lastSaveSucceeded){
       this.movableSaveRetryMs=1500;
       if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
-    }else if(!this.persistenceConflict&&this.movableDirty&&this.movableSaveTimer===undefined){
+    }else if(!this.persistenceConflict&&!this.persistenceLoadBlocked&&this.movableDirty&&this.movableSaveTimer===undefined){
       const retryMs=this.movableSaveRetryMs;
       this.movableSaveRetryMs=Math.min(15000,retryMs*2);
       this.scheduleMovablePersistence(retryMs);
@@ -1443,6 +1480,7 @@ class TownGame {
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
         streamedLayoutVersion:1,
+        randomness:{...this.randomness},
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },
@@ -1578,7 +1616,7 @@ class TownGame {
 
   materializeFineChunk(chunk:CoarseChunkState) {
     if(this.materializedChunks.has(chunk.id))return;
-    const plan=planFineChunk(chunk,this.coarseWorld.chunkSize);
+    const plan=planFineChunk(chunk,this.coarseWorld.chunkSize,this.randomness.seed);
     const runtime:FineChunkRuntime={
       chunkId:chunk.id,npcIds:[],objectIds:[],wildlifeIds:[],initialWildlifeCounts:{},
       initialWildlifeIds:new Set<string>(),fixedWildlifeWeights:new Map<string,number>(),groups:[],
@@ -1606,9 +1644,10 @@ class TownGame {
         runtime.npcIds.push(state.id);
       }
     }else for(const p of plan.residents){
+      const random=keyedRandom(this.randomness,'fine-npc',p.id);
       const state:NpcState={
         id:p.id,chunkId:chunk.id,name:p.name,role:p.role,position:{x:p.x,z:p.z},home:{x:p.x,z:p.z},
-        workAt:this.fineWorkplaceForRole(p.role,chunk.id),mood:p.mood,hunger:25+Math.random()*24,energy:62+Math.random()*28,social:42+Math.random()*32,
+        workAt:this.fineWorkplaceForRole(p.role,chunk.id),mood:p.mood,hunger:25+random()*24,energy:62+random()*28,social:42+random()*32,
         money:Math.max(2,Math.round(3+chunk.prosperity/7)),inventory:structuredClone(p.inventory),
         relationships:{},memories:[],currentAction:'idle',goal:'在这里生活并照顾自己的日常需要',lastDecisionAt:0
       };
@@ -1651,9 +1690,10 @@ class TownGame {
         const replacements=pendingReplacement.get(p.species)||0;
         if(replacements>0){pendingReplacement.set(p.species,replacements-1);continue;}
         const population=chunk.wildlife?.find(x=>x.species===p.species);
+        const random=keyedRandom(this.randomness,'fine-wildlife',p.id);
         const state:WildlifeState={
           id:p.id,chunkId:chunk.id,species:p.species,position:this.fineSpawnPosition({x:p.x,z:p.z},chunk),ageDays:p.ageDays,
-          health:clamp((population?.health??82)+(Math.random()-.5)*8,0,100),hunger:20+Math.random()*28,thirst:18+Math.random()*30,energy:62+Math.random()*28,
+          health:clamp((population?.health??82)+(random()-.5)*8,0,100),hunger:20+random()*28,thirst:18+random()*30,energy:62+random()*28,
           diseaseLoad:population?.diseaseLoad??0,
           sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
           lastDecisionAt:0,birthDay:Math.max(1,this.day-Math.floor(p.ageDays))
@@ -1716,7 +1756,8 @@ class TownGame {
       const state=structuredClone(transfer.state);
       state.chunkId=chunk.id;
       state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
-      state.position=this.randomPassableNear(state.position,3,chunk.id);
+      const random=beginRandomEvent(this.randomness,state,'transfer-entry',chunk.id);
+      state.position=this.randomPassableNear(state.position,3,random,chunk.id);
       state.representedPopulation=effectiveWeight;
       state.currentAction='wander';
       state.targetObjectId=undefined;state.targetWildlifeId=undefined;state.targetChunkId=undefined;
@@ -1754,13 +1795,14 @@ class TownGame {
     mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     mesh.rotation.y=state.heading??0;mesh.visible=true;
     const agent:NpcRuntime={state,characterAsset,mesh,speechEl,nameEl,mixer,actions,activeAnimation,soles,
-      path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,pendingDecision:false};
+      path:[],pathIndex:0,nextDecisionAt:now()+800+keyedRandom(this.randomness,'fine-npc-wake',state.id,randomEventCursor(state.randomEventCursor))()*3500,pendingDecision:false};
     this.streamedNpcs.remember(agent);
     this.npcs.set(state.id,agent);
 
     for(const other of this.npcs.values()){
       if(other===agent)continue;
-      state.relationships[other.state.id]??={affinity:45+Math.round(Math.random()*15),trust:45+Math.round(Math.random()*15),familiarity:12};
+      const random=keyedRandom(this.randomness,'fine-relationship',state.id,other.state.id);
+      state.relationships[other.state.id]??={affinity:45+Math.round(random()*15),trust:45+Math.round(random()*15),familiarity:12};
       other.state.relationships[state.id]??={affinity:48,trust:48,familiarity:8};
     }
     state.relationships.player??={affinity:50,trust:50,familiarity:5};
@@ -1780,7 +1822,7 @@ class TownGame {
     const g=visual.mesh;
     g.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     g.visible=true;
-    const runtime:WildlifeRuntime={state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true};
+    const runtime:WildlifeRuntime={state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+keyedRandom(this.randomness,'wildlife-wake',state.id,randomEventCursor(state.randomEventCursor))()*7000,actionResolved:true};
     this.streamedWildlife.remember(runtime);
     this.wildlife.set(state.id,runtime);
     if(!this.wildlifePresentation.rebind(visual,runtime))this.wildlifePresentation.register(runtime);
@@ -2031,7 +2073,7 @@ class TownGame {
     this.minuteOfDay += dt*2.2;
     if(this.minuteOfDay>=1440){this.minuteOfDay-=1440;this.day++;this.weatherEpoch=-1;this.event(`第 ${this.day} 天开始了。`);}
     const block=Math.floor(this.minuteOfDay/360);
-    if(block!==this.weatherEpoch){this.weatherEpoch=block;const roll=Math.random();this.weather=roll<.68?'clear':roll<.88?'cloudy':'rain';}
+    if(block!==this.weatherEpoch){this.weatherEpoch=block;const roll=keyedRandom(this.randomness,'weather',this.day,block)();this.weather=roll<.68?'clear':roll<.88?'cloudy':'rain';}
     const phase=(this.minuteOfDay/1440)*Math.PI*2-Math.PI/2; const daylight=clamp(Math.sin(phase)*.7+.45,.12,1);
     this.sun.intensity=.15+daylight*1.65; this.ambient.intensity=.32+daylight*1.05;
     const sky=new THREE.Color().setHSL(.56,.55,.12+daylight*.58); this.scene.background=sky; if(this.scene.fog)this.scene.fog.color.copy(sky);
@@ -2062,6 +2104,11 @@ class TownGame {
   applyOwnedWildlifeCommand(animal:WildlifeRuntime) {
     const s=animal.state;
     const domestication=normalizeWildlifeDomestication(s.species,s.domestication);
+    const ownerPosition=this.playerPosition;
+    const finalWaypoint=animal.path.length?animal.path[animal.path.length-1]:undefined;
+    const followRandom=domestication?.command==='follow'&&domestication.ownerId==='player'&&this.cameraMode==='firstPerson'
+      &&dist(s.position,ownerPosition)>2.2&&(!finalWaypoint||dist(finalWaypoint,ownerPosition)>2.2)
+      ?beginRandomEvent(this.randomness,s,'owner-follow-path',domestication.ownerId):undefined;
     s.domestication=domestication;
     if(!domestication?.ownerId||domestication.command==='none')return false;
 
@@ -2078,16 +2125,14 @@ class TownGame {
         s.currentAction='rest';
         return true;
       }
-      const ownerPosition=this.playerPosition;
       const ownerDistance=dist(s.position,ownerPosition);
       if(ownerDistance<=2.2){
         animal.path=[];animal.pathIndex=0;animal.controllerSpeed=0;animal.actionResolved=true;
         s.currentAction='rest';
         return true;
       }
-      const finalWaypoint=animal.path.length?animal.path[animal.path.length-1]:undefined;
       if(!finalWaypoint||dist(finalWaypoint,ownerPosition)>2.2){
-        const target=this.randomPassableNear(ownerPosition,1.1,s.chunkId);
+        const target=this.randomPassableNear(ownerPosition,1.1,followRandom!,s.chunkId);
         animal.path=this.findPath(s.position,target);animal.pathIndex=0;animal.controllerSpeed=0;
       }
       s.currentAction='wander';animal.actionResolved=true;
@@ -2312,25 +2357,32 @@ class TownGame {
       }).slice(0,6);
     if(!due.length){this.nextWildlifeBatchAt=now()+1500;return;}
     this.wildlifeDecisionPending=true;
-    const requests=new Map(due.map(animal=>[animal.state.id,{animal,owner:animal.state.domestication?.ownerId,command:animal.state.domestication?.command}]));
-    const current=(id:string)=>{
-      const pending=requests.get(id),animal=this.wildlife.get(id);
-      return pending&&animal===pending.animal&&!animal.removed&&animal.state.domestication?.ownerId===pending.owner&&animal.state.domestication?.command===pending.command?animal:undefined;
-    };
+    const pending=new Map(due.map(animal=>{
+      const cursor=randomEventCursor(animal.state.randomEventCursor);
+      const owner=JSON.stringify(normalizeWildlifeDomestication(animal.state.species,animal.state.domestication));
+      return [animal.state.id,{
+        animal,retryRandom:keyedRandom(this.randomness,'wildlife-retry',animal.state.id,cursor),
+        isCurrent:()=>!animal.removed&&this.wildlife.get(animal.state.id)===animal
+          &&randomEventCursor(animal.state.randomEventCursor)===cursor&&!wildlifeHasActiveOwnerCommand(animal.state)
+          &&JSON.stringify(normalizeWildlifeDomestication(animal.state.species,animal.state.domestication))===owner
+      }] as const;
+    }));
     const req:WildlifeDecisionBatchRequest={requests:due.map(x=>this.wildlifeSnapshot(x))};
     try{
       const response=await fetch('/api/wildlife/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});
       const out=await response.json() as WildlifeDecisionBatchResponse;
       if(!response.ok)throw new Error('wildlife decision failed');
-      const accepted=new Set<string>();
       for(const decision of out.decisions){
-        if(accepted.has(decision.wildlifeId))continue;
-        accepted.add(decision.wildlifeId);
-        const animal=current(decision.wildlifeId);
-        if(animal)this.applyWildlifeDecision(animal,decision);
+        const request=pending.get(decision.wildlifeId);
+        if(!request)continue;
+        pending.delete(decision.wildlifeId);
+        if(request.isCurrent())this.applyWildlifeDecision(request.animal,decision);
       }
     }catch{
-      for(const animal of due)if(current(animal.state.id))animal.nextDecisionAt=now()+5000+Math.random()*5000;
+      for(const request of pending.values()){
+        if(!request.isCurrent())continue;
+        request.animal.nextDecisionAt=now()+5000+request.retryRandom()*5000;
+      }
     }finally{
       this.wildlifeDecisionPending=false;
       this.nextWildlifeBatchAt=now()+2500;
@@ -2339,6 +2391,7 @@ class TownGame {
 
   applyWildlifeDecision(animal:WildlifeRuntime,decision:WildlifeDecisionResult) {
     const s=animal.state;
+    const random=beginRandomEvent(this.randomness,s,'wildlife-decision',decision.action,decision.targetObjectId,decision.targetWildlifeId,decision.targetChunkId);
     s.currentAction=decision.action;s.targetObjectId=decision.targetObjectId;s.targetWildlifeId=decision.targetWildlifeId;s.targetChunkId=decision.targetChunkId;s.lastDecisionAt=Date.now();
     animal.path=[];animal.pathIndex=0;animal.actionResolved=false;
     let target:Vec2|undefined;
@@ -2358,10 +2411,10 @@ class TownGame {
         const from=threat.state.position;
         let dx=s.position.x-from.x,dz=s.position.z-from.z;
         if(Math.hypot(dx,dz)<.1){dx=.7;dz=.7;}
-        const length=Math.hypot(dx,dz);target=this.randomPassableNear({x:s.position.x+dx/length*8,z:s.position.z+dz/length*8},2,s.chunkId);
+        const length=Math.hypot(dx,dz);target=this.randomPassableNear({x:s.position.x+dx/length*8,z:s.position.z+dz/length*8},2,random,s.chunkId);
       }else{
         s.currentAction='wander';
-        target=this.randomPassableNear(s.position,7,s.chunkId);
+        target=this.randomPassableNear(s.position,7,random,s.chunkId);
       }
     }else if(decision.action==='migrate'){
       const source=this.coarseWorld.chunks.get(s.chunkId);
@@ -2372,9 +2425,9 @@ class TownGame {
         s.targetChunkId=destination.id;
         target=fineMigrationEntryPoint(source,destination,this.coarseWorld.chunkSize,s.position);
       }
-      if(!target){s.currentAction='wander';s.targetChunkId=undefined;target=this.randomPassableNear(s.position,7,s.chunkId);}
+      if(!target){s.currentAction='wander';s.targetChunkId=undefined;target=this.randomPassableNear(s.position,7,random,s.chunkId);}
     }else if(decision.action==='wander'){
-      target=this.randomPassableNear(s.position,7,s.chunkId);
+      target=this.randomPassableNear(s.position,7,random,s.chunkId);
     }
 
     if(target)animal.path=this.findPath(s.position,target);
@@ -2422,6 +2475,7 @@ class TownGame {
     if(object?.state.kind==='dropped_item'&&['drink','graze','forage'].includes(s.currentAction)){
       s.targetObjectId=undefined;s.currentAction='rest';animal.actionResolved=true;return;
     }
+    const random=beginRandomEvent(this.randomness,s,'wildlife-completion',s.currentAction,s.targetObjectId,s.targetWildlifeId,s.targetChunkId);
     const other=s.targetWildlifeId?this.wildlife.get(s.targetWildlifeId):undefined;
     switch(s.currentAction){
       case 'drink':
@@ -2505,7 +2559,7 @@ class TownGame {
         s.energy=clamp(s.energy-2*functional.movementEnergyMultiplier,0,100);break;
     }
     animal.actionResolved=true;
-    animal.nextDecisionAt=now()+8000+Math.random()*10000;
+    animal.nextDecisionAt=now()+8000+random()*10000;
     s.targetObjectId=undefined;s.targetWildlifeId=undefined;s.targetChunkId=undefined;
   }
 
@@ -3125,6 +3179,7 @@ class TownGame {
   async requestDecision(agent:NpcRuntime) {
     agent.pendingDecision=true; this.inFlight++; agent.state.lastDecisionAt=Date.now();
     const decisionEpoch=this.perceptionEpoch;
+    const retryRandom=keyedRandom(this.randomness,'npc-stale-retry',agent.state.id,randomEventCursor(agent.state.randomEventCursor));
     const world=this.snapshot(agent); const allowed=this.allowedActions(agent,world);
     const req:DecisionRequest={npc:agent.state,world,allowedActions:allowed};
     try{
@@ -3133,7 +3188,7 @@ class TownGame {
       // Camera-mode transitions change whether the player exists in the NPC world.
       // Never apply a result generated from an obsolete perception snapshot.
       if(agent.removed)return;
-      if(decisionEpoch!==this.perceptionEpoch){agent.nextDecisionAt=now()+250+Math.random()*500;return;}
+      if(decisionEpoch!==this.perceptionEpoch){agent.nextDecisionAt=now()+250+retryRandom()*500;return;}
       this.applyDecision(agent,d);
       this.log(`${agent.state.name} → ${d.action}${d.socialIntent?` / ${d.socialIntent}`:''} [${d.source} ${(d.confidence*100).toFixed(0)}%]`,'developer');
     }catch{
@@ -3182,16 +3237,17 @@ class TownGame {
   }
 
   applyDecision(agent:NpcRuntime,d:DecisionResponse) {
+    const random=beginRandomEvent(this.randomness,agent.state,'npc-decision',d.action,d.targetNpcId,d.targetObjectId,d.socialIntent);
     agent.lastDecision=d;
     this.applyStateShift(agent,d.stateShift);
     agent.state.currentAction=d.action;
     const task:ActionTask={action:d.action,targetNpcId:d.targetNpcId,targetObjectId:d.targetObjectId,intent:d.socialIntent||'smalltalk',startedAt:now()};
     agent.task=task;
-    const commitmentMs=7000+d.commitment*2500; agent.nextDecisionAt=now()+commitmentMs+Math.random()*3500;
-    if(d.action==='idle'){agent.task=undefined;agent.nextDecisionAt=now()+2500+Math.random()*2500;return;}
-    if(d.action==='wander'){const target=this.randomPassableNear(agent.state.position,8,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);agent.task=undefined;return;}
-    if(d.action==='explore'){const target=this.randomPassableNear(agent.state.position,20,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);return;}
-    if(d.action==='patrol'){const localGuard=agent.state.chunkId?this.objects.get(`${agent.state.chunkId}_guard`):this.objects.get('guard_post');const origin=localGuard?.state.position||agent.state.position;const target=this.randomPassableNear(origin,13,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);return;}
+    const commitmentMs=7000+d.commitment*2500; agent.nextDecisionAt=now()+commitmentMs+random()*3500;
+    if(d.action==='idle'){agent.task=undefined;agent.nextDecisionAt=now()+2500+random()*2500;return;}
+    if(d.action==='wander'){const target=this.randomPassableNear(agent.state.position,8,random,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);agent.task=undefined;return;}
+    if(d.action==='explore'){const target=this.randomPassableNear(agent.state.position,20,random,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);return;}
+    if(d.action==='patrol'){const localGuard=agent.state.chunkId?this.objects.get(`${agent.state.chunkId}_guard`):this.objects.get('guard_post');const origin=localGuard?.state.position||agent.state.position;const target=this.randomPassableNear(origin,13,random,agent.state.chunkId);agent.path=this.findPath(agent.state.position,target);return;}
     if(['talk','visit','trade','gift','deliver'].includes(d.action)&&d.targetNpcId){
       if(d.targetNpcId==='player'){
         // Only conversational actions may intentionally target the player. Economic/item actions stay NPC-to-NPC for now.
@@ -3271,7 +3327,8 @@ class TownGame {
     if(['talk','visit','trade','gift','deliver'].includes(task.action)&&task.targetNpcId){
       if(task.targetNpcId==='player'){
         if(this.cameraMode!=='firstPerson'){
-          agent.task=undefined;agent.path=[];agent.pathIndex=0;agent.state.currentAction='idle';agent.nextDecisionAt=now()+900+Math.random()*900;return;
+          const random=beginRandomEvent(this.randomness,agent.state,'cancel-player-task',task.action);
+          agent.task=undefined;agent.path=[];agent.pathIndex=0;agent.state.currentAction='idle';agent.nextDecisionAt=now()+900+random()*900;return;
         }
         const pp=this.playerPosition; if(dist(agent.state.position,pp)>PLAYER_CONVERSATION_REACH){agent.path=this.findPath(agent.state.position,pp);return;}
         this.npcTalkPlayerAuto(agent,task.intent||'smalltalk'); this.playActivity(agent,'Wave',1400);agent.task=undefined; return;
@@ -3319,25 +3376,26 @@ class TownGame {
 
   npcWork(agent:NpcRuntime,obj?:RuntimeObject) {
     const n=agent.state;
+    const random=n.role==='maker'?beginRandomEvent(this.randomness,n,'maker-work',obj?.state.id):undefined;
     n.energy=clamp(n.energy-5,0,100);n.hunger=clamp(n.hunger+4,0,100);
     if(n.role==='farmer'&&obj?.state.kind==='farm_plot'){this.addInventory(n.inventory,'grain',1);n.money+=1;}
     else if(n.role==='baker'&&obj?.state.tags.includes('baker')){this.npcCraft(agent,obj);n.money+=1;}
     else if(n.role==='shopkeeper'){n.money+=3;n.social=clamp(n.social+2,0,100);}
     else if(n.role==='guard'){n.money+=2;this.remember(agent,'值守了一段时间。',1);}
-    else if(n.role==='maker'){n.money+=2;if(Math.random()<.35)this.addInventory(n.inventory,'wood',1);}
+    else if(n.role==='maker'){n.money+=2;if(random!()<.35)this.addInventory(n.inventory,'wood',1);}
     else n.money+=2;
     this.event(`${n.name} 完成了一轮 ${n.role} 工作。`);
   }
 
   npcHarvest(agent:NpcRuntime,obj:RuntimeObject) {
     const n=agent.state;
-    if(typeof obj.state.resourceAmount==='number'){
-      if(obj.state.resourceAmount<=0){this.say(agent,'这里暂时没有可采集的资源了。');return;}
-      obj.state.resourceAmount=Math.max(0,obj.state.resourceAmount-1);
-    }
+    if(typeof obj.state.resourceAmount==='number'&&obj.state.resourceAmount<=0){this.say(agent,'这里暂时没有可采集的资源了。');return;}
+    const random=obj.state.kind==='farm_plot'&&!obj.state.tags.some(tag=>tag==='mine'||tag==='resource')
+      ?beginRandomEvent(this.randomness,n,'farm-harvest',obj.state.id):undefined;
+    if(typeof obj.state.resourceAmount==='number')obj.state.resourceAmount=Math.max(0,obj.state.resourceAmount-1);
     n.energy=clamp(n.energy-6,0,100);n.hunger=clamp(n.hunger+3,0,100);
     if(obj.state.tags.includes('mine')||obj.state.tags.includes('resource')){this.addInventory(n.inventory,'stone',2);this.event(`${n.name} 在${obj.state.name}采集了石料。`);}
-    else if(obj.state.kind==='farm_plot'){this.addInventory(n.inventory,'grain',2);if(Math.random()<.35)this.addInventory(n.inventory,'flower',1);this.event(`${n.name} 收获了农作物。`);}
+    else if(obj.state.kind==='farm_plot'){this.addInventory(n.inventory,'grain',2);if(random!()<.35)this.addInventory(n.inventory,'flower',1);this.event(`${n.name} 收获了农作物。`);}
     else if(obj.state.kind==='tree'){const kind:ItemKind=obj.state.tags.includes('apple')?'apple':'wood';this.addInventory(n.inventory,kind,1);this.event(`${n.name} 从${obj.state.name}采集了${this.itemName(kind)}。`);}
   }
 
@@ -3873,6 +3931,7 @@ class TownGame {
     ui.world.dataset.persistenceSavePending=String(this.persistenceSaveInFlight||this.persistenceSaveQueued);
     ui.world.dataset.persistenceRevision=String(this.persistenceRevision);
     ui.world.dataset.persistenceConflict=String(this.persistenceConflict);
+    ui.world.dataset.persistenceLoadBlocked=String(this.persistenceLoadBlocked);
     ui.world.dataset.assetFailures=String(this.assetLoadFailures.length);
     ui.world.dataset.licensedVisualTargets=String(this.visualTargets.length);
     ui.world.dataset.licensedVisualsResolved=String(this.visualTargets.filter(target=>target.group.children.length>0).length);
@@ -4017,7 +4076,7 @@ class TownGame {
   }
 
   renderEvolutionPanel() {
-    if(this.cameraMode!=='god'){
+    if(this.cameraMode!=='god'||!this.coarseWorld){
       ui.evolution.classList.add('hidden');
       return;
     }
@@ -4206,7 +4265,7 @@ class TownGame {
     return excludeId?colliders.filter(collider=>collider.id!==excludeId):colliders;
   }
 
-  randomPassableNear(p:Vec2,radius:number,chunkId?:string):Vec2 {
+  randomPassableNear(p:Vec2,radius:number,random:RandomSource,chunkId?:string):Vec2 {
     const chunk=chunkId?this.coarseWorld.chunks.get(chunkId):undefined;
     const half=this.coarseWorld.chunkSize/2-1;
     const minX=chunk?chunk.cx*this.coarseWorld.chunkSize-half:Number.NEGATIVE_INFINITY;
@@ -4214,8 +4273,8 @@ class TownGame {
     const minZ=chunk?chunk.cz*this.coarseWorld.chunkSize-half:Number.NEGATIVE_INFINITY;
     const maxZ=chunk?chunk.cz*this.coarseWorld.chunkSize+half:Number.POSITIVE_INFINITY;
     for(let i=0;i<60;i++){
-      const x=Math.round(clamp(p.x+(Math.random()*2-1)*radius,minX,maxX));
-      const z=Math.round(clamp(p.z+(Math.random()*2-1)*radius,minZ,maxZ));
+      const x=Math.round(clamp(p.x+(random()*2-1)*radius,minX,maxX));
+      const z=Math.round(clamp(p.z+(random()*2-1)*radius,minZ,maxZ));
       if(!this.physics.isBlocked(x,z,.28))return{x,z};
     }
     return{x:p.x,z:p.z};

@@ -9,6 +9,7 @@ import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, compute
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
 import { WorldSnapshotValidationError, validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
 import { layoutIdentity, readStreamedLayout, assertStreamedLayoutStates } from '../src/world/streamedLayouts.js';
+import { readWorldRandomness } from '../src/world/worldRandom.js';
 
 type Row = Record<string, unknown>;
 
@@ -246,6 +247,13 @@ export class WorldPersistence {
       const previous=this.db.prepare("SELECT meta_json FROM world_meta WHERE slot = 'default'").get() as {meta_json:string}|undefined;
       if(previous&&JSON.parse(previous.meta_json).streamedLayoutVersion!==undefined&&data.meta.streamedLayoutVersion!==1){
         throw new WorldSnapshotValidationError(['snapshot.meta.streamedLayoutVersion: cannot omit stored layout contract']);
+      }
+      if(previous){
+        const meta=JSON.parse(String(previous.meta_json)) as WorldPersistenceMeta;
+        const prior=readWorldRandomness(meta.randomness),incoming=readWorldRandomness(data.meta.randomness);
+        if((meta.randomness!==undefined&&data.meta.randomness===undefined)||prior.seed!==incoming.seed||prior.version!==incoming.version){
+          throw new WorldSnapshotValidationError(['snapshot.meta.randomness: cannot replace or omit stored world random authority']);
+        }
       }
       const newLayouts:NonNullable<WorldPersistenceSnapshot['streamedLayouts']>=[];
       for(const layout of data.streamedLayouts||[]){

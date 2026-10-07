@@ -1,3 +1,4 @@
+import {DEFAULT_WORLD_SEED,fineLayoutKey,hashText,randomFromKey} from './worldRandom.js';
 import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
 import { wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
@@ -71,23 +72,6 @@ export interface FineChunkPlan {
   objects: FineObjectPlan[];
   residents: FineResidentPlan[];
   wildlife: FineWildlifePlan[];
-}
-
-function hash(text:string) {
-  let h=2166136261;
-  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
-  return h>>>0;
-}
-
-function rng(seed:string) {
-  let s=hash(seed)||1;
-  return ()=>{
-    s+=0x6D2B79F5;
-    let t=s;
-    t=Math.imul(t^(t>>>15),t|1);
-    t^=t+Math.imul(t^(t>>>7),t|61);
-    return ((t^(t>>>14))>>>0)/4294967296;
-  };
 }
 
 const givenNames=['澪','岚','葵','凛','悠','茜','晴','陆','纱','枫','朔','琴','灯','遥','真','铃','森','夏','冬','千'];
@@ -170,8 +154,8 @@ export const BUILDINGS:Readonly<Record<SettlementArchetype,readonly BuildingDef[
   ]
 };
 
-export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,seed='latticefolk-default'):FineChunkPlan {
-  const random=rng(seed==='latticefolk-default'?chunk.id:JSON.stringify([1,seed,'fine-layout',chunk.id]));
+export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,worldSeed=DEFAULT_WORLD_SEED):FineChunkPlan {
+  const random=randomFromKey(fineLayoutKey(worldSeed,chunk.id));
   const layoutScale=chunkSize/24;
   const centerX=chunk.cx*chunkSize,centerZ=chunk.cz*chunkSize;
   const archetype=archetypeFor(chunk);
@@ -189,7 +173,7 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,seed='latticef
     addRoad('main_ew','区域东西路',centerX,centerZ,chunkSize,4,['main']);
     addRoad('main_ns','区域南北路',centerX,centerZ,4,chunkSize,['main']);
   }else if(chunk.settlementLevel>0){
-    const horizontal=hash(`${chunk.id}:road-axis`)%2===0;
+    const horizontal=hashText(`${chunk.id}:road-axis`)%2===0;
     if(horizontal)addRoad('main_ew','聚落主路',centerX,centerZ,chunkSize-1.0,1.7,['settlement','main']);
     else addRoad('main_ns','聚落主路',centerX,centerZ,1.7,chunkSize-1.0,['settlement','main']);
     if(chunk.settlementLevel>=2||archetype==='market_hamlet'){

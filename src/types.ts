@@ -94,6 +94,8 @@ export interface NpcMemory {
 
 export interface NpcState {
   id: string;
+  /** Accepted random events; absent legacy cursors start at zero. */
+  randomEventCursor?: number;
   chunkId?: string;
   name: string;
   role: NpcRole;
@@ -1035,6 +1037,8 @@ export interface WildlifeDomesticationState {
 
 export interface WildlifeState {
   id: string;
+  /** Accepted random events; absent legacy cursors start at zero. */
+  randomEventCursor?: number;
   chunkId: string;
   species: WildlifeSpecies;
   position: Vec2;
@@ -1275,8 +1279,14 @@ export interface PersistedFineChunk {
   wildlifeStates?: WildlifeState[];
 }
 
+export interface WorldRandomness {
+  version: 1;
+  seed: string;
+}
+
 export interface WorldPersistenceMeta {
   streamedLayoutVersion?: 1;
+  randomness?: WorldRandomness;
   day: number;
   minuteOfDay: number;
   weather: string;

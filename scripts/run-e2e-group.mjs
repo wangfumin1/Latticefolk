@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const groups = {
   A: ['baking-oven', 'environment-presentation', 'playable-smoke', 'weather-persistence'],
   B: ['coarse-presentation', 'npc-baking-stance', 'portable-objects', 'semantic-furniture',
-    'visible-well', 'water-patch', 'wildlife-presentation']
+    'visible-well', 'water-patch', 'wildlife-presentation', 'world-randomness']
 };
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cli = createRequire(import.meta.url).resolve('@playwright/test/cli');

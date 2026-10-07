@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 import {GodCameraInput,isGodCameraInputKey} from '../src/scene/godCameraInput.js';
 import {SunShadowView} from '../src/scene/sunShadow.js';
+import {refreshLocaleText} from '../src/ui/runtimeLocale.js';
+import {visibleHudLogs} from '../src/ui/hudDiagnostics.js';
 import {I18n,SUPPORTED_LOCALES} from '../src/i18n.js';
 const {JSDOM}=createRequire(import.meta.url)('jsdom');
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
@@ -19,7 +21,7 @@ function visit(n:ts.Node){
  ts.forEachChild(n,visit);
 }visit(ast);
 const transpile=(s:string)=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-const names=['bindInput','resetGodCameraInput','godCameraInputAllowed','godCameraKey','updateGodCamera','applyGodCameraInput','updateCameraShadow',
+const names=['changeLocale','refreshInteractionLabels','updateLocalizedUi','renderEvolutionPanel','bindInput','resetGodCameraInput','godCameraInputAllowed','godCameraKey','updateGodCamera','applyGodCameraInput','updateCameraShadow',
  'toggleCameraMode','enterGodMode','enterFirstPerson','focusTown','focusSelected','moveGodTarget','openInteractionMenu','closeInteractionMenu'];
 const code=transpile(`return class Runtime {${names.map(k=>methods.get(k)).join('\n')}}`);
 // Actual input, camera, shadow and menu methods with real DOM listeners and OrbitControls.
@@ -30,15 +32,15 @@ function fixture(){
  const document=w.document as Document,ui=new Function('document',transpile(`return ${uiSource}`))(document);
  let time=0,focused=true,hidden=false,renderCalls=0;
  Object.defineProperty(document,'hasFocus',{value:()=>focused});Object.defineProperty(document,'hidden',{get:()=>hidden});
- const Runtime=new Function('ui','document','addEventListener','THREE','i18n','isGodCameraInputKey','now','clamp',code)
-  (ui,document,w.addEventListener.bind(w),THREE,i18n,isGodCameraInputKey,()=>time,(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v)));
+ const Runtime=new Function('localStorage','refreshLocaleText','visibleHudLogs','ui','document','addEventListener','THREE','i18n','isGodCameraInputKey','now','clamp',code)
+  (w.localStorage,refreshLocaleText,visibleHudLogs,ui,document,w.addEventListener.bind(w),THREE,i18n,isGodCameraInputKey,()=>time,(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v)));
  const r=new Runtime(),canvas=document.createElement('canvas');document.querySelector('#game')!.append(canvas);
  const camera=new THREE.PerspectiveCamera();camera.position.set(12,18,12);
  const orbit=new OrbitControls(camera,canvas);orbit.target.set(0,0,0);orbit.update();
  const events=new Map<string,()=>void>();const controls={isLocked:false,addEventListener:(name:string,fn:()=>void)=>events.set(name,fn),
   lock(){this.isLocked=true;events.get('lock')?.();},unlock(){this.isLocked=false;events.get('unlock')?.();}};
  const shadowStatement=methods.get('updateUi')!.split('\n').find(line=>line.includes('ui.world.dataset.shadowView='))!;
- Object.assign(r,{camera,orbit,controls,keys:new Set(),godCameraInput:new GodCameraInput(),cameraMode:'god',interactionOpen:false,
+ Object.assign(r,{logs:[],day:1,weather:'clear',gameTimeText:()=> '08:15',worldSeason:()=> 'spring',updatePrompt(){},persistenceReady:true,camera,orbit,controls,keys:new Set(),godCameraInput:new GodCameraInput(),cameraMode:'god',interactionOpen:false,
   renderer:{domElement:canvas,setSize(){},render(){renderCalls++;}},sunShadow:new SunShadowView(new THREE.DirectionalLight()),shadowFocus:new THREE.Vector3(),
   firstPersonRotation:new THREE.Euler(),playerPosition:{x:0,z:0},perceptionEpoch:0,coarseWorld:{activeBounds:()=>({minX:-36,maxX:36,minZ:-36,maxZ:36})},
   godPointer:new THREE.Vector2(),objects:new Map(),cancelPlayerTargeting(){},suspendPlayerWildlifeFollowPaths(){},toast(){},
@@ -108,5 +110,21 @@ test('a real stale God hold does not jump or resume through repeat',()=>{
   const start=f.r.orbit.target.clone();f.key('keydown','KeyD');f.at(2001);f.r.updateGodCamera();
   f.at(2100);f.key('keydown','KeyD',true);f.at(2200);f.key('keyup','KeyD');
   assert.ok(f.r.orbit.target.distanceTo(start)<1e-8);
+ }finally{f.close();}
+});
+
+test('God input and locale remain safe before the selected-seed world exists',()=>{
+ const f=fixture();try{
+  const world=f.r.coarseWorld;f.r.coarseWorld=undefined;f.r.persistenceReady=false;f.r.cameraMode='firstPerson';
+  const errors:unknown[]=[];f.w.addEventListener('error',(event:ErrorEvent)=>{errors.push(event.error);event.preventDefault();});
+  f.key('keydown','KeyG');const before=f.r.orbit.target.clone();
+  f.at(100);f.key('keydown','KeyD');f.at(900);f.key('keyup','KeyD');
+  assert.deepEqual(f.r.orbit.target.toArray(),before.toArray());
+  f.ui.localeSelect.value='ja';f.ui.localeSelect.dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.document.documentElement.lang,'ja');assert.equal(f.ui.evolution.classList.contains('hidden'),true);
+  f.at(1000);f.key('keydown','KeyD');f.at(1800);f.r.coarseWorld=world;f.r.persistenceReady=true;f.key('keyup','KeyD');
+  assert.deepEqual(f.r.orbit.target.toArray(),before.toArray(),'pre-load hold must not replay after readiness');
+  f.at(1900);f.key('keydown','KeyD');f.at(2000);f.key('keyup','KeyD');
+  assert.ok(Math.abs(f.r.orbit.target.distanceTo(before)-1.1)<1e-9);assert.deepEqual(errors,[]);assert.equal(f.renderCalls(),0);
  }finally{f.close();}
 });

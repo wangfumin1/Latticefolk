@@ -1,3 +1,4 @@
+import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
@@ -43,7 +44,7 @@ const code=ts.transpileModule(`return class Runtime {objects=new Map();${members
 function fixture(snapshot:WorldPersistenceSnapshot|null=null,realActors=false){
   const io={snapshot,gets:0,writes:0,beacons:0,epoch:Date.now(),store:undefined as WorldPersistence|undefined,writeGate:undefined as Promise<void>|undefined};
   const document=new JSDOM('<div id="speech"></div>').window.document;
-  const deps={document,ui:{speechLayer:document.querySelector('#speech')},StreamedActors,Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
+  const deps={...worldRandom,document,ui:{speechLayer:document.querySelector('#speech')},StreamedActors,Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
     clamp:(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x)),now:()=>1000,i18n:{t:(key:string)=>key},fetch:async(_url:string,init?:{method?:string;body?:string})=>{
       if(init?.method==='POST'){io.writes++;const data=JSON.parse(init.body!);if(io.writeGate)await io.writeGate;const saved=io.store!.save(data.snapshot,data.expectedRevision);return{ok:true,status:200,json:async()=>saved};}
       io.gets++;return{ok:true,json:async()=>({revision:io.store?.revision()??3,snapshot:io.store?.load()??io.snapshot})};
@@ -51,7 +52,7 @@ function fixture(snapshot:WorldPersistenceSnapshot|null=null,realActors=false){
   const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps)),r=new Runtime();
   const scene=new THREE.Scene(),coarseWorld=new CoarseWorldRuntime(scene),physics=new FinePhysicsAuthority();registerHomeTerrain(physics,72);
   for(const c of coarseWorld.chunks.values())c.wildlife=[];
-  Object.assign(r,{scene,physics,coarseWorld,streamedLayouts:new layouts.StreamedLayoutRegistry(coarseWorld.seed),visualTargets:[] as any[],materializedChunks:new Map(),fineChunkCache:new Map(),npcs:new Map(),wildlife:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,
+  Object.assign(r,{randomness:worldRandom.readWorldRandomness(undefined),initializeWorld(){},scene,physics,coarseWorld,streamedLayouts:new layouts.StreamedLayoutRegistry(coarseWorld.seed),visualTargets:[] as any[],materializedChunks:new Map(),fineChunkCache:new Map(),npcs:new Map(),wildlife:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,
     day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,cameraMode:'firstPerson',camera:{position:new THREE.Vector3()},playerPosition:{x:0,z:7},
     playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0},
     worldSeason:()=> 'spring',physicsDynamicColliders:()=>[],groundHeightAt:()=>0,attachVisualTarget(target:any){this.visualTargets.push(target);},event(){},log(){},reconcileLineageOffspring(){},
@@ -149,7 +150,7 @@ test('a visible cart can be pushed before its coarse owner activates without los
     position:{x:36,z:0},tags:['transport'],usable:true,pickupable:false,rigidBodyArchetype:'cart',storage:[{kind:'wood',count:2}],capabilities:['inspect','load','unload']}]});
   await r.initializePersistence();const layout=r.streamedLayouts.get('unit_1_0'),cart=layout.objects.find((o:any)=>o.id==='legacy_movable_cart');
   const view=r.streamedPresentation.object(cart.id),before={...view.state.position};
-  assert.equal(r.persistenceLoadBlocked,undefined);assert.equal(r.streamedLayoutError,undefined);
+  assert.equal(r.persistenceLoadBlocked,false);assert.equal(r.streamedLayoutError,undefined);
   assert.equal(r.objects.has(cart.id),false);assert.equal(r.coarseWorld.materialized.size,0);
   assert.deepEqual(before,{x:36,z:0});assert.deepEqual(view.state.storage,[{kind:'wood',count:2}]);
   assert.equal(r.tryPushMovableObject(cart.id,{x:.15,z:0}),true);assert.ok(view.state.position.x>before.x);
@@ -202,7 +203,7 @@ test('later exploration cannot materialize an empty failed unit or overwrite its
   saved.fineChunks=[{chunkId:'chunk_5_0',npcStates:[],objectStates:[tree],wildlifeStates:[]}];validateWorldPersistenceSnapshot(saved);
   const store=new WorldPersistence(':memory:');try{
     store.save(saved,0);const before=store.load(),{r,io}=fixture();io.store=store;await r.initializePersistence();
-    assert.equal(r.streamedPresentation.unitIds().length,8);assert.equal(r.persistenceLoadBlocked,undefined);
+    assert.equal(r.streamedPresentation.unitIds().length,8);assert.equal(r.persistenceLoadBlocked,false);
     for(const x of [24,48,72,96,120]){r.playerPosition={x,z:0};r.updateFineChunkMaterialization();r.updateFineChunkMaterialization();}
     assert.equal(r.persistenceLoadBlocked,true);assert.match(r.streamedLayoutError,/road connection/);assert.equal(r.materializedChunks.has('chunk_5_0'),false);
     assert.deepEqual(r.fineChunkCache.get('chunk_5_0').objectStates,[tree]);

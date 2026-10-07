@@ -1,3 +1,4 @@
+import * as worldRandom from '../src/world/worldRandom.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -20,7 +21,7 @@ import type {WorldPersistenceSnapshot} from '../src/types.js';
 // The renderer, unrelated town population/buildings and asset transport are omitted.
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const wanted=new Set(['initializePersistence','setupWorld','decorationState','spawnAssetDecoration','attachVisualTarget','applyVisualTarget','normalizeModel','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','executePlayerInteraction','registerWorldObjectPhysics','updateObjects','loadVisualAssets']);
+const wanted=new Set(['initializeWorld','clearMovablePersistenceQueue','initializePersistence','setupWorld','decorationState','spawnAssetDecoration','attachVisualTarget','applyVisualTarget','normalizeModel','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','executePlayerInteraction','registerWorldObjectPhysics','updateObjects','loadVisualAssets']);
 const methods:string[]=[];
 for(const n of ast.statements)if(ts.isClassDeclaration(n)&&n.name?.text==='TownGame')for(const m of n.members)if(ts.isMethodDeclaration(m)&&wanted.has(m.name.getText(ast)))methods.push(m.getText(ast));
 assert.equal(methods.length,wanted.size);
@@ -33,12 +34,12 @@ function model(){
 }
 function fixture(snapshot:WorldPersistenceSnapshot|null=null){
   const io={snapshot,epoch:Date.now(),gets:0,setups:0,restores:0,loads:0,failed:false,gate:undefined as Promise<void>|undefined};
-  class CoarseWorldRuntime {chunks=new Map();setPresentationBridge(){}restoreKnownChunks(){}ensureWindowAround(){}chunkAtWorld(){return undefined;}}
+  class CoarseWorldRuntime {constructor(_scene?:unknown,readonly seed='latticefolk-default'){}chunks=new Map();setPresentationBridge(){}restoreKnownChunks(){}ensureWindowAround(){}chunkAtWorld(){return undefined;}}
   const load=async()=>{io.loads++;if(io.gate)await io.gate;if(io.failed)throw Error('asset unavailable');return{scene:model(),animations:[]};};
-  const deps={...portable,...movable,...crops,THREE,prepareWellGeometry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates,CoarseWorldRuntime,registerHomeTerrain,restoreBuildingForLayout,WORLD_SIZE:72,WATER_PATCH_ASSET:'water',BAKING_OVEN_ASSET:'oven',
+  const deps={...worldRandom,StreamedLayoutRegistry,...portable,...movable,...crops,THREE,prepareWellGeometry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates,CoarseWorldRuntime,registerHomeTerrain,restoreBuildingForLayout,WORLD_SIZE:72,WATER_PATCH_ASSET:'water',BAKING_OVEN_ASSET:'oven',
     now:()=>1000,Date:{now:()=>io.epoch},i18n:{t:(key:string)=>key},fetch:async()=>{io.gets++;return{ok:true,json:async()=>({snapshot:io.snapshot,revision:4})};}};
   const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps)),r=new Runtime();
-  Object.assign(r,{streamedLayouts:new StreamedLayoutRegistry('latticefolk-default'),coarseWorld:new CoarseWorldRuntime(),day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,
+  Object.assign(r,{randomness:worldRandom.readWorldRandomness(undefined),day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,
     playerInventory:{apple:0,bread:0,wood:2,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0},playerPosition:{x:23,z:-2},cameraMode:'firstPerson',camera:{position:new THREE.Vector3()},scene:new THREE.Scene(),
     assets:new Map(),assetRoot:'/assets/quaternius',gltfLoader:{loadAsync:load},fbxLoader:{loadAsync:async()=>{const asset=await load();return Object.assign(asset.scene,{animations:[]});}},assetLoadFailures:[],assetsReady:false,
     objects:new Map(),npcs:new Map(),wildlife:new Map(),materializedChunks:new Map(),fineChunkCache:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,visualTargets:[],physics:new FinePhysicsAuthority(),
@@ -48,7 +49,6 @@ function fixture(snapshot:WorldPersistenceSnapshot|null=null){
   r.playerOverlapsObjectTrigger=(id:string)=>r.physics.overlappingTriggers(r.objects.get(id).state.position).some((t:any)=>t.id===`object-trigger:${id}`);
   r.portables=new PortableObjectRuntime(r);
   const restore=r.restoreWorldState.bind(r);r.restoreWorldState=(saved:WorldPersistenceSnapshot)=>{io.restores++;restore(saved);};
-  r.setupWorld();r.setupNpcs();
   return{r,io};
 }
 
@@ -115,14 +115,14 @@ test('failed and repeated asset loading never replaces restored semantic state o
 
 test('assets resolving before the initial GET still receive exactly one saved-state restoration',async()=>{
   const live=fixture();await live.r.initializePersistence();live.r.objects.get(ids.crate).state.storage=[{kind:'wood',count:3}];
-  const saved=normalized(live.r.buildWorldSnapshot()),f=fixture(saved),object=f.r.objects.get(ids.crate);
-  await f.r.loadVisualAssets();assert.equal(object.mesh.children.length,1);assert.deepEqual(object.state.storage,[]);
-  await f.r.initializePersistence();assert.equal(f.r.objects.get(ids.crate),object);assert.deepEqual(object.state.storage,[{kind:'wood',count:3}]);
+  const saved=normalized(live.r.buildWorldSnapshot()),f=fixture(saved);
+  await f.r.loadVisualAssets();assert.equal(f.r.objects.size,0);assert.equal(f.r.assetsReady,true);
+  await f.r.initializePersistence();const object=f.r.objects.get(ids.crate);assert.equal(object.mesh.children.length,1);assert.deepEqual(object.state.storage,[{kind:'wood',count:3}]);
   assert.equal(f.io.restores,1);assert.equal(f.io.setups,1);await f.r.loadVisualAssets();assert.equal(object.state.storage[0].count,3);
 });
 
 test('semantic-first groups retain the previous authored model placement and scale',()=>{
-  const f=fixture(),template=model();f.r.assets.set('crate_rts',{scene:template,animations:[]});
+  const f=fixture(),template=model();f.r.initializeWorld();f.r.assets.set('crate_rts',{scene:template,animations:[]});
   const previous=template.clone(true);f.r.normalizeModel(previous,1.1);previous.rotation.y=.3;previous.position.x=23;previous.position.z=-3;
   f.r.spawnAssetDecoration('crate_rts',23,-3,1.1,.3);f.r.applyVisualTarget(f.r.visualTargets.find((t:any)=>t.asset==='crate_rts'));const group=f.r.objects.get(ids.crate).mesh;
   previous.updateMatrixWorld(true);group.updateMatrixWorld(true);

@@ -1,3 +1,4 @@
+import {DEFAULT_WORLD_SEED,hashText} from './worldRandom.js';
 import * as THREE from 'three';
 import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
@@ -163,7 +164,7 @@ export class CoarseWorldRuntime {
 
   constructor(
     private scene:THREE.Scene,
-    private worldSeed='latticefolk-default',
+    private worldSeed=DEFAULT_WORLD_SEED,
     private readonly requestDeadlineMs=8_000
   ) {
     this.root.name='coarse-world';
@@ -175,9 +176,7 @@ export class CoarseWorldRuntime {
 
   private hash(cx:number,cz:number,salt=0) {
     const s=`${this.worldSeed}:${cx}:${cz}:${salt}`;
-    let h=2166136261;
-    for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
-    return (h>>>0)/4294967295;
+    return hashText(s)/4294967295;
   }
 
   private biomeFor(cx:number,cz:number):ChunkBiome {
