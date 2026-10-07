@@ -1272,6 +1272,8 @@ export interface PersistedWildlifeTransfer {
 
 export interface PersistedFineChunk {
   chunkId: string;
+  /** False means static state exists but dynamic simulation has never been activated. */
+  dynamicActivated?: boolean;
   npcStates: NpcState[];
   objectStates: WorldObjectState[];
   wildlifeStates?: WildlifeState[];
@@ -1283,6 +1285,7 @@ export interface WorldRandomness {
 }
 
 export interface WorldPersistenceMeta {
+  streamedLayoutVersion?: 1;
   randomness?: WorldRandomness;
   day: number;
   minuteOfDay: number;
@@ -1296,6 +1299,7 @@ export interface WorldPersistenceMeta {
 export interface WorldPersistenceSnapshot {
   version: 1;
   meta: WorldPersistenceMeta;
+  streamedLayouts?: import('./world/streamedLayouts.js').StreamedLayout[];
   coarseChunks: CoarseChunkState[];
   fineChunks: PersistedFineChunk[];
   homeNpcs: NpcState[];

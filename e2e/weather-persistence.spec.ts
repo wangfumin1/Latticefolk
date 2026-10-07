@@ -58,11 +58,14 @@ test('settled saved weather and its processed phase survive real page reload and
   await expect(page.locator('#game canvas')).toBeVisible();
   await expect.poll(async()=>Number(await status.getAttribute('data-persistence-revision'))).toBeGreaterThanOrEqual(seedRevision);
   await expect(status).toHaveAttribute('data-persistence-conflict','false');
-  await startFirstPerson(page);await expect(clock).toContainText(/ · Rain$/);
-
   // Require an ordinary acknowledged client autosave, rather than rereading
   // the initial fixture. The original client drops weatherEpoch from this save.
-  const beforeReload=await nextBrowserAutosave(page,request);expect(beforeReload.revision).toBeGreaterThan(seedRevision);
+  // Arm the actual request observer before native startup, and check its ACK
+  // while startup runs so a later autosave cannot overtake the exact revision check.
+  const [beforeReload]=await Promise.all([
+    nextBrowserAutosave(page,request),
+    (async()=>{await startFirstPerson(page);await expect(clock).toContainText(/ · Rain$/);})()
+  ]);expect(beforeReload.revision).toBeGreaterThan(seedRevision);
   await expect(clock).toContainText(/ · Rain$/);
 
   const restoredResponse=page.waitForResponse(response=>response.url().endsWith('/api/world/state')&&response.request().method()==='GET'&&response.ok());
@@ -70,8 +73,12 @@ test('settled saved weather and its processed phase survive real page reload and
   const restored=await (await restoredResponse).json() as SavedWorld;expectSettledRain(restored);
   await expect.poll(async()=>Number(await status.getAttribute('data-persistence-revision'))).toBeGreaterThanOrEqual(restored.revision);
   await expect(status).toHaveAttribute('data-persistence-conflict','false');
-  await startFirstPerson(page);await expect(clock).toContainText(/ · Rain$/);
-  const afterReload=await nextBrowserAutosave(page,request);expect(afterReload.revision).toBeGreaterThan(restored.revision);
+  // The reload and its state GET have finished before this observer is armed.
+  // Frame identity alone is not a document boundary because the main frame is reused.
+  const [afterReload]=await Promise.all([
+    nextBrowserAutosave(page,request),
+    (async()=>{await startFirstPerson(page);await expect(clock).toContainText(/ · Rain$/);})()
+  ]);expect(afterReload.revision).toBeGreaterThan(restored.revision);
   expect(afterReload.snapshot.meta.minuteOfDay).toBeGreaterThanOrEqual(restored.snapshot.meta.minuteOfDay);
   await expect(clock).toContainText(/ · Rain$/);
   await expect(status).toHaveAttribute('data-persistence-conflict','false');

@@ -248,3 +248,43 @@ test('real raccoon animation continuity uses bones and action mapping', async ()
   presentation.update(a, { speed: 3, action: 'wander', deltaSeconds: .1 });
   assert.equal(played.length, before);
 });
+
+test('a fresh runtime rebinds the same loaded visual without restarting or releasing it',async()=>{
+ const source=await sourceGltf('quaternius/wildlife/Raccoon.glb');
+ const runtime=new WildlifeVisualRuntime({load:async()=>({scene:source.scene,animations:source.animations})});
+ let disposals=0;const dispose=runtime.dispose.bind(runtime);runtime.dispose=visual=>{disposals++;dispose(visual);};
+ const presentation=new WildlifePresentation(runtime),old=makeOwner('retained');presentation.register(old);
+ await new Promise(resolve=>setImmediate(resolve));const container=presentation.getObject(old.state.id);
+ const next={state:structuredClone(old.state),mesh:old.mesh};assert.equal(presentation.rebind(old,next),true);
+ assert.equal(presentation.getObject(next.state.id),container);assert.equal(presentation.remove(old),false);
+ assert.equal(presentation.update(old,{speed:2,deltaSeconds:.1}),false);assert.equal(presentation.update(next,{speed:2,deltaSeconds:.1}),true);
+ assert.equal(disposals,0);assert.equal(presentation.remove(next),true);assert.equal(presentation.remove(next),false);assert.equal(disposals,1);
+});
+
+test('a GLB completing after rebind attaches only once to the current retained owner',async()=>{
+ const source=await sourceGltf('quaternius/wildlife/Raccoon.glb');let resolve!:(value:{scene:THREE.Object3D;animations:THREE.AnimationClip[]})=>void;
+ const runtime=new WildlifeVisualRuntime({load:()=>new Promise(r=>{resolve=r;})});
+ const presentation=new WildlifePresentation(runtime),old=makeOwner('pending');presentation.register(old);
+ const next={state:structuredClone(old.state),mesh:old.mesh};assert.equal(presentation.rebind(old,next),true);assert.equal(presentation.remove(old),false);
+ resolve({scene:source.scene,animations:source.animations});await new Promise(r=>setImmediate(r));
+ assert.equal(next.mesh.children.length,1);assert.equal(presentation.update(next,{speed:0,deltaSeconds:0}),true);
+ assert.equal(presentation.rebind(old,next),false);presentation.remove(next);assert.equal(next.mesh.children.length,0);
+});
+
+test('rebind cannot move another mesh or species into a retained binding',async()=>{
+ const runtime=new WildlifeVisualRuntime({load:()=>new Promise(()=>{})}),presentation=new WildlifePresentation(runtime),old=makeOwner('safe');presentation.register(old);
+ assert.equal(presentation.rebind(old,makeOwner('safe')),false);
+ assert.equal(presentation.rebind(old,{state:{...old.state,species:'deer' as const},mesh:old.mesh}),false);
+ assert.equal(presentation.rebind(old,{state:{...old.state,id:'other'},mesh:old.mesh}),false);assert.equal(presentation.remove(old),true);
+});
+
+test('a failed retained GLB retries when a new fine runtime takes ownership',async()=>{
+ const source=await sourceGltf('quaternius/wildlife/Raccoon.glb');let loads=0;
+ const runtime=new WildlifeVisualRuntime({load:async()=>{if(++loads===1)throw new Error('Temporary asset failure');return{scene:source.scene,animations:source.animations};}});
+ const presentation=new WildlifePresentation(runtime),old=makeOwner('retry');presentation.register(old);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(presentation.getDiagnostics()[0]!.status,'failed');assert.equal(old.mesh.children.length,0);
+ const next={state:structuredClone(old.state),mesh:old.mesh};assert.equal(presentation.rebind(old,next),false);presentation.register(next);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(loads,2);assert.equal(presentation.getDiagnostics()[0]!.status,'ready');assert.equal(next.mesh.children.length,1);
+ assert.equal(presentation.remove(old),false);assert.equal(presentation.update(next,{speed:0,deltaSeconds:.1}),true);
+ const again={state:structuredClone(next.state),mesh:next.mesh};assert.equal(presentation.rebind(next,again),true);assert.equal(loads,2);
+});

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
+import {StreamedLayoutValidationError} from '../src/world/streamedLayouts.js';
 import {I18n,SUPPORTED_LOCALES} from '../src/i18n.js';
 import {appendHudLog,visibleHudLogs,type HudLogEntry} from '../src/ui/hudDiagnostics.js';
 import type {LocaleCode} from '../src/types.js';
@@ -11,7 +12,7 @@ import type {LocaleCode} from '../src/types.js';
 // Stubs supply only their I/O; no translated behavior is copied into the harness.
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const wanted=new Set(['initializePersistence','saveWorldState','flushWorldBeacon','log']);
+const wanted=new Set(['initializePersistence','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','log']);
 const methods:string[]=[];
 function visit(node:ts.Node){
   if(ts.isMethodDeclaration(node)&&wanted.has(node.name.getText(ast)))methods.push(node.getText(ast));
@@ -34,7 +35,7 @@ function fixture(locale:LocaleCode,reply:Reply,beaconAccepted=false){
   const snapshot={version:1,meta:{day:0},coarseChunks:[],fineChunks:[]};
   const fetch=async(url:string,init?:RequestInit)=>{requests.push({url,init});return{ok:reply.status>=200&&reply.status<300,status:reply.status,json:async()=>reply.data};};
   const navigator={sendBeacon:(url:string,body:Blob)=>{beacons.push({url,body});return beaconAccepted;}};
-  const RuntimeClass=new Function(...Object.keys(worldRandom),'i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(...Object.values(worldRandom),i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
+  const RuntimeClass=new Function(...Object.keys(worldRandom),'StreamedLayoutValidationError','i18n','fetch','navigator','Blob','TextEncoder','now','appendHudLog',code)(...Object.values(worldRandom),StreamedLayoutValidationError,i18n,fetch,navigator,Blob,TextEncoder,()=>123,appendHudLog);
   const runtime:Runtime=new RuntimeClass();
   const checkpoint={pending:false,capture:()=>17,acknowledge:(value:number)=>acknowledged.push(value)};
   Object.assign(runtime,{logs:[],persistenceReady:true,persistenceRevision:5,persistenceConflict:false,

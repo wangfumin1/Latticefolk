@@ -12,6 +12,7 @@ import type {
   WildlifeAction,
 } from '../src/types.js';
 import { startFirstPerson } from './helpers/native-start.js';
+import {driveNativeWaypoint} from './helpers/native-waypoint.js';
 
 const status=(page:Page)=>page.locator('#worldStatus');
 const chunkAt=(v:number)=>Math.floor((v+12)/24);
@@ -219,5 +220,96 @@ test('raccoon decision driven movement and presentation capture',async({page,req
   expect(godAfter).toEqual(godBefore);
   expect(await status(page).getAttribute('data-asset-failures')).toBe('0');
   expect(await status(page).getAttribute('data-wildlife-raccoon-failed')).toBe('0');
+  expect(errors).toEqual([]);
+});
+
+// Read live scene groups through the already-loaded Three module. No game
+// reference, model, input counter or simulation state is exposed or changed.
+async function knownActorViews(page:Page,ids:string[]){
+  const session=await page.context().newCDPSession(page);
+  try{
+    const prototype=await session.send('Runtime.evaluate',{objectGroup:'known-actors',awaitPromise:true,expression:`(async()=>{
+      const url=performance.getEntriesByType('resource').map(entry=>entry.name).find(name=>{
+        const value=new URL(name);return value.origin===location.origin&&/\\/node_modules\\/\\.vite\\/deps\\/three\\.js$/.test(value.pathname);
+      });return url?(await import(url)).Group.prototype:null;
+    })()`});
+    if(prototype.exceptionDetails||!prototype.result.objectId)throw new Error('Loaded Three Group prototype unavailable');
+    const groups=await session.send('Runtime.queryObjects',{prototypeObjectId:prototype.result.objectId,objectGroup:'known-actors'});
+    const result=await session.send('Runtime.callFunctionOn',{objectId:groups.objects.objectId,returnByValue:true,arguments:[{value:ids}],functionDeclaration:`function(ids){
+      return this.filter(group=>ids.includes(group.userData.entityId)&&group.parent?.isScene).map(group=>{
+        const meshes=[];group.traverse(node=>{if(node.isMesh)meshes.push(node.uuid);});
+        return {id:group.userData.entityId,uuid:group.uuid,visible:group.visible,position:{x:group.position.x,z:group.position.z},meshes};
+      }).sort((a,b)=>a.id.localeCompare(b.id));
+    }`});
+    if(result.exceptionDetails)throw new Error(result.exceptionDetails.text);
+    return result.result.value as {id:string;uuid:string;visible:boolean;position:{x:number;z:number};meshes:string[]}[];
+  }finally{
+    await session.send('Runtime.releaseObjectGroup',{objectGroup:'known-actors'}).catch(()=>{});
+    await session.detach().catch(()=>{});
+  }
+}
+
+test('saved actors stay visible across an internal owner boundary and reload without expanding fine simulation',async({page,request},info)=>{
+  test.setTimeout(180_000);
+  const clear=await request.delete('/api/world/state');expect(clear.ok()).toBe(true);
+  const {revision}=await clear.json(),owner='chunk_2_0',ids=['chunk_2_0_npc_0','known_raccoon'];
+  const snapshot:WorldPersistenceSnapshot={version:1,meta:{day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,playerPosition:{x:61,z:0},
+    playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}},
+    coarseChunks:Array.from({length:9},(_,i)=>{const cx=2+i%3,cz=Math.floor(i/3)-1;return{id:`chunk_${cx}_${cz}`,cx,cz,biome:'plains',settlementLevel:2,population:0,
+      food:65,wood:50,water:60,ecology:55,danger:10,prosperity:65,strategy:'trade_route',migrationPolicy:'retain',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:0,wildlife:[]};}),
+    fineChunks:[{chunkId:owner,npcStates:[{id:ids[0]!,chunkId:owner,name:'Known resident',role:'resident',position:{x:48,z:3},home:{x:48,z:3},
+      mood:'calm',hunger:0,energy:100,social:100,money:19,inventory:[{kind:'wood',count:7}],relationships:{},memories:[],currentAction:'idle',goal:'Rest',lastDecisionAt:0}],
+      objectStates:[],wildlifeStates:[{id:ids[1]!,chunkId:owner,species:'raccoon',position:{x:50,z:-3},ageDays:20,health:100,hunger:0,thirst:0,energy:100,sex:'male',
+        generation:1,traits:{size:.58,speed:1,fertility:1,wariness:1},currentAction:'rest',lastDecisionAt:0,birthDay:0}]},
+      {chunkId:'chunk_3_0',npcStates:[],objectStates:[],wildlifeStates:[]}],homeNpcs:[],homeObjects:[]};
+  const seed=await request.post('/api/world/state',{data:{snapshot,expectedRevision:revision}});expect(seed.ok()).toBe(true);
+  const seededRevision=(await seed.json()).revision;
+  await page.route('**/api/decision',route=>route.fulfill({json:{source:'e2e',action:'idle',stateShift:'stable',commitment:1,confidence:1,reasonCode:'fixture'}}));
+  await page.route('**/api/wildlife/decide',route=>{const body=route.request().postDataJSON() as WildlifeDecisionBatchRequest;
+    return route.fulfill({json:{source:'e2e',decisions:body.requests.map(item=>({wildlifeId:item.wildlife.id,action:'rest',source:'e2e',confidence:1,reasonCode:'fixture'}))}});});
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));
+  const active=()=>status(page).evaluate((element:HTMLElement)=>({
+    npcs:(JSON.parse(element.dataset.characterSoles||'[]') as {id:string}[]).map(actor=>actor.id).filter(id=>id==='chunk_2_0_npc_0'),
+    wildlife:(JSON.parse(element.dataset.wildlifeVisuals||'[]') as {id:string}[]).map(actor=>actor.id).filter(id=>id==='known_raccoon'),
+    owners:(JSON.parse(element.dataset.streamedLayouts||'[]') as {unitId:string;fineOwners:string[]}[]).find(unit=>unit.unitId==='unit_1_0')?.fineOwners
+  }));
+  await page.goto('/',{waitUntil:'domcontentloaded'});
+  await expect(status(page)).toHaveAttribute('data-asset-failures','0',{timeout:45_000});
+  await expect(status(page)).toHaveAttribute('data-wildlife-raccoon-ready','1',{timeout:45_000});
+  await expect.poll(async()=>{const actors=await knownActorViews(page,ids);return actors.length===2&&actors.every(actor=>actor.meshes.length>0);},{timeout:45_000}).toBe(true);
+  const before=await knownActorViews(page,ids);
+  expect(before.map(actor=>actor.id)).toEqual(ids);expect(before.every(actor=>actor.visible&&actor.meshes.length>0)).toBe(true);
+  expect(await active()).toEqual({npcs:[],wildlife:[],owners:['chunk_3_0']});
+  await startFirstPerson(page);
+  const enter=await page.evaluate(driveNativeWaypoint,{target:{x:58,z:0},timeoutMs:45_000,tolerance:.3,maxInputSeconds:2});expect(enter.reached).toBe(true);
+  await expect.poll(active).toEqual({npcs:[ids[0]],wildlife:[ids[1]],owners:[owner]});
+  const entered=await knownActorViews(page,ids);expect(entered).toEqual(before);
+  const leave=await page.evaluate(driveNativeWaypoint,{target:{x:61,z:0},timeoutMs:45_000,tolerance:.3,maxInputSeconds:2});expect(leave.reached).toBe(true);
+  await expect.poll(active).toEqual({npcs:[],wildlife:[],owners:['chunk_3_0']});
+  const outside=await knownActorViews(page,ids);expect(outside).toEqual(before);
+  // Turn through the ordinary pointer-lock input path to capture the retained models.
+  await page.evaluate(async()=>{
+    const canvas=document.querySelector('#game canvas'),data=document.querySelector<HTMLElement>('#worldStatus')!.dataset;
+    if(document.pointerLockElement!==canvas||!canvas)throw new Error('Actor capture requires pointer lock');
+    const heading=Math.atan2(49-Number(data.playerX),Number(data.playerZ)),yaw=Number(data.cameraYaw);
+    const look=(x:number,y:number)=>{const event=new MouseEvent('mousemove',{bubbles:true});Object.defineProperties(event,{movementX:{value:x},movementY:{value:y}});canvas.dispatchEvent(event);};
+    look(Math.atan2(Math.sin(yaw+heading),Math.cos(yaw+heading))/.002,0);look(0,2000);look(0,(.08-Math.PI/2)/.002);
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+  });
+  await info.attach('known-actors-outside-owner',{body:await page.screenshot(),contentType:'image/png'});
+  await expect.poll(async()=>{const saved=await (await request.get('/api/world/state')).json();return saved.revision>seededRevision&&saved.snapshot?.meta.playerPosition.x>60&&
+    saved.snapshot.fineChunks.some((chunk:any)=>chunk.chunkId===owner&&chunk.dynamicActivated===true);},{timeout:45_000}).toBe(true);
+  const saved=await (await request.get('/api/world/state')).json(),row=saved.snapshot.fineChunks.find((chunk:any)=>chunk.chunkId===owner);
+  expect(row.npcStates.map((actor:any)=>actor.id)).toEqual([ids[0]]);expect(row.wildlifeStates.map((actor:any)=>actor.id)).toEqual([ids[1]]);
+  expect(row.npcStates[0]).toMatchObject({money:19,inventory:[{kind:'wood',count:7}],position:before[0]!.position});
+  await page.reload();await expect(status(page)).toHaveAttribute('data-wildlife-raccoon-ready','1',{timeout:45_000});
+  await expect(status(page)).toHaveAttribute('data-asset-failures','0',{timeout:45_000});
+  await expect.poll(async()=>{const actors=await knownActorViews(page,ids);return actors.length===2&&actors.every(actor=>actor.meshes.length>0);},{timeout:45_000}).toBe(true);
+  const reloaded=await knownActorViews(page,ids);
+  expect(reloaded.map(({id,visible,position,meshes})=>({id,visible,position,meshes:meshes.length})))
+    .toEqual(before.map(({id,visible,position,meshes})=>({id,visible,position,meshes:meshes.length})));
+  expect(await active()).toEqual({npcs:[],wildlife:[],owners:['chunk_3_0']});
+  await info.attach('known-actor-boundary',{body:Buffer.from(JSON.stringify({before,entered,outside,reloaded,enter,leave,row},null,2)),contentType:'application/json'});
   expect(errors).toEqual([]);
 });

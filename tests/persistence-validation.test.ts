@@ -6,6 +6,10 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 import Database from 'better-sqlite3';
+import * as THREE from 'three';
+import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
+import {createStreamedLayout,layoutIdentity} from '../src/world/streamedLayouts.js';
+import {streamedUnitOwnerCells} from '../src/world/streamedUnits.js';
 import express from 'express';
 import { WorldPersistence, WorldPersistenceConflictError } from '../server/worldPersistence.js';
 import { registerWorldStateRoutes } from '../server/worldStateRoutes.js';
@@ -85,6 +89,7 @@ function logicalTables(file:string){
       coarse_chunks:db.prepare('SELECT * FROM coarse_chunks ORDER BY id').all(),
       fine_chunks:db.prepare('SELECT * FROM fine_chunks ORDER BY chunk_id').all(),
       home_state:db.prepare('SELECT * FROM home_state ORDER BY slot').all(),
+      streamed_layouts:db.prepare('SELECT * FROM streamed_layouts ORDER BY unit_id').all(),
       wildlife_lineage:db.prepare('SELECT * FROM wildlife_lineage ORDER BY entity_id').all(),
       wildlife_transfers:db.prepare('SELECT * FROM wildlife_transfers ORDER BY entity_id').all()
     };
@@ -424,4 +429,42 @@ test('seeded SQLite rows preserve random authority, CAS priority and rejected-wr
     assert.throws(()=>saveCurrent(store!,legacy),WorldSnapshotValidationError);
     legacy.meta.randomness.seed='latticefolk-default';saveCurrent(store,legacy);assert.deepEqual(store.load()!.meta.randomness,legacy.meta.randomness);
   }finally{store?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('custom seed, 72m layouts and all actor cursors survive reopen and compact checkpoints atomically',()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lattice-random-layout-')),file=path.join(directory,'world.sqlite');
+ let store=new WorldPersistence(file);
+ try{
+  const snapshot=validSnapshot(),seed='world-2',world=new CoarseWorldRuntime(new THREE.Scene(),seed);
+  const cells=streamedUnitOwnerCells(1,0).map(c=>world.ensureChunk(c.cx,c.cz)!);
+  const generated=createStreamedLayout(1,0,cells,[],seed),initialActors=snapshot.fineChunks[0];
+  for(const b of generated.layout.buildings)generated.objectStates.push({id:b.id,chunkId:b.ownerCellId,kind:'building',name:b.name,position:b.frontage,tags:['building'],usable:true,pickupable:false});
+  for(const road of generated.layout.roads)generated.objectStates.push({id:road.id,chunkId:road.ownerCellId,kind:'road',name:road.name,position:{x:road.x,z:road.z},tags:road.tags,usable:true,pickupable:false});
+  initialActors.npcStates[0].randomEventCursor=17;initialActors.wildlifeStates![0].randomEventCursor=23;
+  snapshot.homeNpcs[0].randomEventCursor=19;snapshot.wildlifeTransfers![0].state.randomEventCursor=29;
+  snapshot.meta.randomness={version:1,seed};snapshot.meta.streamedLayoutVersion=1;snapshot.streamedLayouts=[generated.layout];snapshot.coarseChunks=cells;
+  snapshot.fineChunks=cells.map(cell=>({chunkId:cell.id,dynamicActivated:cell.id===initialActors.chunkId,
+   npcStates:cell.id===initialActors.chunkId?initialActors.npcStates:[],wildlifeStates:cell.id===initialActors.chunkId?initialActors.wildlifeStates:[],
+   objectStates:generated.objectStates.filter(state=>state.chunkId===cell.id)}));
+  store.save(snapshot,0);store.close();store=new WorldPersistence(file);const loaded=store.load()!;
+  assert.deepEqual(loaded.meta.randomness,{version:1,seed});assert.equal(layoutIdentity(loaded.streamedLayouts),layoutIdentity(snapshot.streamedLayouts));
+  const compact=structuredClone(loaded);delete compact.streamedLayouts;compact.fineChunks=[];compact.coarseChunks=[];delete compact.wildlifeLineage;
+  compact.homeNpcs[0].randomEventCursor=20;compact.wildlifeTransfers![0].state.randomEventCursor=30;store.save(compact,store.revision());
+  store.close();store=new WorldPersistence(file);const durable=store.load()!,revision=store.revision(),before=logicalTables(file);
+  assert.deepEqual(durable.fineChunks,loaded.fineChunks);assert.equal(layoutIdentity(durable.streamedLayouts),layoutIdentity(loaded.streamedLayouts));
+  const row=durable.fineChunks.find(row=>row.chunkId===initialActors.chunkId)!;assert.equal(row.dynamicActivated,true);
+  assert.equal(row.npcStates[0].randomEventCursor,17);assert.equal(row.wildlifeStates![0].randomEventCursor,23);
+  assert.equal(durable.homeNpcs[0].randomEventCursor,20);assert.equal(durable.wildlifeTransfers![0].state.randomEventCursor,30);
+  const reject=(bad:WorldPersistenceSnapshot)=>{assert.throws(()=>store.save(bad,revision-1),WorldPersistenceConflictError);assert.throws(()=>store.save(bad,revision),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);};
+  for(const field of ['randomness','streamedLayoutVersion'] as const){const bad=structuredClone(compact);delete bad.meta[field];reject(bad);}
+  const changedSeed=structuredClone(compact);changedSeed.meta.randomness!.seed='another';reject(changedSeed);
+  const geometry=structuredClone(durable);geometry.streamedLayouts![0].roads[0].w-=.1;reject(geometry);
+  const lostState=structuredClone(durable);const staticId=lostState.streamedLayouts![0].objects[0].id;
+  for(const row of lostState.fineChunks)row.objectStates=row.objectStates.filter(s=>s.id!==staticId);reject(lostState);
+  const deactivated=structuredClone(durable),changed=deactivated.fineChunks.find(row=>row.chunkId===initialActors.chunkId)!;changed.dynamicActivated=false;changed.npcStates=[];changed.wildlifeStates=[];reject(deactivated);
+  const inserted=structuredClone(durable),other=streamedUnitOwnerCells(2,0).map(c=>world.ensureChunk(c.cx,c.cz)!);inserted.streamedLayouts!.push(createStreamedLayout(2,0,other,[],seed).layout);reject(inserted);
+  for(const mutate of [(s:WorldPersistenceSnapshot)=>{s.streamedLayouts![0].seed='mismatch';},(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;}]){
+   const invalid=structuredClone(durable);mutate(invalid);assert.throws(()=>store.save(invalid,revision),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);
+  }
+ }finally{store.close();fs.rmSync(directory,{recursive:true,force:true});}
 });

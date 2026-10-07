@@ -15,13 +15,17 @@ import {registerFineTerrainForChunk} from '../src/world/fineTerrain.js';
 import {planFineChunk} from '../src/world/materialization.js';
 import {restoredPlayerPosition} from '../src/world/portableObjects.js';
 import {restoreBuildingForLayout} from '../src/world/buildingRestore.js';
+import * as layouts from '../src/world/streamedLayouts.js';
+import {StreamedActors} from '../src/scene/streamedActors.js';
+import {playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
+import {isGodCameraInputKey} from '../src/scene/godCameraInput.js';
 import {isBakingOven} from '../src/scene/bakingOven.js';
 import type {DecisionResponse,NpcState,WildlifeState,WorldPersistenceSnapshot} from '../src/types.js';
 
 // Run the production methods; presentation and external IO are the only stubs.
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const wanted=new Set(['bindInput','initializePersistence','initializeWorld','setupNpcs','materializeFineChunk','spawnFineNpc','spawnWildlife','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','flushWorldBeacon','saveWorldState','cancelPlayerTargeting','requestDecision','applyDecision','applyStateShift','npcWork','npcHarvest','completeTask','randomPassableNear','requestWildlifeBatch','applyWildlifeDecision','completeWildlifeAction','applyOwnedWildlifeCommand','materializePendingWildlifeTransfers','collapseFineChunk','completeFineWildlifeMigration','updateTime']);
+const wanted=new Set(['createFineNpcVisual','createWildlifeVisual','fineSpawnPosition','fineWorkplaceForRole','clearMovablePersistenceQueue','bindInput','initializePersistence','initializeWorld','setupNpcs','materializeFineChunk','spawnFineNpc','spawnWildlife','restoreWorldState','buildWorldSnapshot','buildFinalWorldSnapshot','flushWorldBeacon','saveWorldState','cancelPlayerTargeting','requestDecision','applyDecision','applyStateShift','npcWork','npcHarvest','completeTask','randomPassableNear','requestWildlifeBatch','applyWildlifeDecision','completeWildlifeAction','applyOwnedWildlifeCommand','materializePendingWildlifeTransfers','collapseFineChunk','completeFineWildlifeMigration','updateTime']);
 const members:string[]=[];
 for(const node of ast.statements)if(ts.isClassDeclaration(node)&&node.name?.text==='TownGame')for(const member of node.members)if(ts.isMethodDeclaration(member)&&wanted.has(member.name.getText(ast)))members.push(member.getText(ast));
 assert.equal(members.length,wanted.size);
@@ -30,7 +34,7 @@ const metrics=()=>({food:0,wood:0,ecology:0,prosperity:0,shrub:0,fruit:0,crop:0}
 const npc=(patch:Partial<NpcState>={}):NpcState=>({id:'n',name:'N',role:'maker',position:{x:0,z:0},home:{x:0,z:0},mood:'calm',hunger:20,energy:80,social:50,money:8,inventory:[],relationships:{},memories:[],currentAction:'idle',goal:'live',lastDecisionAt:0,randomEventCursor:11,...patch});
 const wildlife=(patch:Partial<WildlifeState>={}):WildlifeState=>({id:'w',chunkId:'chunk_2_0',species:'rabbit',position:{x:48,z:0},ageDays:60,health:90,hunger:20,thirst:20,energy:80,sex:'female',generation:0,traits:{speed:2,size:.6,fertility:.8,wariness:.7},currentAction:'rest',lastDecisionAt:0,birthDay:1,randomEventCursor:17,...patch});
 const decision=(action:DecisionResponse['action']):DecisionResponse=>({action,commitment:2,confidence:1,source:'fallback',stateShift:'stable',reasonCode:'routine'});
-const npcRuntime=(state=npc())=>({state,mesh:new THREE.Group(),characterAsset:'female1',path:[],pathIndex:0,nextDecisionAt:0,pendingDecision:false,speechEl:{remove(){}},nameEl:{remove(){}}});
+const npcRuntime=(state=npc())=>({state,mesh:new THREE.Group(),characterAsset:'female1',path:[],pathIndex:0,nextDecisionAt:0,pendingDecision:false,speechEl:{remove(){},classList:{add(){}}},nameEl:{remove(){},classList:{add(){}}}});
 const animalRuntime=(state=wildlife())=>({state,mesh:new THREE.Group(),path:[],pathIndex:0,nextDecisionAt:0,actionResolved:false});
 const chunkRuntime=(chunkId:string)=>({chunkId,npcIds:[] as string[],objectIds:[] as string[],wildlifeIds:[] as string[],initialWildlifeCounts:{},initialWildlifeIds:new Set(),fixedWildlifeWeights:new Map(),groups:[],initialMetrics:metrics()});
 function fixture(seed=random.DEFAULT_WORLD_SEED){
@@ -41,19 +45,20 @@ function fixture(seed=random.DEFAULT_WORLD_SEED){
   const controls=Object.assign(new EventTarget(),{isLocked:false,lock(this:EventTarget&{isLocked:boolean}){this.isLocked=true;this.dispatchEvent(new Event('lock'));}});
   const math=Object.create(Math);math.random=()=>{throw new Error('ambient Math.random');};
   const fetch=async(url:string,init?:RequestInit)=>{io.requests.push(url);if(init?.signal)io.signals.push(init.signal);if(io.failed)throw Error('offline');if(io.wait)return io.wait;return {ok:true,json:async()=>url==='/api/world/state'?{snapshot:io.snapshot,revision:4}:io.reply};};
-  const deps={...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
+  const deps={...layouts,StreamedActors,playerHeadClearance,NPC_BODY_RADIUS,isGodCameraInputKey,...random,...phenotype,...organisms,...domestication,...migration,...species,THREE,CoarseWorldRuntime,planFineChunk,registerFineTerrainForChunk,restoredPlayerPosition,restoreBuildingForLayout,isBakingOven,Math:math,
     setTimeout:(callback:()=>void,delay:number)=>{const id=++io.nextTimer;io.timers.set(id,{callback,delay});return id;},clearTimeout:(id:number)=>io.timers.delete(id),
     now:()=>io.clock,Date:{now:()=>2000},clamp:(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n)),dist:(a:any,b:any)=>Math.hypot(a.x-b.x,a.z-b.z),fetch,
     i18n:{t:(key:string,values?:{error?:string})=>values?.error?`${key}: ${values.error}`:key},navigator:{sendBeacon:(_url:string,body:Blob)=>{io.beacons.push(body);return true;}},
-    document:{createElement:()=>({className:'',remove(){}}),querySelector:element,querySelectorAll:()=>[]},addEventListener:input.addEventListener.bind(input),ui:{speechLayer:{appendChild(){}},modeBtn:element('mode'),localeSelect:element('locale'),overlay}};
+    window:{clearTimeout:(id:number)=>io.timers.delete(id)},document:{addEventListener:input.addEventListener.bind(input),createElement:()=>({className:'',remove(){},classList:{add(){}}}),querySelector:element,querySelectorAll:()=>[]},addEventListener:input.addEventListener.bind(input),ui:{speechLayer:{appendChild(){}},modeBtn:element('mode'),localeSelect:element('locale'),overlay}};
   const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps));const runtime=new Runtime() as Record<string,any>;
-  Object.assign(runtime,{keys:new Set(),controls,renderer:{domElement:element('canvas')},randomness:{version:1,seed},scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},day:4,minuteOfDay:800,weather:'cloudy',weatherEpoch:2,
+  Object.assign(runtime,{streamedLayouts:new layouts.StreamedLayoutRegistry(seed),streamedNpcs:new StreamedActors<any>(a=>a.mesh.removeFromParent()),streamedWildlife:new StreamedActors<any>(a=>a.mesh.removeFromParent()),
+    streamedPresentation:{activate:()=>[],deactivate(){},has:()=>false},resetGodCameraInput(){},keys:new Set(),controls,renderer:{domElement:element('canvas')},randomness:{version:1,seed},scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},day:4,minuteOfDay:800,weather:'cloudy',weatherEpoch:2,
     playerPosition:{x:0,z:7},playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0},cameraMode:'firstPerson',perceptionEpoch:0,inFlight:0,
     npcs:new Map(),wildlife:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,visualTargets:[],physics:new FinePhysicsAuthority(),
     coarseWorld:{chunks:new Map(),chunkSize:24,restoreKnownChunks(){},ensureWindowAround(){},setMaterialized(){},applyFineSummary(){},chunkAtWorld(){return undefined;}},
     persistenceReady:true,persistenceConflict:false,persistenceLoadBlocked:false,persistenceRevision:4,persistenceSaveInFlight:false,persistenceSaveQueued:false,
     portables:{checkpoint:{pending:false,capture:()=>0,acknowledge(){}},restoreHome:()=>false,restoreFine(){}},
-    wildlifePresentation:{register(){},remove(){}},groundHeightAt:()=>0,setupWorld(){},updateFineChunkMaterialization(){},attachVisualTarget(){},alignNpcVisualToGround(){},reconcileLineageOffspring(){},fineMetrics:metrics,
+    wildlifePresentation:{register(){},remove(){},rebind:()=>false},groundHeightAt:()=>0,setupWorld(){},updateFineChunkMaterialization(){},attachVisualTarget(){},alignNpcVisualToGround(){},reconcileLineageOffspring(){},fineMetrics:metrics,
     beginWildlifeHabitatObservation(){},endWildlifeHabitatObservation(){},flushWildlifeHabitatExposure(){},makeProceduralAnimal:()=>new THREE.Group(),
     event(){},log(text:string){io.logs.push(text);},say(){},toast(){},remember(){},playActivity(){},planNpcObjectPath(){},scheduleMovablePersistence(){},gameTimeText:()=>'',wildlifeName:(s:string)=>s,findPath:(_p:any,target:any)=>[{...target}],
     closestNpc:()=>undefined,objectForAction:()=>undefined,snapshot:()=>({}),allowedActions:()=>[],wildlifeSnapshot:()=>({}),findWildlifeResource:()=>undefined,findWildlifeTarget:()=>undefined,wildlifeMigrationCandidates:()=>({nearby:[]}),
@@ -243,7 +248,7 @@ for(const kind of ['saved','empty','invalid-rng','http-failure'] as const)test(`
   }
   if(kind==='http-failure')f.io.wait=Promise.resolve({ok:false,status:503});
   await f.runtime.initializePersistence();assert.equal(f.io.timers.size,0);assert.equal(f.io.signals[0].aborted,false);assert.equal(f.runtime.persistenceReady,true);assert.equal(f.runtime.npcs.size,10);
-  assert.equal(f.runtime.persistenceLoadBlocked,kind==='invalid-rng');assert.equal(f.runtime.persistenceConflict,false);assert.equal(f.runtime.coarseWorld.worldSeed,kind==='saved'?'selected-seed':random.DEFAULT_WORLD_SEED);assert.deepEqual(f.io.requests,['/api/world/state']);
+  assert.equal(f.runtime.persistenceLoadBlocked,kind==='invalid-rng'||kind==='http-failure');assert.equal(f.runtime.persistenceConflict,false);assert.equal(f.runtime.coarseWorld.worldSeed,kind==='saved'?'selected-seed':random.DEFAULT_WORLD_SEED);assert.deepEqual(f.io.requests,['/api/world/state']);
 });
 
 for(const result of ['success','timeout'] as const)test(`Start and held input survive the seed wait and ${result} startup`,async()=>{
@@ -292,4 +297,21 @@ test('a concurrent wildlife batch call cannot issue or clear a newer pending req
   reply.resolve({ok:true,json:async()=>({decisions:[{wildlifeId:'w',action:'wander',source:'fallback',confidence:1,reasonCode:'test'}]})});await first;
   assert.equal(f.runtime.wildlifeDecisionPending,false);assert.equal(a.state.randomEventCursor,18);
   f.io.wait=undefined;f.io.reply={decisions:[]};await f.runtime.requestWildlifeBatch();assert.equal(f.io.requests.length,2);assert.equal(f.runtime.wildlifeDecisionPending,false);
+});
+
+test('visual construction cannot shift an equivalent accepted authority event sequence',()=>{
+ const a=fixture(),b=fixture(),left=npcRuntime(),right=npcRuntime();
+ for(let i=0;i<20;i++){
+  a.runtime.npcWork(left);
+  for(let j=0;j<20;j++)new THREE.Group();
+  b.runtime.npcWork(right);assert.deepEqual(left.state,right.state);
+ }
+ assert.equal(left.state.randomEventCursor,31);
+});
+
+test('inactive known visuals never initialize a wake or advance their saved cursor',()=>{
+ const f=fixture(),n=npc(),w=wildlife(),before=[stableState(n),stableState(w)];
+ const npcView=f.runtime.createFineNpcVisual(n,'female1'),animalView=f.runtime.createWildlifeVisual(w);
+ for(const view of [npcView,animalView]){assert.equal(view.removed,true);assert.equal(view.nextDecisionAt,Infinity);}
+ assert.deepEqual([n,w],before);assert.equal(f.runtime.npcs.size,0);assert.equal(f.runtime.wildlife.size,0);assert.equal(f.runtime.wildlifeLineage.size,0);
 });

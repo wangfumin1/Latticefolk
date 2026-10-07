@@ -90,7 +90,7 @@ test('initial world-load deadline starts a usable world but cannot overwrite its
     // A native cart push requests the usual debounced save; it must remain local.
     try{await page.keyboard.down('KeyW');await expect(status(page)).toHaveAttribute('data-movable-dirty','true',{timeout:8000});}
     finally{await page.keyboard.up('KeyW');}
-    await expect(status(page)).toHaveAttribute('data-persistence-save-pending','true');
+    await expect(status(page)).toHaveAttribute('data-persistence-save-pending','false');
     await expect(status(page)).toHaveAttribute('data-persistence-load-blocked','true');
     await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
     await page.goto('about:blank');expect(writes).toHaveLength(0);const stored=await readWorld(request);

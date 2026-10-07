@@ -35,8 +35,9 @@ test('legacy default and exhausted cursor are explicit',()=>{
 });
 for(const value of [null,{},[],{version:2,seed:'s'},{version:'1',seed:'s'},{version:1,seed:17},{version:1,seed:''},{version:1,seed:' '},{version:1,seed:'x'.repeat(257)}])test(`invalid random metadata ${JSON.stringify(value)} is rejected`,()=>assert.throws(()=>readWorldRandomness(value)));
 test('default coarse states and every fine plan match the pre-RNG source values',()=>{
+  // Compare in the historical coordinate order; 72m streaming now inserts by unit.
   // Digests of the 72 complete states/plans from 91f61f7b86f06f84203d4dee7cb12b61155b1922.
-  const world=new CoarseWorldRuntime(new THREE.Scene());const chunks=[...world.chunks.values()];
+  const world=new CoarseWorldRuntime(new THREE.Scene());const chunks=[...world.chunks.values()].sort((a,b)=>a.cz-b.cz||a.cx-b.cx);
   const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
   assert.equal(chunks.length,72);
   assert.equal(digest(chunks),'43cc40fc21e0e50a5f7ec1cec0d3ca71ce8465437fb97132b2f68b3a80770a16');
@@ -45,4 +46,12 @@ test('default coarse states and every fine plan match the pre-RNG source values'
   const alternate=new CoarseWorldRuntime(new THREE.Scene(),'other');assert.notDeepEqual([...alternate.chunks.values()],chunks);
   const chunk=chunks.find(chunk=>chunk.settlementLevel>0)!;
   assert.deepEqual(planFineChunk(chunk,24,'other'),planFineChunk(chunk,24,'other'));assert.notDeepEqual(planFineChunk(chunk,24,'other'),planFineChunk(chunk,24));
+});
+
+test('alternate seeds preserve the existing road axes at both supported layout scales',()=>{
+ const world=new CoarseWorldRuntime(new THREE.Scene());
+ for(const chunk of world.chunks.values())for(const size of [24,72]){
+  const roads=planFineChunk(chunk,size).roads;
+  for(const seed of ['a','world-2','custom','saved-alternate','other'])assert.deepEqual(planFineChunk(chunk,size,seed).roads,roads);
+ }
 });

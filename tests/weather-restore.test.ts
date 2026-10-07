@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 import * as THREE from 'three';
+import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from '../src/world/streamedLayouts.js';
 import {restoredPlayerPosition} from '../src/world/portableObjects.js';
 import type {WorldPersistenceSnapshot,WorldObjectState,InteractionCapability} from '../src/types.js';
 import {validateWorldPersistenceSnapshot,WorldSnapshotValidationError} from '../server/worldSnapshotValidation.js';
@@ -29,9 +30,9 @@ function fixture(roll=.95){
   const randomDependencies={...worldRandom,keyedRandom:()=>()=>{draws++;return roll;}};
   const navigator={sendBeacon:(url:string,body:Blob)=>{io.beacons.push({url,body});return true;}};
   const fetch=async(url:string)=>{assert.equal(url,'/api/world/state');return{ok:true,json:async()=>({snapshot:io.snapshot,revision:6})};};
-  const RuntimeClass=new Function(...Object.keys(randomDependencies),'Math','THREE','clamp','restoredPlayerPosition','navigator','fetch','i18n','now',code)(...Object.values(randomDependencies),math,THREE,(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x)),restoredPlayerPosition,navigator,fetch,{t:(key:string)=>key},()=>5000);
+  const RuntimeClass=new Function(...Object.keys(randomDependencies),'Math','THREE','clamp','restoredPlayerPosition','navigator','fetch','i18n','now','StreamedLayoutValidationError','readStreamedLayout','assertStreamedLayoutStates',code)(...Object.values(randomDependencies),math,THREE,(x:number,min:number,max:number)=>Math.max(min,Math.min(max,x)),restoredPlayerPosition,navigator,fetch,{t:(key:string)=>key},()=>5000,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates);
   const runtime:Runtime=new RuntimeClass();
-  Object.assign(runtime,{initializeWorld(){},camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},scene:new THREE.Scene(),coarseWorld:{chunks:new Map(),restoreKnownChunks(){},ensureWindowAround(){}},groundHeightAt(){return 0},npcs:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,reconcileLineageOffspring(){},event(){},log(){},toast(){},updateFineChunkMaterialization(){},persistenceReady:true,persistenceConflict:false,persistenceRevision:6,portables:{checkpoint:{pending:false},restoreHome(){return false}},cameraMode:'firstPerson',playerOverlapsObjectTrigger(){return true}});
+  Object.assign(runtime,{initializeWorld(){},streamedLayouts:new StreamedLayoutRegistry('latticefolk-default'),camera:new THREE.PerspectiveCamera(),sun:{intensity:0},ambient:{intensity:0},scene:new THREE.Scene(),coarseWorld:{chunks:new Map(),restoreKnownChunks(){},ensureWindowAround(){}},groundHeightAt(){return 0},npcs:new Map(),objects:new Map(),fineChunkCache:new Map(),materializedChunks:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,reconcileLineageOffspring(){},event(){},log(){},toast(){},updateFineChunkMaterialization(){},persistenceReady:true,persistenceConflict:false,persistenceRevision:6,portables:{checkpoint:{pending:false},restoreHome(){return false}},cameraMode:'firstPerson',playerOverlapsObjectTrigger(){return true}});
   return{runtime,io,draws:()=>draws};
 }
 const snapshotKinds=['full','final','beacon'] as const;

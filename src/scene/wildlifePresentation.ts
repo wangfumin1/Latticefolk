@@ -89,6 +89,13 @@ export class WildlifePresentation {
     return true;
   }
 
+  rebind(previous:WildlifePresentationOwner,next:WildlifePresentationOwner):boolean {
+    const binding=this.bindings.get(previous.state.id);
+    if(!binding||binding.status==='failed'||binding.owner!==previous||previous.mesh!==next.mesh||previous.state.id!==next.state.id||previous.state.species!==next.state.species)return false;
+    binding.owner=next;
+    return true;
+  }
+
   update(owner: WildlifePresentationOwner, input: WildlifePresentationUpdate): boolean {
     const binding = this.bindings.get(owner.state.id);
     if (!binding || binding.owner !== owner || !binding.visual) return false;
