@@ -12,6 +12,7 @@ import { planFineChunk } from './world/materialization';
 import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from './world/streamedLayouts';
 import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './world/streamedUnits';
 import {StreamedPresentation,type StaticLayoutEntry} from './scene/streamedPresentation';
+import {StreamedActors} from './scene/streamedActors';
 import {farmCropRows,disposeFarmCropRows} from './scene/farmCrops';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
@@ -293,6 +294,16 @@ class TownGame {
   fbxLoader = new FBXLoader();
   assets = new Map<string,AssetTemplate>();
   visualTargets: VisualTarget[] = [];
+  readonly streamedNpcs=new StreamedActors<NpcRuntime>(agent=>{
+    agent.mixer?.stopAllAction();
+    if(agent.mixer)agent.mixer.uncacheRoot(agent.mixer.getRoot());
+    agent.mesh.removeFromParent();
+    if(agent.speechEl.parentNode)agent.speechEl.remove();if(agent.nameEl.parentNode)agent.nameEl.remove();
+    this.visualTargets=this.visualTargets.filter(target=>target.group!==agent.mesh);
+  });
+  readonly streamedWildlife=new StreamedActors<WildlifeRuntime>(animal=>{
+    this.wildlifePresentation.remove(animal);animal.mesh.removeFromParent();
+  });
   assetRoot = '/assets/quaternius';
   assetsReady = false;
   assetLoadFailures:string[] = [];
@@ -811,7 +822,7 @@ class TownGame {
     }
     target.onResolved?.(model);
     if(isCharacter){
-      const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
+      const agent=[...this.npcs.values(),...this.streamedNpcs.values()].find(n=>n.mesh===target.group);
       if(agent&&tpl.animations.length){
         agent.soles=new CharacterSoles(model);
         agent.mixer=new THREE.AnimationMixer(model);
@@ -1514,6 +1525,35 @@ class TownGame {
       }
     }
     this.streamedPresentation.retainVisible(new Set(units.keys()));
+    this.syncKnownActorPresentation();
+  }
+
+  syncKnownActorPresentation() {
+    const owners=new Set<string>(),units=new Set<string>();
+    for(const id of this.coarseWorld.activeChunkIds){
+      const chunk=this.coarseWorld.chunks.get(id);if(!chunk)continue;
+      const unit=streamedUnitForCoarseCell(chunk.cx,chunk.cz);
+      if(units.has(unit.id))continue;units.add(unit.id);
+      for(const owner of streamedUnitOwnerCells(unit.ux,unit.uz))owners.add(owner.id);
+    }
+    for(const owner of owners){
+      if(this.materializedChunks.has(owner))continue;
+      const cached=this.fineChunkCache.get(owner);
+      if(!cached||cached.dynamicActivated===false)continue;
+      for(const saved of cached.npcStates){
+        if(this.streamedNpcs.get(saved.id))continue;
+        const index=Number(saved.id.match(/_npc_(\d+)$/)?.[1]??0);
+        const state=structuredClone(saved);state.chunkId=owner;
+        this.createFineNpcVisual(state,['female1','female2','male1','male2'][index%4]!);
+      }
+      for(const saved of cached.wildlifeStates){
+        if(this.streamedWildlife.get(saved.id)||this.wildlifeTransfers.has(saved.id)||this.wildlifeLineage.get(saved.id)?.deathDay!==undefined)continue;
+        const state=structuredClone(saved);state.chunkId=owner;
+        this.createWildlifeVisual(state);
+      }
+    }
+    this.streamedNpcs.retain(owners,this.npcs);
+    this.streamedWildlife.retain(owners,this.wildlife);
   }
 
   updateFineChunkMaterialization() {
@@ -1528,6 +1568,7 @@ class TownGame {
       if(this.activeFineChunkId&&chunk)this.transferOwnedFollowersToChunk(this.activeFineChunkId,chunk);
       if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
       if(chunk)this.materializeFineChunk(chunk);
+      this.syncKnownActorPresentation();
     }catch(error){
       this.persistenceLoadBlocked=true;this.clearMovablePersistenceQueue();
       this.streamedLayoutError=error instanceof Error?error.message:String(error);
@@ -1688,19 +1729,33 @@ class TownGame {
     }
   }
 
-  spawnFineNpc(state:NpcState,characterAsset:string) {
+  createFineNpcVisual(state:NpcState,characterAsset:string) {
     const mesh=new THREE.Group();
     mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
     mesh.rotation.y=state.heading??0;
     mesh.userData={entityType:'npc',entityId:state.id};
     this.scene.add(mesh);
 
-    const speechEl=document.createElement('div');speechEl.className='speech hidden';ui.speechLayer.appendChild(speechEl);
-    const nameEl=document.createElement('div');nameEl.className='npc-name hidden';ui.speechLayer.appendChild(nameEl);
+    const speechEl=document.createElement('div');speechEl.className='speech hidden';
+    const nameEl=document.createElement('div');nameEl.className='npc-name hidden';
     const agent:NpcRuntime={
-      state,characterAsset,mesh,path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,
-      pendingDecision:false,speechEl,nameEl
+      state,characterAsset,mesh,path:[],pathIndex:0,nextDecisionAt:Infinity,
+      pendingDecision:false,speechEl,nameEl,removed:true
     };
+    this.streamedNpcs.remember(agent);
+    this.attachVisualTarget({group:mesh,asset:characterAsset,height:1.82,rotationY:0});
+    return agent;
+  }
+
+  spawnFineNpc(state:NpcState,characterAsset:string) {
+    const visual=this.streamedNpcs.get(state.id)||this.createFineNpcVisual(state,characterAsset);
+    const {mesh,speechEl,nameEl,mixer,actions,activeAnimation,soles}=visual;
+    ui.speechLayer.appendChild(speechEl);ui.speechLayer.appendChild(nameEl);
+    mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
+    mesh.rotation.y=state.heading??0;mesh.visible=true;
+    const agent:NpcRuntime={state,characterAsset,mesh,speechEl,nameEl,mixer,actions,activeAnimation,soles,
+      path:[],pathIndex:0,nextDecisionAt:now()+800+Math.random()*3500,pendingDecision:false};
+    this.streamedNpcs.remember(agent);
     this.npcs.set(state.id,agent);
 
     for(const other of this.npcs.values()){
@@ -1710,7 +1765,6 @@ class TownGame {
     }
     state.relationships.player??={affinity:50,trust:50,familiarity:5};
 
-    this.attachVisualTarget({group:mesh,asset:characterAsset,height:1.82,rotationY:0});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(mesh);
   }
 
@@ -1722,15 +1776,25 @@ class TownGame {
     state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     this.ensureWildlifeLineage(state);
     this.beginWildlifeHabitatObservation(state);
-    const g=state.species==='raccoon'?new THREE.Group():this.makeProceduralAnimal(state);
+    const visual=this.streamedWildlife.get(state.id)||this.createWildlifeVisual(state);
+    const g=visual.mesh;
     g.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
-    g.userData={entityType:'wildlife',entityId:state.id};
-    this.scene.add(g);
+    g.visible=true;
     const runtime:WildlifeRuntime={state,mesh:g,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:now()+2500+Math.random()*7000,actionResolved:true};
+    this.streamedWildlife.remember(runtime);
     this.wildlife.set(state.id,runtime);
-    this.wildlifePresentation.register(runtime);
+    if(!this.wildlifePresentation.rebind(visual,runtime))this.wildlifePresentation.register(runtime);
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return true;
+  }
+
+  createWildlifeVisual(state:WildlifeState) {
+    const mesh=state.species==='raccoon'?new THREE.Group():this.makeProceduralAnimal(state);
+    mesh.position.set(state.position.x,this.groundHeightAt(state.position.x,state.position.z),state.position.z);
+    mesh.userData={entityType:'wildlife',entityId:state.id};this.scene.add(mesh);
+    const visual:WildlifeRuntime={state,mesh,path:[],pathIndex:0,controllerSpeed:0,nextDecisionAt:Infinity,actionResolved:true,removed:true};
+    this.streamedWildlife.remember(visual);this.wildlifePresentation.register(visual);
+    return visual;
   }
 
   makeProceduralAnimal(state:WildlifeState) {
@@ -1887,7 +1951,7 @@ class TownGame {
       const agent=this.npcs.get(id);if(!agent)continue;
       agent.removed=true;agent.task=undefined;agent.path=[];
       npcStates.push(structuredClone(agent.state));
-      agent.mesh.parent?.remove(agent.mesh);
+      agent.speechEl.classList.add('hidden');agent.nameEl.classList.add('hidden');
       agent.speechEl.remove();agent.nameEl.remove();
       this.npcs.delete(id);
     }
@@ -1918,8 +1982,6 @@ class TownGame {
         ordinaryDiseaseTotals[species]=(ordinaryDiseaseTotals[species]||0)+(animal.state.diseaseLoad||0);
       }
       animal.removed=true;
-      this.wildlifePresentation.remove(animal);
-      animal.mesh.parent?.remove(animal.mesh);
       this.wildlife.delete(id);
     }
     if(chunk?.wildlife){
@@ -1954,7 +2016,7 @@ class TownGame {
 
     this.streamedPresentation.deactivate(chunkId);
     this.physics.clearChunk(chunkId);
-    this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
+    this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group)||this.streamedNpcs.hasMesh(target.group));
     this.fineChunkCache.set(chunkId,{dynamicActivated:true,npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
     this.coarseWorld.setMaterialized(chunkId,false);
@@ -2242,6 +2304,7 @@ class TownGame {
   }
 
   async requestWildlifeBatch() {
+    if(this.wildlifeDecisionPending)return;
     const due=[...this.wildlife.values()].filter(x=>!x.removed&&!wildlifeHasActiveOwnerCommand(x.state)&&now()>=x.nextDecisionAt)
       .sort((a,b)=>{
         const urgency=(x:WildlifeRuntime)=>Math.max(x.state.hunger,x.state.thirst,100-x.state.energy)+(100-x.state.health)*.5;
@@ -2249,17 +2312,25 @@ class TownGame {
       }).slice(0,6);
     if(!due.length){this.nextWildlifeBatchAt=now()+1500;return;}
     this.wildlifeDecisionPending=true;
+    const requests=new Map(due.map(animal=>[animal.state.id,{animal,owner:animal.state.domestication?.ownerId,command:animal.state.domestication?.command}]));
+    const current=(id:string)=>{
+      const pending=requests.get(id),animal=this.wildlife.get(id);
+      return pending&&animal===pending.animal&&!animal.removed&&animal.state.domestication?.ownerId===pending.owner&&animal.state.domestication?.command===pending.command?animal:undefined;
+    };
     const req:WildlifeDecisionBatchRequest={requests:due.map(x=>this.wildlifeSnapshot(x))};
     try{
       const response=await fetch('/api/wildlife/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});
       const out=await response.json() as WildlifeDecisionBatchResponse;
       if(!response.ok)throw new Error('wildlife decision failed');
+      const accepted=new Set<string>();
       for(const decision of out.decisions){
-        const animal=this.wildlife.get(decision.wildlifeId);
-        if(animal&&!animal.removed)this.applyWildlifeDecision(animal,decision);
+        if(accepted.has(decision.wildlifeId))continue;
+        accepted.add(decision.wildlifeId);
+        const animal=current(decision.wildlifeId);
+        if(animal)this.applyWildlifeDecision(animal,decision);
       }
     }catch{
-      for(const animal of due)animal.nextDecisionAt=now()+5000+Math.random()*5000;
+      for(const animal of due)if(current(animal.state.id))animal.nextDecisionAt=now()+5000+Math.random()*5000;
     }finally{
       this.wildlifeDecisionPending=false;
       this.nextWildlifeBatchAt=now()+2500;
@@ -2533,8 +2604,12 @@ class TownGame {
 
     animal.removed=true;
     animal.path=[];animal.pathIndex=0;
-    this.wildlifePresentation.remove(animal);
-    animal.mesh.parent?.remove(animal.mesh);
+    const visual:WildlifeRuntime={state:structuredClone(transferredState),mesh:animal.mesh,path:[],pathIndex:0,
+      controllerSpeed:0,nextDecisionAt:Infinity,actionResolved:true,removed:true};
+    // The accepted destination still owns placement and population reconciliation.
+    visual.mesh.visible=false;
+    this.streamedWildlife.remember(visual);
+    if(!this.wildlifePresentation.rebind(animal,visual))this.wildlifePresentation.register(visual);
     this.wildlife.delete(state.id);
 
     const targetRuntime=this.materializedChunks.get(target.id);
@@ -2853,7 +2928,9 @@ class TownGame {
       if(record.habitatExposure)record.habitatExposure.lastObservedDay=undefined;
       this.lineageEpoch++;
     }
-    animal.removed=true;this.wildlifePresentation.remove(animal);animal.mesh.parent?.remove(animal.mesh);this.wildlife.delete(animal.state.id);
+    animal.removed=true;
+    if(!this.streamedWildlife.remove(animal)){this.wildlifePresentation.remove(animal);animal.mesh.parent?.remove(animal.mesh);}
+    this.wildlife.delete(animal.state.id);
     this.event(`${this.wildlifeName(animal.state.species)} ${animal.state.id} ${i18n.t(`evolution.death.${reason}`)}。`);
   }
 
@@ -3341,7 +3418,7 @@ class TownGame {
   async npcConversation(a:NpcRuntime,b:NpcRuntime,intent:SocialIntent) {
     a.state.social=clamp(a.state.social+15,0,100);b.state.social=clamp(b.state.social+9,0,100);
     const req:DialogueRequest={locale:this.locale,speaker:this.actor(a,b),listener:this.actor(b,a),situation:`${a.state.name} 主动与 ${b.state.name} 在小镇中交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(a.state.position)},recentLines:[a.state.lastDialogue,b.state.lastDialogue].filter(Boolean) as string[]};
-    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;this.say(a,d.text);a.state.lastDialogue=d.text;this.applyRelation(a,b,d.relationEffect);this.remember(a,`与${b.state.name}交谈：${d.text}`,2);this.log(`${a.state.name} 对 ${b.state.name}：${d.text} [${d.source}]`,'developer');}catch{this.say(a,'嗨。');}
+    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(a.removed||b.removed)return;this.say(a,d.text);a.state.lastDialogue=d.text;this.applyRelation(a,b,d.relationEffect);this.remember(a,`与${b.state.name}交谈：${d.text}`,2);this.log(`${a.state.name} 对 ${b.state.name}：${d.text} [${d.source}]`,'developer');}catch{if(!a.removed&&!b.removed)this.say(a,'嗨。');}
   }
 
   actor(a:NpcRuntime,b?:NpcRuntime) {return {id:a.state.id,name:a.state.name,role:a.state.role,mood:a.state.mood,relationship:b?a.state.relationships[b.state.id]:undefined};}
@@ -3452,14 +3529,14 @@ class TownGame {
     if(this.cameraMode!=='firstPerson')return;
     const dialogueEpoch=this.perceptionEpoch;
     const req:DialogueRequest={locale:this.locale,speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood,relationship:n.state.relationships.player},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:`${n.state.name} 主动走到玩家附近并开始交谈。`,intent,world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
-    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+12,0,100);const rel=n.state.relationships.player??{affinity:50,trust:50,familiarity:5};const delta=d.relationEffect==='positive'?3:d.relationEffect==='negative'?-3:0;rel.affinity=clamp(rel.affinity+delta,0,100);rel.familiarity=clamp(rel.familiarity+2,0,100);n.state.relationships.player=rel;this.remember(n,`我主动和玩家交谈：${d.text}`,2);this.log(`${n.state.name} 主动对玩家：${d.text} [${d.source}]`);}catch{if(dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'嗨。');}
+    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(n.removed||dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+12,0,100);const rel=n.state.relationships.player??{affinity:50,trust:50,familiarity:5};const delta=d.relationEffect==='positive'?3:d.relationEffect==='negative'?-3:0;rel.affinity=clamp(rel.affinity+delta,0,100);rel.familiarity=clamp(rel.familiarity+2,0,100);n.state.relationships.player=rel;this.remember(n,`我主动和玩家交谈：${d.text}`,2);this.log(`${n.state.name} 主动对玩家：${d.text} [${d.source}]`);}catch{if(!n.removed&&dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'嗨。');}
   }
 
   async playerTalk(n:NpcRuntime) {
     if(this.cameraMode!=='firstPerson')return;
     const dialogueEpoch=this.perceptionEpoch;
     const req:DialogueRequest={locale:this.locale,speaker:{id:n.state.id,name:n.state.name,role:n.state.role,mood:n.state.mood},listener:{id:'player',name:'玩家',role:'visitor',mood:'neutral'},situation:'玩家主动走近 NPC 并开始交谈。',intent:'greet',world:{gameTime:this.gameTimeText(),weather:this.weather,nearbyTags:this.nearbyTags(n.state.position)},recentLines:[n.state.lastDialogue].filter(Boolean) as string[]};
-    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+8,0,100);this.remember(n,`玩家来和我说话：${d.text}`,2);this.log(`${n.state.name} 对玩家：${d.text} [${d.source}]`);}catch{if(dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'你好。');}
+    try{const r=await fetch('/api/dialogue',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});const d=await r.json() as DialogueResponse;if(n.removed||dialogueEpoch!==this.perceptionEpoch||this.cameraMode!=='firstPerson')return;this.say(n,d.text);n.state.lastDialogue=d.text;n.state.social=clamp(n.state.social+8,0,100);this.remember(n,`玩家来和我说话：${d.text}`,2);this.log(`${n.state.name} 对玩家：${d.text} [${d.source}]`);}catch{if(!n.removed&&dialogueEpoch===this.perceptionEpoch&&this.cameraMode==='firstPerson')this.say(n,'你好。');}
   }
 
   playerUse(o:RuntimeObject) {
