@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {createRequire} from 'node:module';
 import test from 'node:test';
 import ts from 'typescript';
 import * as THREE from 'three';
@@ -13,6 +14,7 @@ import * as trees from '../src/scene/treePresentation.js';
 import * as crops from '../src/scene/farmCrops.js';
 import {playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
 import {StreamedPresentation} from '../src/scene/streamedPresentation.js';
+import {StreamedActors} from '../src/scene/streamedActors.js';
 import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
 import {FinePhysicsAuthority} from '../src/world/finePhysics.js';
 import {planFineChunk} from '../src/world/materialization.js';
@@ -24,22 +26,24 @@ import {WorldPersistence} from '../server/worldPersistence.js';
 import {validateWorldPersistenceSnapshot} from '../server/worldSnapshotValidation.js';
 import type {NpcState,WorldPersistenceSnapshot,WorldObjectState} from '../src/types.js';
 
-// Execute the real layout/scene/activation/snapshot paths. Only DOM actor labels,
-// external asset transport and decisions are omitted from this component fixture.
+// Execute the real layout/scene/activation/snapshot paths. External asset transport
+// and decisions are omitted from this component fixture.
+const {JSDOM}=createRequire(import.meta.url)('jsdom');
 const source=fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('main.ts',source,ts.ScriptTarget.Latest,true);
-const names=new Set(['tryPushMovableObject','createStreamedObject','syncStreamedPresentation','updateFineChunkMaterialization','materializeFineChunk','collapseFineChunk',
+const names=new Set(['createFineNpcVisual','spawnFineNpc','syncKnownActorPresentation','tryPushMovableObject','createStreamedObject','syncStreamedPresentation','updateFineChunkMaterialization','materializeFineChunk','collapseFineChunk',
   'updateObjects','saveWorldState','clearMovablePersistenceQueue','flushWorldBeacon','fineWorkplaceForRole','fineSpawnPosition','fineMetrics','buildWorldSnapshot','buildFinalWorldSnapshot','restoreWorldState','initializePersistence',
   'addBuilding','buildingInteractionProfile','addObject','addAssetObject','addFarmPlotObject','semanticAssetSpec','registerWorldObjectPhysics','defaultCapabilities']);
 const members:string[]=[];
 for(const n of ast.statements)if(ts.isClassDeclaration(n)&&n.name?.text==='TownGame')for(const m of n.members){
-  if(ts.isMethodDeclaration(m)&&names.has(m.name.getText(ast))||ts.isPropertyDeclaration(m)&&m.name.getText(ast)==='streamedPresentation')members.push(m.getText(ast));
+  if(ts.isMethodDeclaration(m)&&names.has(m.name.getText(ast))||ts.isPropertyDeclaration(m)&&['streamedPresentation','streamedNpcs','streamedWildlife'].includes(m.name.getText(ast)))members.push(m.getText(ast));
 }
-assert.equal(members.length,names.size+1);
+assert.equal(members.length,names.size+3);
 const code=ts.transpileModule(`return class Runtime {objects=new Map();${members.join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-function fixture(snapshot:WorldPersistenceSnapshot|null=null){
+function fixture(snapshot:WorldPersistenceSnapshot|null=null,realActors=false){
   const io={snapshot,gets:0,writes:0,beacons:0,epoch:Date.now(),store:undefined as WorldPersistence|undefined,writeGate:undefined as Promise<void>|undefined};
-  const deps={Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
+  const document=new JSDOM('<div id="speech"></div>').window.document;
+  const deps={document,ui:{speechLayer:document.querySelector('#speech')},StreamedActors,Date:{now:()=>io.epoch},navigator:{sendBeacon(){io.beacons++;return true;}},THREE,...layouts,...units,...movable,...portable,...baking,...water,...trees,...crops,playerHeadClearance,NPC_BODY_RADIUS,StreamedPresentation,planFineChunk,registerFineTerrainForChunk,restoreBuildingForLayout,droppedParcelSpec,
     clamp:(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x)),now:()=>1000,i18n:{t:(key:string)=>key},fetch:async(_url:string,init?:{method?:string;body?:string})=>{
       if(init?.method==='POST'){io.writes++;const data=JSON.parse(init.body!);if(io.writeGate)await io.writeGate;const saved=io.store!.save(data.snapshot,data.expectedRevision);return{ok:true,status:200,json:async()=>saved};}
       io.gets++;return{ok:true,json:async()=>({revision:io.store?.revision()??3,snapshot:io.store?.load()??io.snapshot})};
@@ -53,8 +57,13 @@ function fixture(snapshot:WorldPersistenceSnapshot|null=null){
     worldSeason:()=> 'spring',physicsDynamicColliders:()=>[],groundHeightAt:()=>0,attachVisualTarget(target:any){this.visualTargets.push(target);},event(){},log(){},reconcileLineageOffspring(){},
     flushWildlifeHabitatExposure(){},transferOwnedFollowersToChunk(){},materializePendingWildlifeTransfers(){},endWildlifeHabitatObservation(){},wildlifePresentation:{remove(){}},
     spawnWildlife(){throw Error('Fixture must not seed wildlife');},
-    spawnFineNpc(state:NpcState,characterAsset:string){const mesh=new THREE.Group();mesh.position.set(state.position.x,0,state.position.z);this.scene.add(mesh);this.npcs.set(state.id,{state,characterAsset,mesh,path:[],pathIndex:0,nextDecisionAt:1000,speechEl:{remove(){}},nameEl:{remove(){}}});},
     scheduleMovablePersistence(){},itemName:(x:string)=>x,parcelLabel:(x:string,n:number)=>`${x} ${n}`});
+  if(!realActors)r.spawnFineNpc=function(state:NpcState,characterAsset:string){
+    const visual=this.streamedNpcs.get(state.id)||this.createFineNpcVisual(state,characterAsset);
+    const agent={...visual,state,characterAsset,removed:false,path:[],pathIndex:0,nextDecisionAt:1000};
+    this.streamedNpcs.remember(agent);this.npcs.set(state.id,agent);
+    this.materializedChunks.get(state.chunkId)?.groups.push(agent.mesh);
+  };
   r.portables=new PortableObjectRuntime(r);return{r,io};
 }
 const json=(value:any)=>JSON.parse(JSON.stringify(value));
@@ -250,4 +259,48 @@ test('a bounded new-resident spawn failure reaches the streaming write protectio
   f.io.snapshot=snapshot;f.r.physics.isBlocked=()=>true;await f.r.initializePersistence();
   assert.match(f.r.streamedLayoutError,/No clear NPC spawn/);assert.equal(f.r.persistenceLoadBlocked,true);assert.equal(f.r.npcs.size,0);
   await f.r.saveWorldState();f.r.flushWorldBeacon();assert.equal(f.io.writes,0);assert.equal(f.io.beacons,0);
+});
+
+test('known NPC visuals remain across 24m ownership changes while fine simulation stays local',async()=>{
+  const {r}=fixture(null,true);await r.initializePersistence();
+  const cell=r.coarseWorld.chunks.get('chunk_2_0');Object.assign(cell,{settlementLevel:2,population:23,strategy:'trade_route',prosperity:65});
+  r.playerPosition={x:48,z:0};r.updateFineChunkMaterialization();
+  const first=r.npcs.get('chunk_2_0_npc_00'),mesh=first.mesh;
+  const mixer=new THREE.AnimationMixer(mesh);first.mixer=mixer;first.actions=new Map();
+  first.state.inventory=[{kind:'wood',count:7}];first.state.money=19;
+  r.playerPosition={x:60.1,z:0};r.updateFineChunkMaterialization();
+  assert.equal(mesh.parent,r.scene);assert.equal(first.removed,true);assert.equal(r.npcs.has(first.state.id),false);
+  assert.equal(first.nameEl.classList.contains('hidden'),true);assert.equal(first.nameEl.isConnected,false);assert.deepEqual([...r.coarseWorld.materialized],['chunk_3_0']);
+  const before=mixer.time;r.updateObjects(.5);assert.equal(mixer.time,before,'inactive pose must not advance through fine object updates');
+  r.playerPosition={x:48,z:0};r.updateFineChunkMaterialization();
+  const current=r.npcs.get(first.state.id);assert.notEqual(current,first);assert.equal(current.mesh,mesh);assert.equal(current.mixer,mixer);
+  assert.equal(current.nameEl.isConnected,true);
+  assert.equal(first.removed,true);assert.deepEqual(current.state.inventory,[{kind:'wood',count:7}]);assert.equal(current.state.money,19);
+});
+
+test('stored NPCs are presented before activation without adding fine actors or changing their checkpoint',async()=>{
+  const {r}=fixture(null,true);await r.initializePersistence();
+  const cell=r.coarseWorld.chunks.get('chunk_2_0');Object.assign(cell,{settlementLevel:2,population:23,strategy:'trade_route',prosperity:65});
+  r.playerPosition={x:48,z:0};r.updateFineChunkMaterialization();
+  const id='chunk_2_0_npc_00';r.npcs.get(id).state.money=27;
+  r.playerPosition={x:0,z:7};r.updateFineChunkMaterialization();
+  const store=new WorldPersistence(':memory:');try{
+    store.save(json(r.buildWorldSnapshot()),0);const loaded=store.load()!,row=loaded.fineChunks.find(x=>x.chunkId===cell.id)!;
+    const restored=fixture(loaded,true).r;await restored.initializePersistence();
+    const presented=restored.streamedNpcs.get(id);assert.ok(presented);assert.equal(presented.mesh.parent,restored.scene);
+    assert.equal(restored.npcs.has(id),false);assert.equal(restored.coarseWorld.materialized.size,0);
+    assert.deepEqual(restored.fineChunkCache.get(cell.id).npcStates,row.npcStates);
+    const snapshot=restored.buildWorldSnapshot();assert.deepEqual(snapshot.fineChunks.find((x:any)=>x.chunkId===cell.id).npcStates,row.npcStates);
+    restored.playerPosition={x:48,z:0};restored.updateFineChunkMaterialization();assert.equal(restored.npcs.get(id).mesh,presented.mesh);assert.equal(restored.npcs.get(id).state.money,27);
+  }finally{store.close();}
+});
+
+test('unvisited owners do not seed preview NPCs and departed units release only inactive visuals',async()=>{
+  const {r}=fixture(null,true);await r.initializePersistence();assert.equal([...r.streamedNpcs.values()].length,0);
+  const cell=r.coarseWorld.chunks.get('chunk_2_0');Object.assign(cell,{settlementLevel:2,population:23,strategy:'trade_route',prosperity:65});
+  r.playerPosition={x:48,z:0};r.updateFineChunkMaterialization();const actor=r.npcs.get('chunk_2_0_npc_00');
+  r.coarseWorld.ensureWindowAround(1000,0);for(const c of r.coarseWorld.chunks.values())c.wildlife=[];r.syncStreamedPresentation();
+  r.playerPosition={x:1000,z:0};r.updateFineChunkMaterialization();assert.equal(r.streamedLayoutError,undefined);
+  assert.equal(r.streamedNpcs.get(actor.state.id)===undefined,true);assert.equal(actor.mesh.parent,null);assert.equal(actor.nameEl.isConnected,false);
+  assert.equal(r.visualTargets.some((x:any)=>x.group===actor.mesh),false);assert.ok(r.fineChunkCache.get(cell.id).npcStates.some((x:any)=>x.id===actor.state.id));
 });
