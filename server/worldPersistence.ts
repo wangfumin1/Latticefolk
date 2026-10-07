@@ -7,7 +7,8 @@ import type {
 } from '../src/types.js';
 import { computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence } from '../src/world/evolution.js';
 import { computeWildlifeInteractionNetwork } from '../src/world/interactionNetwork.js';
-import { validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
+import { WorldSnapshotValidationError, validateWorldPersistenceSnapshot } from './worldSnapshotValidation.js';
+import { layoutIdentity, readStreamedLayout, assertStreamedLayoutStates } from '../src/world/streamedLayouts.js';
 
 type Row = Record<string, unknown>;
 
@@ -68,6 +69,11 @@ export class WorldPersistence {
         updated_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS streamed_layouts (
+        unit_id TEXT PRIMARY KEY,
+        layout_json TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS wildlife_lineage (
         entity_id TEXT PRIMARY KEY,
         species TEXT NOT NULL,
@@ -113,6 +119,9 @@ export class WorldPersistence {
     const fineColumns=this.db.prepare("PRAGMA table_info(fine_chunks)").all() as Array<{name:string}>;
     if(!fineColumns.some(column=>column.name==='wildlife_json')){
       this.db.exec("ALTER TABLE fine_chunks ADD COLUMN wildlife_json TEXT NOT NULL DEFAULT '[]'");
+    }
+    if(!fineColumns.some(column=>column.name==='dynamic_activated')){
+      this.db.exec('ALTER TABLE fine_chunks ADD COLUMN dynamic_activated INTEGER CHECK(dynamic_activated IN (0,1))');
     }
     const lineageColumns=this.db.prepare("PRAGMA table_info(wildlife_lineage)").all() as Array<{name:string}>;
     if(!lineageColumns.some(column=>column.name==='origin')){
@@ -179,8 +188,8 @@ export class WorldPersistence {
       ON CONFLICT(id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at
     `);
     const upsertFine=this.db.prepare(`
-      INSERT INTO fine_chunks(chunk_id,npc_json,object_json,wildlife_json,updated_at) VALUES(?,?,?,?,?)
-      ON CONFLICT(chunk_id) DO UPDATE SET npc_json=excluded.npc_json,object_json=excluded.object_json,wildlife_json=excluded.wildlife_json,updated_at=excluded.updated_at
+      INSERT INTO fine_chunks(chunk_id,npc_json,object_json,wildlife_json,dynamic_activated,updated_at) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(chunk_id) DO UPDATE SET npc_json=excluded.npc_json,object_json=excluded.object_json,wildlife_json=excluded.wildlife_json,dynamic_activated=excluded.dynamic_activated,updated_at=excluded.updated_at
     `);
     const upsertHome=this.db.prepare(`
       INSERT INTO home_state(slot,npc_json,object_json,updated_at) VALUES('default',?,?,?)
@@ -234,6 +243,24 @@ export class WorldPersistence {
       const nextRevision=currentRevision+1;
       if(!Number.isSafeInteger(nextRevision))throw new Error('World persistence revision exhausted');
 
+      const previous=this.db.prepare("SELECT meta_json FROM world_meta WHERE slot = 'default'").get() as {meta_json:string}|undefined;
+      if(previous&&JSON.parse(previous.meta_json).streamedLayoutVersion!==undefined&&data.meta.streamedLayoutVersion!==1){
+        throw new WorldSnapshotValidationError(['snapshot.meta.streamedLayoutVersion: cannot omit stored layout contract']);
+      }
+      const newLayouts:NonNullable<WorldPersistenceSnapshot['streamedLayouts']>=[];
+      for(const layout of data.streamedLayouts||[]){
+        const stored=this.db.prepare('SELECT layout_json FROM streamed_layouts WHERE unit_id = ?').get(layout.unit.id) as {layout_json:string}|undefined;
+        if(stored&&layoutIdentity(JSON.parse(stored.layout_json))!==layoutIdentity(layout)){
+          throw new WorldSnapshotValidationError([`snapshot.streamedLayouts: cannot replace established layout ${layout.unit.id}`]);
+        }
+        if(!stored){newLayouts.push(layout);this.db.prepare('INSERT INTO streamed_layouts(unit_id,layout_json) VALUES(?,?)').run(layout.unit.id,JSON.stringify(layout));}
+      }
+
+      const layouts=(this.db.prepare('SELECT layout_json FROM streamed_layouts').all() as {layout_json:string}[]).map(row=>readStreamedLayout(JSON.parse(row.layout_json)));
+      try{assertStreamedLayoutStates(newLayouts,data.fineChunks);assertStreamedLayoutStates(layouts,data.fineChunks,true);}catch(error){
+        throw new WorldSnapshotValidationError([error instanceof Error?error.message:String(error)]);
+      }
+
       upsertMeta.run(data.version,JSON.stringify(data.meta),savedAt);
 
       // Snapshot row omission is not a deletion signal. Discovered coarse/fine
@@ -241,7 +268,9 @@ export class WorldPersistence {
       for(const chunk of data.coarseChunks) upsertChunk.run(chunk.id,JSON.stringify(chunk),savedAt);
 
       for(const chunk of data.fineChunks){
-        upsertFine.run(chunk.chunkId,JSON.stringify(chunk.npcStates),JSON.stringify(chunk.objectStates),JSON.stringify(chunk.wildlifeStates||[]),savedAt);
+        const stored=this.db.prepare('SELECT dynamic_activated FROM fine_chunks WHERE chunk_id = ?').get(chunk.chunkId) as {dynamic_activated:number|null}|undefined;
+        if(stored&&stored.dynamic_activated!==0&&chunk.dynamicActivated===false)throw new WorldSnapshotValidationError(['Cannot deactivate an established actor population']);
+        upsertFine.run(chunk.chunkId,JSON.stringify(chunk.npcStates),JSON.stringify(chunk.objectStates),JSON.stringify(chunk.wildlifeStates||[]),chunk.dynamicActivated===undefined?null:Number(chunk.dynamicActivated),savedAt);
       }
 
       upsertHome.run(JSON.stringify(data.homeNpcs),JSON.stringify(data.homeObjects),savedAt);
@@ -291,7 +320,7 @@ export class WorldPersistence {
     if(!metaRow)return null;
 
     const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
-    const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string}>;
+    const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json,dynamic_activated FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string;dynamic_activated:number|null}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
     const transferRows=this.db.prepare('SELECT transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{transfer_json:string}>;
     const lineageRows=this.db.prepare(`
@@ -310,8 +339,10 @@ export class WorldPersistence {
     }>;
 
     const coarseChunks=coarseRows.map(row=>parse<CoarseChunkState|null>(row.state_json,null)).filter((x):x is CoarseChunkState=>Boolean(x));
+    if(fineRows.some(row=>row.dynamic_activated!==null&&row.dynamic_activated!==0&&row.dynamic_activated!==1))throw new Error('Invalid persisted owner activation state');
     const fineChunks:PersistedFineChunk[]=fineRows.map(row=>({
       chunkId:row.chunk_id,
+      ...(row.dynamic_activated===null?{}:{dynamicActivated:Boolean(row.dynamic_activated)}),
       npcStates:parse<NpcState[]>(row.npc_json,[]),
       objectStates:parse<WorldObjectState[]>(row.object_json,[]),
       wildlifeStates:parse<WildlifeState[]>(row.wildlife_json,[])
@@ -350,8 +381,12 @@ export class WorldPersistence {
       reproductiveSuccess:Boolean(row.reproductive_success)
     }));
 
+    const streamedLayouts=(this.db.prepare('SELECT layout_json FROM streamed_layouts ORDER BY unit_id').all() as {layout_json:string}[])
+      .map(row=>readStreamedLayout(JSON.parse(row.layout_json)));
+    assertStreamedLayoutStates(streamedLayouts,fineChunks);
     return {
       version:Number(metaRow.version)===1?1:1,
+      ...(streamedLayouts.length?{streamedLayouts}:{}),
       meta:parse<WorldPersistenceMeta>(metaRow.meta_json,{
         day:1,minuteOfDay:8*60+15,weather:'clear',playerPosition:{x:0,z:7},
         playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}
@@ -406,6 +441,7 @@ export class WorldPersistence {
       this.db.prepare('DELETE FROM world_meta').run();
       this.db.prepare('DELETE FROM coarse_chunks').run();
       this.db.prepare('DELETE FROM fine_chunks').run();
+      this.db.prepare('DELETE FROM streamed_layouts').run();
       this.db.prepare('DELETE FROM home_state').run();
       this.db.prepare('DELETE FROM wildlife_lineage').run();
       this.db.prepare('DELETE FROM wildlife_transfers').run();

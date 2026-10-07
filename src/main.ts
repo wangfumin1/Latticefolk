@@ -9,6 +9,10 @@ import { CoarseWorldRuntime } from './world/coarseWorld';
 import { seasonalHabitatSuitability, wildlifeDiseaseContactCoefficient } from './world/ecology';
 import { computeWildlifeInteractionNetwork } from './world/interactionNetwork';
 import { planFineChunk } from './world/materialization';
+import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from './world/streamedLayouts';
+import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './world/streamedUnits';
+import {StreamedPresentation,type StaticLayoutEntry} from './scene/streamedPresentation';
+import {farmCropRows,disposeFarmCropRows} from './scene/farmCrops';
 import { restoreBuildingForLayout } from './world/buildingRestore';
 import { craftAtWorkstation } from './world/production';
 import { PortableObjectRuntime } from './world/portableObjectRuntime';
@@ -20,6 +24,8 @@ import { CharacterSoles } from './scene/characterSoles';
 import { WildlifePresentation } from './scene/wildlifePresentation';
 import { WildlifeVisualRuntime } from './scene/wildlifeVisualRuntime';
 import { SunShadowView } from './scene/sunShadow';
+import {GodCameraInput,isGodCameraInputKey,type GodCameraInputStep} from './scene/godCameraInput';
+import { prepareWellGeometry } from './scene/wellPresentation';
 import { characterOverlay } from './scene/characterOverlay';
 import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, characterHeadEnvelope, playerHeadClearance, playerHeadConstraint, npcHeadConstraint, safeNpcHeading, npcPlayerSeparation, PLAYER_CONVERSATION_REACH, reachedPlayerConversation } from './world/characterContact';
 import { stepNpcYield, type NpcYieldPlan } from './world/npcYield';
@@ -172,6 +178,7 @@ interface FineChunkRuntime {
   initialMetrics:FineMetrics;
 }
 interface FineChunkCache {
+  dynamicActivated?:boolean;
   npcStates:NpcState[];
   objectStates:WorldObjectState[];
   wildlifeStates:WildlifeState[];
@@ -242,6 +249,7 @@ class TownGame {
   interactionNetworkCache?: WildlifeInteractionNetwork;
   raycaster = new THREE.Raycaster();
   keys = new Set<string>();
+  readonly godCameraInput=new GodCameraInput();
   playerInventory: Record<ItemKind,number> = {apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0};
   minuteOfDay = 8*60 + 15;
   day = 1;
@@ -289,6 +297,16 @@ class TownGame {
   assetsReady = false;
   assetLoadFailures:string[] = [];
   coarseWorld!: CoarseWorldRuntime;
+  streamedLayouts!:StreamedLayoutRegistry;
+  staticPhysicsOwner?:string;
+  readonly streamedPresentation=new StreamedPresentation({objects:this.objects,
+    create:(entry,unitId,saved)=>this.createStreamedObject(entry,unitId,saved),
+    release:(unitId,objects)=>{
+      const nodes=new Set<THREE.Object3D>();
+      for(const object of objects){object.mesh.traverse(node=>nodes.add(node));disposeFarmCropRows(object.mesh);object.mesh.parent?.remove(object.mesh);
+        if(object.mesh.userData.layoutRoad){const mesh=object.mesh as THREE.Mesh;mesh.geometry.dispose();const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];materials.forEach(m=>m.dispose());}}
+      this.visualTargets=this.visualTargets.filter(target=>!nodes.has(target.group));this.physics.clearChunk(unitId);
+    }});
   interactionOpen = false;
   interactionObjectId?: string;
   interactionWildlifeId?: string;
@@ -301,6 +319,8 @@ class TownGame {
   persistenceSaveQueued = false;
   persistenceRevision = 0;
   persistenceConflict = false;
+  persistenceLoadBlocked = false;
+  streamedLayoutError?:string;
   lastPersistenceSaveAt = 0;
   wildlifeDecisionPending = false;
   nextWildlifeBatchAt = 0;
@@ -334,16 +354,7 @@ class TownGame {
     this.orbit.target.set(0,0,0);
     this.scene.add(this.camera, this.ambient, this.sun);
     this.coarseWorld = new CoarseWorldRuntime(this.scene);
-    this.coarseWorld.setPresentationBridge({
-      attach:(group,spec)=>{
-        this.visualTargets=this.visualTargets.filter(target=>target.group!==group);
-        this.attachVisualTarget({group,asset:spec.asset,height:spec.height,rotationY:spec.rotationY});
-      },
-      detach:group=>{
-        this.visualTargets=this.visualTargets.filter(target=>target.group!==group);
-        group.clear();
-      }
-    });
+    this.streamedLayouts=new StreamedLayoutRegistry(this.coarseWorld.seed);
     this.scene.add(this.sun.target);
     this.setupWorld();
     this.setupSelectionOverlays();
@@ -370,8 +381,8 @@ class TownGame {
       const road=new THREE.Mesh(new THREE.BoxGeometry(w,.035,d),roadMat);
       road.position.set(x,.02,z);road.receiveShadow=true;this.scene.add(road);
     };
-    addRoad(0,0,4,WORLD_SIZE-4);
-    addRoad(0,0,WORLD_SIZE-4,4);
+    addRoad(0,0,4,WORLD_SIZE);
+    addRoad(0,0,WORLD_SIZE,4);
     addRoad(0,-18,WORLD_SIZE-12,2.4);
     addRoad(0,18,WORLD_SIZE-12,2.4);
     addRoad(-18,0,2.4,WORLD_SIZE-12);
@@ -427,7 +438,7 @@ class TownGame {
     this.spawnAssetDecoration('barrel',11,-8.5,1.15,.4);
   }
 
-  addBuilding(name:string,x:number,z:number,w:number,d:number,_color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string}) {
+  addBuilding(name:string,x:number,z:number,w:number,d:number,_color:number,asset?:string,height=6,rotationY=0,options?:{id?:string;chunkId?:string;frontage?:Vec2}) {
     // Buildings are semantic/physical entities first. The visible representation is exclusively
     // the sourced licensed asset; never construct a temporary wall/roof/door primitive fallback.
     const g = new THREE.Group();
@@ -436,7 +447,7 @@ class TownGame {
 
     const profile=this.buildingInteractionProfile(name);
     const doorDistance=d/2+1.15;
-    const interactionPosition={x:x+Math.sin(rotationY)*doorDistance,z:z+Math.cos(rotationY)*doorDistance};
+    const interactionPosition=options?.frontage??{x:x+Math.sin(rotationY)*doorDistance,z:z+Math.cos(rotationY)*doorDistance};
     const object:WorldObjectState={
       id:options?.id||`building_${name}`,chunkId:options?.chunkId,kind:'building',name,position:interactionPosition,tags:profile.tags,
       usable:true,pickupable:false,capabilities:profile.capabilities,storage:profile.storage?[]:undefined
@@ -448,13 +459,13 @@ class TownGame {
     this.physics.registerStatic({
       id:`building:${object.id}`,
       minX:x-halfX,maxX:x+halfX,minZ:z-halfZ,maxZ:z+halfZ,
-      chunkId:options?.chunkId
+      chunkId:this.staticPhysicsOwner??options?.chunkId
     });
     this.physics.registerTrigger({
       id:`object-trigger:${object.id}`,
       minX:interactionPosition.x-1.15,maxX:interactionPosition.x+1.15,
       minZ:interactionPosition.z-1.15,maxZ:interactionPosition.z+1.15,
-      chunkId:options?.chunkId,tag:'interaction'
+      chunkId:this.staticPhysicsOwner??options?.chunkId,tag:'interaction'
     });
 
     if(options?.chunkId)this.materializedChunks.get(options.chunkId)?.groups.push(g);
@@ -496,34 +507,35 @@ class TownGame {
     syncStaticCollider=false,
     offsetZ=0
   ) {
+    const physicsOwner=this.staticPhysicsOwner??state.chunkId;
     const g=new THREE.Group();
     g.position.set(state.position.x,0,state.position.z);
     g.userData={entityType:'object',entityId:state.id};
     this.scene.add(g);
     state.capabilities=state.capabilities?.length?state.capabilities:this.defaultCapabilities(state);
     this.objects.set(state.id,{state,mesh:g});
-    this.registerWorldObjectPhysics(state);
+    this.registerWorldObjectPhysics(state,physicsOwner);
     this.attachVisualTarget({
       group:g,asset,height:assetHeight,rotationY,offsetZ,targetWidth,targetDepth,fit,
       onResolved:state.kind==='tree'?model=>{
-        const physical=treePhysics(model,`object:${state.id}`,state.chunkId);
+        const physical=treePhysics(model,`object:${state.id}`,physicsOwner);
         this.physics.registerStatic(physical.collider);
         if(physical.trigger)this.physics.registerTrigger(physical.trigger);
         g.userData.treePhysics=physical;
-      }:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g):undefined
+      }:syncStaticCollider?()=>this.syncStaticObjectCollider(state,g,physicsOwner):undefined
     });
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(g);
     return g;
   }
 
-  syncStaticObjectCollider(state:WorldObjectState,visual:THREE.Object3D) {
+  syncStaticObjectCollider(state:WorldObjectState,visual:THREE.Object3D,physicsOwner=state.chunkId) {
     if(state.pickupable||worldObjectRigidBody(state)||state.kind==='farm_plot'||state.kind==='water_patch')return;
     visual.updateMatrixWorld(true);
     const box=new THREE.Box3().setFromObject(visual);
     if(box.isEmpty())return;
     if(isBakingOven(state)){
       const bounds={minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z};
-      const {collider,trigger}=bakingOvenPhysics(state,bounds);
+      const {collider,trigger}=bakingOvenPhysics({...state,chunkId:physicsOwner},bounds);
       this.physics.registerStatic(collider);
       this.physics.registerTrigger(trigger);
       visual.userData.ovenPhysics={collider,trigger};
@@ -532,7 +544,7 @@ class TownGame {
     this.physics.registerStatic({
       id:`object:${state.id}`,
       minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z,
-      chunkId:state.chunkId
+      chunkId:physicsOwner
     });
   }
 
@@ -550,13 +562,10 @@ class TownGame {
     this.attachVisualTarget({
       group:soil,asset:'farmSoil',height:.12,targetWidth:4,targetDepth:2.7,fit:'exactBounds'
     });
-    const rows=[-1.25,-.42,.42,1.25];
-    for(const x of rows)for(const z of [-.72,0,.72]){
-      const crop=new THREE.Group();
-      crop.position.set(x,.12,z); // The sourced soil's top, not four centimetres below it.
-      root.add(crop);
-      this.attachVisualTarget({group:crop,asset:'farmWheat',height:.72});
-    }
+    const crops=new THREE.Group();
+    crops.position.y=.12; // The sourced soil's top.
+    root.add(crops);
+    this.attachVisualTarget({group:crops,asset:'farmWheat',height:.72});
     if(state.chunkId)this.materializedChunks.get(state.chunkId)?.groups.push(root);
     return root;
   }
@@ -615,14 +624,14 @@ class TownGame {
   }
 
 
-  registerWorldObjectPhysics(state:WorldObjectState) {
+  registerWorldObjectPhysics(state:WorldObjectState,physicsOwner=this.staticPhysicsOwner??this.streamedPresentation.physicsOwner(state.id)??state.chunkId) {
     if(state.usable||state.pickupable||(state.capabilities?.length??0)>0){
       const triggerRadius=state.kind==='well'||state.kind==='food_stall'?1.45:1.15;
       this.physics.registerTrigger({
         id:`object-trigger:${state.id}`,
         minX:state.position.x-triggerRadius,maxX:state.position.x+triggerRadius,
         minZ:state.position.z-triggerRadius,maxZ:state.position.z+triggerRadius,
-        chunkId:state.chunkId,tag:'interaction'
+        chunkId:physicsOwner,tag:'interaction'
       });
     }
 
@@ -644,7 +653,7 @@ class TownGame {
       id:`object:${state.id}`,
       minX:state.position.x-halfX,maxX:state.position.x+halfX,
       minZ:state.position.z-halfZ,maxZ:state.position.z+halfZ,
-      chunkId:state.chunkId
+      chunkId:physicsOwner
     });
   }
 
@@ -764,6 +773,7 @@ class TownGame {
       const assetUrl=file.startsWith('/')?file:`${this.assetRoot}/${file}`;
       if(file.toLowerCase().endsWith('.fbx')){
         const scene=await this.fbxLoader.loadAsync(assetUrl);
+        if(key==='wellAsset')prepareWellGeometry(scene);
         this.assets.set(key,{scene,animations:scene.animations||[]});
       }else{
         const gltf=await this.gltfLoader.loadAsync(assetUrl);
@@ -794,8 +804,11 @@ class TownGame {
       :this.normalizeModel(model,target.height,target.targetWidth,target.targetDepth,target.fit==='exactBounds');
     if(!isTree)model.rotation.y=target.rotationY||0;
     model.position.z+=target.offsetZ??0;
-    target.group.clear();
-    target.group.add(model);
+    disposeFarmCropRows(target.group);target.group.clear();
+    target.group.add(target.asset==='farmWheat'?farmCropRows(model):model);
+    for(let owner:THREE.Object3D|null=target.group;owner;owner=owner.parent)if(owner.userData.entityId){
+      owner.userData.visualRevision=(owner.userData.visualRevision||0)+1;break;
+    }
     target.onResolved?.(model);
     if(isCharacter){
       const agent=[...this.npcs.values()].find(n=>n.mesh===target.group);
@@ -865,20 +878,25 @@ class TownGame {
     addEventListener('resize',()=>{ this.camera.aspect=innerWidth/innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(innerWidth,innerHeight); });
     addEventListener('keydown',(e)=>{
       const tag=(e.target as HTMLElement | null)?.tagName;
-      if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+      if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(e.target as HTMLElement|null)?.isContentEditable){this.resetGodCameraInput();return;}
       if(e.code==='Escape'&&this.interactionOpen){e.preventDefault();this.closeInteractionMenu(true);return;}
-      if (e.code==='Tab') { e.preventDefault(); ui.admin.classList.toggle('hidden'); return; }
+      if (e.code==='Tab') { e.preventDefault(); this.resetGodCameraInput();ui.admin.classList.toggle('hidden'); return; }
       if (e.code==='KeyG') { e.preventDefault(); this.toggleCameraMode(); return; }
       if (e.code==='KeyF' && this.cameraMode==='god') { this.focusSelected(); return; }
       if (e.code==='Space' && this.cameraMode==='god') { e.preventDefault(); this.focusTown(); return; }
       if (e.code==='KeyE' && this.cameraMode==='firstPerson') { this.interact(); return; }
+      if(this.cameraMode==='god'&&isGodCameraInputKey(e.code)){this.godCameraKey(e.code,true,e.repeat);return;}
       this.keys.add(e.code);
     });
-    addEventListener('keyup',(e)=>this.keys.delete(e.code));
+    addEventListener('keyup',(e)=>{this.keys.delete(e.code);if(this.cameraMode==='god'&&isGodCameraInputKey(e.code))this.godCameraKey(e.code,false);});
+    addEventListener('blur',()=>{this.keys.clear();this.resetGodCameraInput();});
+    addEventListener('focus',()=>this.resetGodCameraInput());
+    document.addEventListener('visibilitychange',()=>{this.keys.clear();this.resetGodCameraInput();});
+    document.addEventListener('focusin',()=>{if(!this.godCameraInputAllowed())this.resetGodCameraInput();});
     document.querySelector('#startBtn')!.addEventListener('click',()=>{this.cameraMode='firstPerson';this.controls.lock();});
     ui.modeBtn.addEventListener('click',()=>this.toggleCameraMode());
-    this.controls.addEventListener('lock',()=>ui.overlay.classList.add('hidden'));
-    this.controls.addEventListener('unlock',()=>{if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
+    this.controls.addEventListener('lock',()=>{this.resetGodCameraInput();ui.overlay.classList.add('hidden');});
+    this.controls.addEventListener('unlock',()=>{this.keys.clear();this.resetGodCameraInput();if(this.cameraMode==='firstPerson'&&!this.interactionOpen)ui.overlay.classList.remove('hidden');});
     document.querySelector('#interactionClose')!.addEventListener('click',()=>this.closeInteractionMenu(true));
     ui.localeSelect.addEventListener('change',()=>this.changeLocale(ui.localeSelect.value));
     document.querySelectorAll<HTMLInputElement>('#jevBudgetPanel input').forEach(input=>input.addEventListener('input',()=>{this.budgetInputVersion++;}));
@@ -913,6 +931,7 @@ class TownGame {
 
   enterGodMode() {
     if(this.cameraMode==='god')return;
+    this.keys.clear();this.resetGodCameraInput();
     this.playerPosition={x:this.camera.position.x,z:this.camera.position.z};
     this.firstPersonRotation.copy(this.camera.rotation);
     this.cameraMode='god';
@@ -934,6 +953,7 @@ class TownGame {
 
   enterFirstPerson() {
     if(this.cameraMode==='firstPerson')return;
+    this.keys.clear();this.resetGodCameraInput();
     this.cameraMode='firstPerson';
     this.perceptionEpoch++;
     this.orbit.enabled=false;
@@ -998,11 +1018,13 @@ class TownGame {
 
   focusTown() {
     if(this.cameraMode!=='god')return;
+    this.resetGodCameraInput();
     this.moveGodTarget(new THREE.Vector3(0,0,0),22);
   }
 
   focusSelected() {
     if(this.cameraMode!=='god'||!this.selectedEntity)return;
+    this.resetGodCameraInput();
     const p=this.entityPosition(this.selectedEntity);if(!p)return;
     this.moveGodTarget(new THREE.Vector3(p.x,0,p.z),11);
   }
@@ -1038,7 +1060,7 @@ class TownGame {
     requestAnimationFrame(this.animate);
     const dt=Math.min(.05,this.clock.getDelta());
     this.playerTravel=undefined;this.playerBlockedNpcs.clear();
-    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera(dt);
+    if(this.cameraMode==='firstPerson'){this.updatePlayer(dt);if(this.persistenceReady)this.updateFineChunkMaterialization();}else this.updateGodCamera();
     if(this.persistenceReady){
       this.updateTime(dt);
       this.coarseWorld.update({day:this.day,gameTime:this.gameTimeText(),weather:this.weather,dt});
@@ -1047,9 +1069,7 @@ class TownGame {
       this.updateWildlife(dt);
       if(now()-this.lastPersistenceSaveAt>15000)void this.saveWorldState();
     }
-    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
-    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
-    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
+    this.updateCameraShadow();
     this.updateRaycast(); this.updateUi(); this.updateSpeech(); this.updateSelectionVisuals();
     if(now()-this.lastHealthPoll>10000) this.refreshHealth();
     this.renderer.render(this.scene,this.camera);
@@ -1085,7 +1105,7 @@ class TownGame {
   }
 
   tryPushMovableObject(objectId:string,displacement:Vec2) {
-    const runtime=this.objects.get(objectId);
+    const runtime=this.objects.get(objectId)||this.streamedPresentation.object(objectId);
     if(!runtime?.mesh.visible)return false;
     const state=runtime.state;
     const archetype=worldObjectRigidBody(state);
@@ -1105,8 +1125,12 @@ class TownGame {
       id:`object-trigger:${state.id}`,
       minX:state.position.x-triggerRadius,maxX:state.position.x+triggerRadius,
       minZ:state.position.z-triggerRadius,maxZ:state.position.z+triggerRadius,
-      chunkId:state.chunkId,tag:'interaction'
+      chunkId:this.streamedPresentation.physicsOwner(state.id)??state.chunkId,tag:'interaction'
     });
+    if(state.chunkId&&!this.materializedChunks.has(state.chunkId)){
+      const cache=this.fineChunkCache.get(state.chunkId),index=cache?.objectStates.findIndex(object=>object.id===state.id)??-1;
+      if(cache&&index>=0)cache.objectStates[index]=structuredClone(state);
+    }
     this.movableDirty=true;
     this.movableSaveRetryMs=1500;
     this.scheduleMovablePersistence();
@@ -1114,31 +1138,67 @@ class TownGame {
   }
 
   scheduleMovablePersistence(delayMs=700) {
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
     if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
     this.movableSaveTimer=window.setTimeout(()=>{
       this.movableSaveTimer=undefined;
-      this.persistenceSaveQueued=true;
       void this.saveWorldState();
     },Math.max(250,delayMs));
   }
 
-  updateGodCamera(dt:number) {
+  clearMovablePersistenceQueue() {
+    if(this.movableSaveTimer!==undefined)window.clearTimeout(this.movableSaveTimer);
+    this.movableSaveTimer=undefined;
+    this.persistenceSaveQueued=false;
+  }
+
+  resetGodCameraInput(){this.godCameraInput.reset();}
+
+  godCameraInputAllowed() {
+    const active=document.activeElement as HTMLElement|null;
+    return this.cameraMode==='god'&&!this.controls.isLocked&&!document.hidden&&document.hasFocus()&&!this.interactionOpen&&
+      ui.admin.classList.contains('hidden')&&ui.overlay.classList.contains('hidden')&&
+      !active?.matches('input,textarea,select')&&!active?.isContentEditable;
+  }
+
+  godCameraKey(code:string,down:boolean,repeat=false) {
+    if(!this.godCameraInputAllowed()){this.resetGodCameraInput();return;}
+    const step=this.godCameraInput.edge(code,down,now(),repeat);
+    if(!step)return;
+    this.orbit.update();this.applyGodCameraInput(step);this.orbit.update();
+    this.updateCameraShadow();this.updateUi();
+  }
+
+  updateCameraShadow() {
+    this.shadowFocus.copy(this.cameraMode==='god'?this.orbit.target:this.camera.position);
+    if(this.cameraMode==='firstPerson')this.shadowFocus.y-=1.7;
+    this.sunShadow.update(this.cameraMode,this.shadowFocus,this.camera.position.distanceTo(this.orbit.target));
+  }
+
+  updateGodCamera() {
     this.orbit.update();
-    let f=0,r=0;if(this.keys.has('KeyW'))f+=1;if(this.keys.has('KeyS'))f-=1;if(this.keys.has('KeyD'))r+=1;if(this.keys.has('KeyA'))r-=1;
-    const speed=(this.keys.has('ShiftLeft')?20:11)*dt;
-    if(f||r){
-      const forward=this.orbit.target.clone().sub(this.camera.position);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
-      const right=new THREE.Vector3(-forward.z,0,forward.x);const move=forward.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
-      const old=this.orbit.target.clone();this.orbit.target.add(move);
-      const bounds=this.coarseWorld.activeBounds();
-      this.orbit.target.x=clamp(this.orbit.target.x,bounds.minX,bounds.maxX);
-      this.orbit.target.z=clamp(this.orbit.target.z,bounds.minZ,bounds.maxZ);
-      const actual=this.orbit.target.clone().sub(old);this.camera.position.add(actual);
-    }
-    const spin=(this.keys.has('KeyQ')?1:0)-(this.keys.has('KeyE')?1:0);
-    if(spin){const off=this.camera.position.clone().sub(this.orbit.target);off.applyAxisAngle(new THREE.Vector3(0,1,0),spin*dt*1.35);this.camera.position.copy(this.orbit.target).add(off);}
+    if(!this.godCameraInputAllowed())this.resetGodCameraInput();
+    else{const step=this.godCameraInput.consume(now());if(step)this.applyGodCameraInput(step);}
     this.orbit.update();
     // Do not materialize a player avatar while observing from god mode.
+  }
+
+  applyGodCameraInput({seconds,forward:f,right:r,spin,sprint}:GodCameraInputStep) {
+    // Keep the existing maximum camera integration step when pan and spin combine.
+    for(let elapsed=0;elapsed<seconds;elapsed+=.05){
+      const dt=Math.min(.05,seconds-elapsed);
+      const speed=(sprint?20:11)*dt;
+      if(f||r){
+        const forward=this.orbit.target.clone().sub(this.camera.position);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
+        const right=new THREE.Vector3(-forward.z,0,forward.x);const move=forward.multiplyScalar(f).add(right.multiplyScalar(r)).normalize().multiplyScalar(speed);
+        const old=this.orbit.target.clone();this.orbit.target.add(move);
+        const bounds=this.coarseWorld.activeBounds();
+        this.orbit.target.x=clamp(this.orbit.target.x,bounds.minX,bounds.maxX);
+        this.orbit.target.z=clamp(this.orbit.target.z,bounds.minZ,bounds.maxZ);
+        const actual=this.orbit.target.clone().sub(old);this.camera.position.add(actual);
+      }
+      if(spin){const off=this.camera.position.clone().sub(this.orbit.target);off.applyAxisAngle(new THREE.Vector3(0,1,0),spin*dt*1.35);this.camera.position.copy(this.orbit.target).add(off);}
+    }
   }
 
 
@@ -1158,6 +1218,8 @@ class TownGame {
         this.log(i18n.t('persistence.newWorld',{revision}));
       }
     }catch(error){
+      this.persistenceLoadBlocked=true;
+      this.clearMovablePersistenceQueue();
       this.log(i18n.t('persistence.loadFailed',{error:error instanceof Error?error.message:String(error)}));
     }finally{
       this.persistenceReady=true;
@@ -1169,11 +1231,11 @@ class TownGame {
   buildWorldSnapshot():WorldPersistenceSnapshot {
     const fine=new Map<string,PersistedFineChunk>();
     for(const [chunkId,cache] of this.fineChunkCache){
-      fine.set(chunkId,{chunkId,npcStates:structuredClone(cache.npcStates),objectStates:structuredClone(cache.objectStates),wildlifeStates:structuredClone(cache.wildlifeStates)});
+      fine.set(chunkId,{chunkId,dynamicActivated:cache.dynamicActivated,npcStates:structuredClone(cache.npcStates),objectStates:structuredClone(cache.objectStates),wildlifeStates:structuredClone(cache.wildlifeStates)});
     }
     for(const [chunkId,runtime] of this.materializedChunks){
       fine.set(chunkId,{
-        chunkId,
+        chunkId,dynamicActivated:true,
         npcStates:runtime.npcIds.map(id=>this.npcs.get(id)?.state).filter((x):x is NpcState=>Boolean(x)).map(x=>structuredClone(x)),
         objectStates:runtime.objectIds.map(id=>this.objects.get(id)?.state).filter((x):x is WorldObjectState=>Boolean(x)).map(x=>structuredClone(x)),
         wildlifeStates:runtime.wildlifeIds.map(id=>this.wildlife.get(id)?.state).filter((x):x is WildlifeState=>Boolean(x)).map(x=>structuredClone(x))
@@ -1188,11 +1250,13 @@ class TownGame {
         minuteOfDay:this.minuteOfDay,
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
+        streamedLayoutVersion:1,
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },
       coarseChunks:[...this.coarseWorld.chunks.values()].map(x=>structuredClone(x)),
       fineChunks:[...fine.values()],
+      streamedLayouts:this.streamedLayouts.snapshot(),
       homeNpcs,
       homeObjects,
       wildlifeLineage:[...this.wildlifeLineage.values()].map(record=>structuredClone(record)),
@@ -1202,6 +1266,15 @@ class TownGame {
 
   restoreWorldState(snapshot:WorldPersistenceSnapshot) {
     if(snapshot.version!==1)return;
+    if(snapshot.meta.streamedLayoutVersion!==undefined&&snapshot.meta.streamedLayoutVersion!==1)throw new StreamedLayoutValidationError('Unsupported layout version');
+    for(const row of snapshot.fineChunks||[]){
+      if(row.dynamicActivated!==undefined&&(snapshot.meta.streamedLayoutVersion!==1||typeof row.dynamicActivated!=='boolean'))throw new StreamedLayoutValidationError('Invalid owner activation state');
+      if(row.dynamicActivated===false&&(row.npcStates.length||(row.wildlifeStates?.length||0)))throw new StreamedLayoutValidationError('Static-only owner contains activated actors');
+    }
+    const layouts=(snapshot.streamedLayouts||[]).map(readStreamedLayout);
+    if(layouts.length&&snapshot.meta.streamedLayoutVersion!==1)throw new StreamedLayoutValidationError('Missing layout writer version');
+    assertStreamedLayoutStates(layouts,snapshot.fineChunks||[]);
+    this.streamedLayouts.restore(layouts);
     this.day=Math.max(1,Math.floor(snapshot.meta.day||1));
     this.minuteOfDay=Math.max(0,Number(snapshot.meta.minuteOfDay)||0);
     const savedWeather=snapshot.meta.weather;
@@ -1239,6 +1312,7 @@ class TownGame {
     this.fineChunkCache.clear();
     for(const saved of snapshot.fineChunks||[]){
       this.fineChunkCache.set(saved.chunkId,{
+        dynamicActivated:saved.dynamicActivated,
         npcStates:structuredClone(saved.npcStates||[]),
         objectStates:structuredClone(saved.objectStates||[]),
         wildlifeStates:structuredClone(saved.wildlifeStates||[])
@@ -1283,7 +1357,8 @@ class TownGame {
   }
 
   async saveWorldState() {
-    if(!this.persistenceReady||this.persistenceConflict)return;
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
+    if(!this.persistenceReady)return;
     if(this.persistenceSaveInFlight){
       this.persistenceSaveQueued=true;
       return;
@@ -1308,7 +1383,7 @@ class TownGame {
           const conflict=await response.json().catch(()=>({})) as {currentRevision?:unknown};
           const currentRevision=Number(conflict.currentRevision);
           this.persistenceConflict=true;
-          this.persistenceSaveQueued=false;
+          this.clearMovablePersistenceQueue();
           throw new Error(Number.isSafeInteger(currentRevision)
             ?i18n.t('persistence.conflict',{local:expectedRevision,server:currentRevision})
             :i18n.t('persistence.conflictUnknown',{local:expectedRevision}));
@@ -1327,7 +1402,8 @@ class TownGame {
       }finally{
         this.persistenceSaveInFlight=false;
       }
-    }while(this.persistenceSaveQueued&&this.persistenceReady&&!this.persistenceConflict);
+    }while(this.persistenceSaveQueued&&this.persistenceReady&&!this.persistenceConflict&&!this.persistenceLoadBlocked);
+    if(this.persistenceConflict||this.persistenceLoadBlocked){this.clearMovablePersistenceQueue();return;}
     if(lastSaveSucceeded){
       this.movableSaveRetryMs=1500;
       if(this.movableSaveTimer===undefined&&!this.persistenceSaveQueued)this.movableDirty=false;
@@ -1355,6 +1431,7 @@ class TownGame {
         minuteOfDay:this.minuteOfDay,
         weather:this.weather,
         weatherEpoch:this.weatherEpoch,
+        streamedLayoutVersion:1,
         playerPosition:{...this.playerPosition},
         playerInventory:{...this.playerInventory}
       },
@@ -1370,7 +1447,7 @@ class TownGame {
 
   flushWorldBeacon() {
     // Do not persist only the reward side of an unacknowledged fine parcel transfer.
-    if(!this.persistenceReady||this.persistenceConflict||this.portables.checkpoint.pending)return;
+    if(!this.persistenceReady||this.persistenceConflict||this.persistenceLoadBlocked||this.portables.checkpoint.pending)return;
     try{
       const snapshot=this.buildFinalWorldSnapshot();
       const payload=JSON.stringify({snapshot,expectedRevision:this.persistenceRevision});
@@ -1379,15 +1456,83 @@ class TownGame {
     }catch{}
   }
 
+  createStreamedObject(entry:StaticLayoutEntry,unitId:string,saved?:WorldObjectState):RuntimeObject {
+    const p=entry.plan,previousOwner=this.staticPhysicsOwner;
+    this.staticPhysicsOwner=unitId;
+    try{
+      if(entry.kind==='building'){
+        const b=entry.plan;
+        this.addBuilding(b.name,b.x,b.z,b.w,b.d,0,b.asset,b.height,b.rotationY,{id:b.id,chunkId:b.ownerCellId,frontage:b.frontage});
+        const object=this.objects.get(b.id)!;
+        if(saved)object.state=restoreBuildingForLayout(object.state,saved);
+      }else if(entry.kind==='road'){
+        const road=entry.plan;
+        const state:WorldObjectState=structuredClone(saved||{id:road.id,chunkId:road.ownerCellId,kind:'road',name:road.name,
+          position:{x:road.x,z:road.z},tags:road.tags,usable:true,pickupable:false,capabilities:['inspect']});
+        const mesh=new THREE.Mesh(new THREE.BoxGeometry(road.w,.045,road.d),
+          new THREE.MeshStandardMaterial({color:road.tags.includes('trail')?0xa68d67:0xc3aa7d,roughness:1}));
+        mesh.position.set(road.x,.025,road.z);mesh.receiveShadow=true;
+        mesh.userData={entityType:'object',entityId:road.id,layoutRoad:true};this.scene.add(mesh);
+        this.objects.set(road.id,{state,mesh});
+      }else{
+        const o=entry.plan;
+        if(!saved)throw new StreamedLayoutValidationError(`Missing static state: ${o.id}`);
+        const state=structuredClone(saved);state.chunkId=o.ownerCellId;
+        if(state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
+        normalizeWorldObjectRigidBody(state);
+        this.addObject(state,o.asset,o.height,o.rotationY);
+      }
+      const object=this.objects.get(p.id)!;
+      advancePickupRespawn(object.state,Date.now());
+      object.mesh.visible=!(object.state.respawnAt&&object.state.respawnAt>Date.now()&&!object.state.pickupable);
+      return object;
+    }finally{this.staticPhysicsOwner=previousOwner;}
+  }
+
+  syncStreamedPresentation() {
+    const units=new Map<string,{ux:number;uz:number}>();
+    for(const id of this.coarseWorld.activeChunkIds){
+      const chunk=this.coarseWorld.chunks.get(id);if(!chunk)continue;
+      const unit=streamedUnitForCoarseCell(chunk.cx,chunk.cz);units.set(unit.id,unit);
+    }
+    const presented=new Set(this.streamedPresentation.unitIds());
+    for(const [unitId,unit] of units){
+      if(presented.has(unitId))continue;
+      const owners=streamedUnitOwnerCells(unit.ux,unit.uz);
+      const cells=owners.map(owner=>this.coarseWorld.chunks.get(owner.id)!);
+      const saved=owners.flatMap(owner=>{const row=this.fineChunkCache.get(owner.id);return row?[{chunkId:owner.id,...row}]:[];});
+      const generated=this.streamedLayouts.establish(unit.ux,unit.uz,cells,saved);
+      const states=new Map(generated.objectStates.map(state=>[state.id,state]));
+      for(const row of saved)for(const state of row.objectStates)states.set(state.id,state);
+      this.streamedPresentation.present(generated.layout,[...states.values()]);
+      for(const owner of owners){
+        const previous=this.fineChunkCache.get(owner.id);
+        const staticStates=this.streamedPresentation.states(owner.id);
+        this.fineChunkCache.set(owner.id,{dynamicActivated:previous?.dynamicActivated??(previous?true:false),
+          npcStates:previous?.npcStates||[],wildlifeStates:previous?.wildlifeStates||[],
+          objectStates:[...staticStates,...(previous?.objectStates||[]).filter(s=>!this.streamedPresentation.has(s.id))]});
+      }
+    }
+    this.streamedPresentation.retainVisible(new Set(units.keys()));
+  }
+
   updateFineChunkMaterialization() {
-    if(this.cameraMode!=='firstPerson')return;
-    this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z);
-    const chunk=this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z);
-    const targetId=chunk?.id;
-    if(targetId===this.activeFineChunkId)return;
-    if(this.activeFineChunkId&&chunk)this.transferOwnedFollowersToChunk(this.activeFineChunkId,chunk);
-    if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
-    if(chunk)this.materializeFineChunk(chunk);
+    if(this.streamedLayoutError)return;
+    try{
+      if(!this.streamedPresentation.unitIds().length)this.syncStreamedPresentation();
+      if(this.cameraMode!=='firstPerson')return;
+      if(this.coarseWorld.ensureWindowAround(this.playerPosition.x,this.playerPosition.z))this.syncStreamedPresentation();
+      const chunk=this.coarseWorld.chunkAtWorld(this.playerPosition.x,this.playerPosition.z);
+      const targetId=chunk?.id;
+      if(targetId===this.activeFineChunkId)return;
+      if(this.activeFineChunkId&&chunk)this.transferOwnedFollowersToChunk(this.activeFineChunkId,chunk);
+      if(this.activeFineChunkId)this.collapseFineChunk(this.activeFineChunkId);
+      if(chunk)this.materializeFineChunk(chunk);
+    }catch(error){
+      this.persistenceLoadBlocked=true;this.clearMovablePersistenceQueue();
+      this.streamedLayoutError=error instanceof Error?error.message:String(error);
+      this.log(i18n.t('persistence.loadFailed',{error:this.streamedLayoutError}));
+    }
   }
 
   materializeFineChunk(chunk:CoarseChunkState) {
@@ -1406,64 +1551,35 @@ class TownGame {
     }
 
     const cached=this.fineChunkCache.get(chunk.id);
-    const cachedObjects=new Map((cached?.objectStates||[]).map(state=>[state.id,state]));
-    const cachedNpcs=new Map((cached?.npcStates||[]).map(state=>[state.id,state]));
-
-    for(const road of plan.roads){
-      const saved=cachedObjects.get(road.id);
-      const state:WorldObjectState=structuredClone(saved||{
-        id:road.id,chunkId:chunk.id,kind:'road',name:road.name,position:{x:road.x,z:road.z},
-        tags:road.tags,usable:true,pickupable:false,capabilities:['inspect']
-      });
-      state.chunkId=chunk.id;
-      const mesh=new THREE.Mesh(
-        new THREE.BoxGeometry(road.w,.045,road.d),
-        new THREE.MeshStandardMaterial({color:road.tags.includes('trail')?0xa68d67:0xc3aa7d,roughness:1})
-      );
-      mesh.position.set(road.x,.025,road.z);mesh.receiveShadow=true;
-      mesh.userData={entityType:'object',entityId:road.id};
-      this.scene.add(mesh);
-      this.objects.set(road.id,{state,mesh});
-      runtime.objectIds.push(road.id);runtime.groups.push(mesh);
-    }
-
-    for(const b of plan.buildings){
-      this.addBuilding(b.name,b.x,b.z,b.w,b.d,b.color,b.asset,b.height,b.rotationY,{id:b.id,chunkId:chunk.id});
-      runtime.objectIds.push(b.id);
-      const saved=cachedObjects.get(b.id);
-      const object=this.objects.get(b.id);
-      if(saved&&object)Object.assign(object.state,restoreBuildingForLayout(object.state,saved));
-    }
-
-    for(const p of plan.objects){
-      const saved=cachedObjects.get(p.state.id);
-      const state=structuredClone(saved||p.state);
-      state.chunkId=chunk.id;
-      if(state.kind!=='dropped_item'&&state.resourceAmount!==undefined&&state.resourceCapacity===undefined)state.resourceCapacity=state.resourceAmount;
-      this.addObject(state,p.asset,p.height,p.rotationY||0);
-      runtime.objectIds.push(state.id);
-    }
-
+    const dynamicCached=cached?.dynamicActivated!==false?cached:undefined;
+    const staticObjects=this.streamedPresentation.activate(chunk.id);
+    runtime.objectIds.push(...staticObjects.map(object=>object.state.id));
     this.portables.restoreFine(cached?.objectStates||[],chunk.id);
 
-    for(const p of plan.residents){
-      const saved=cachedNpcs.get(p.id);
-      const state:NpcState=saved?structuredClone(saved):{
+    if(dynamicCached){
+      // Saved residents own their identity even if the coarse population/archetype changed.
+      for(const saved of dynamicCached.npcStates){
+        const state=structuredClone(saved);state.chunkId=chunk.id;
+        const index=Number(state.id.match(/_npc_(\d+)$/)?.[1]??0);
+        this.spawnFineNpc(state,['female1','female2','male1','male2'][index%4]!);
+        runtime.npcIds.push(state.id);
+      }
+    }else for(const p of plan.residents){
+      const state:NpcState={
         id:p.id,chunkId:chunk.id,name:p.name,role:p.role,position:{x:p.x,z:p.z},home:{x:p.x,z:p.z},
-        workAt:p.workAt,mood:p.mood,hunger:25+Math.random()*24,energy:62+Math.random()*28,social:42+Math.random()*32,
+        workAt:this.fineWorkplaceForRole(p.role,chunk.id),mood:p.mood,hunger:25+Math.random()*24,energy:62+Math.random()*28,social:42+Math.random()*32,
         money:Math.max(2,Math.round(3+chunk.prosperity/7)),inventory:structuredClone(p.inventory),
         relationships:{},memories:[],currentAction:'idle',goal:'在这里生活并照顾自己的日常需要',lastDecisionAt:0
       };
-      state.chunkId=chunk.id;
-      this.spawnFineNpc(state,p.characterAsset);
-      runtime.npcIds.push(state.id);
+      state.position=this.fineSpawnPosition(state.position,chunk,p.characterAsset);state.home={...state.position};
+      this.spawnFineNpc(state,p.characterAsset);runtime.npcIds.push(state.id);
     }
 
     const pendingTransfers=[...this.wildlifeTransfers.values()]
       .filter(transfer=>transfer.toChunkId===chunk.id)
       .sort((a,b)=>a.transferredDay-b.transferredDay||a.entityId.localeCompare(b.entityId));
     const pendingReplacement=new Map<WildlifeSpecies,number>();
-    if(!cached){
+    if(!dynamicCached){
       const remainingBySpecies=new Map<WildlifeSpecies,number>();
       for(const population of chunk.wildlife||[])remainingBySpecies.set(population.species,Math.max(0,population.count));
       for(const transfer of pendingTransfers){
@@ -1477,8 +1593,8 @@ class TownGame {
       }
     }
 
-    if(cached){
-      for(const saved of cached.wildlifeStates){
+    if(dynamicCached){
+      for(const saved of dynamicCached.wildlifeStates){
         const state=structuredClone(saved);
         state.chunkId=chunk.id;
         state.ageDays=Math.max(state.ageDays,(this.day+this.minuteOfDay/1440)-state.birthDay);
@@ -1495,7 +1611,7 @@ class TownGame {
         if(replacements>0){pendingReplacement.set(p.species,replacements-1);continue;}
         const population=chunk.wildlife?.find(x=>x.species===p.species);
         const state:WildlifeState={
-          id:p.id,chunkId:chunk.id,species:p.species,position:{x:p.x,z:p.z},ageDays:p.ageDays,
+          id:p.id,chunkId:chunk.id,species:p.species,position:this.fineSpawnPosition({x:p.x,z:p.z},chunk),ageDays:p.ageDays,
           health:clamp((population?.health??82)+(Math.random()-.5)*8,0,100),hunger:20+Math.random()*28,thirst:18+Math.random()*30,energy:62+Math.random()*28,
           diseaseLoad:population?.diseaseLoad??0,
           sex:p.sex,generation:p.generation,traits:structuredClone(p.traits),currentAction:'wander',
@@ -1515,6 +1631,28 @@ class TownGame {
     this.activeFineChunkId=chunk.id;
     this.event(`远区 ${chunk.cx},${chunk.cz} 已展开为细粒度世界。`);
     this.log(`Materialized ${chunk.id} [${plan.archetype}]: ${runtime.npcIds.length} NPCs / ${runtime.wildlifeIds.length} wildlife / ${runtime.objectIds.length} objects / ${plan.roads.length} roads`,'developer');
+  }
+
+  fineWorkplaceForRole(role:NpcRole,owner:string) {
+    const tags:Partial<Record<NpcRole,string[]>>={farmer:['farm'],baker:['baker','food'],shopkeeper:['market'],guard:['guard'],maker:['maker','mine']};
+    const wanted=tags[role];if(!wanted)return undefined;
+    return [...this.objects.values()].find(o=>o.state.chunkId===owner&&wanted.some(tag=>o.state.tags.includes(tag)))?.state.id;
+  }
+
+  fineSpawnPosition(position:Vec2,chunk:CoarseChunkState,characterAsset?:string):Vec2 {
+    const occupied=characterAsset?[...this.npcs.values()].filter(n=>!n.removed).map(n=>n.mesh.position):[];
+    const clear=(point:Vec2)=>!this.physics.isBlocked(point.x,point.z,.3)
+      &&(!characterAsset||(playerHeadClearance(characterAsset,point,0,this.playerPosition)>=0
+        &&occupied.every(other=>Math.hypot(other.x-point.x,other.z-point.z)>=NPC_BODY_RADIUS*2)));
+    if(clear(position))return position;
+    const center={x:chunk.cx*24,z:chunk.cz*24};
+    for(let radius=0;radius<=11;radius++)for(let z=-radius;z<=radius;z++)for(let x=-radius;x<=radius;x++){
+      if(Math.max(Math.abs(x),Math.abs(z))!==radius)continue;
+      const point={x:center.x+x,z:center.z+z};
+      if(clear(point))return point;
+    }
+    if(characterAsset)throw new Error(`No clear NPC spawn in ${chunk.id}`);
+    return position;
   }
 
   materializePendingWildlifeTransfers(chunk:CoarseChunkState,runtime:FineChunkRuntime,transfers:PersistedWildlifeTransfer[]) {
@@ -1810,13 +1948,14 @@ class TownGame {
     for(const id of runtime.objectIds){
       const object=this.objects.get(id);if(!object)continue;
       objectStates.push(structuredClone(object.state));
-      object.mesh.parent?.remove(object.mesh);
+      if(!this.streamedPresentation.has(id))object.mesh.parent?.remove(object.mesh);
       this.objects.delete(id);
     }
 
+    this.streamedPresentation.deactivate(chunkId);
     this.physics.clearChunk(chunkId);
     this.visualTargets=this.visualTargets.filter(target=>!runtime.groups.includes(target.group));
-    this.fineChunkCache.set(chunkId,{npcStates,objectStates,wildlifeStates});
+    this.fineChunkCache.set(chunkId,{dynamicActivated:true,npcStates,objectStates,wildlifeStates});
     this.materializedChunks.delete(chunkId);
     this.coarseWorld.setMaterialized(chunkId,false);
     if(this.activeFineChunkId===chunkId)this.activeFineChunkId=undefined;
@@ -1838,6 +1977,10 @@ class TownGame {
 
   updateObjects(dt:number) {
     const t=Date.now();
+    for(const state of this.streamedPresentation.advancePickupRespawns(t)){
+      const cache=this.fineChunkCache.get(state.chunkId!),index=cache?.objectStates.findIndex(object=>object.id===state.id)??-1;
+      if(cache&&index>=0)cache.objectStates[index]=structuredClone(state);
+    }
     const season=this.worldSeason();
     const seasonFactor=season==='spring'?1.35:season==='summer'?1.0:season==='autumn'?.72:.24;
     const weatherFactor=this.weather==='rain'?1.35:this.weather==='cloudy'?1.05:.9;
@@ -3231,6 +3374,7 @@ class TownGame {
   }
 
   openWildlifeInteractionMenu(animal:WildlifeRuntime) {
+    this.resetGodCameraInput();
     const state=animal.state;
     state.domestication=normalizeWildlifeDomestication(state.species,state.domestication);
     const domestication=state.domestication!;
@@ -3326,6 +3470,7 @@ class TownGame {
   }
 
   openInteractionMenu(o:RuntimeObject,actions:InteractionCapability[]) {
+    this.resetGodCameraInput();
     this.interactionOpen=true;
     this.interactionObjectId=o.state.id;
     this.interactionWildlifeId=undefined;
@@ -3349,6 +3494,7 @@ class TownGame {
   }
 
   closeInteractionMenu(relock=false) {
+    this.resetGodCameraInput();
     ui.interaction.classList.add('hidden');
     this.interactionOpen=false;
     this.interactionObjectId=undefined;
@@ -3594,6 +3740,7 @@ class TownGame {
     });
     ui.world.dataset.waterPatches=JSON.stringify(waterPatches);
     ui.world.dataset.coarseMarkers=JSON.stringify(this.coarseWorld.presentationStatus());
+    ui.world.dataset.streamedLayouts=JSON.stringify(this.streamedPresentation.diagnostics());
     const treeEvidence=[...this.objects.values()].filter(object=>object.state.kind==='tree').map(object=>({
       id:object.state.id,position:object.state.position,...object.mesh.userData.treePhysics,
       height:this.visualTargets.find(target=>target.group===object.mesh)?.resolvedSize?.y
@@ -3968,7 +4115,8 @@ class TownGame {
         radius:this.wildlifePhysicsRadius(animal.state)
       });
     }
-    for(const object of this.objects.values()){
+    const physicalObjects=new Map([...this.streamedPresentation.objects(),...this.objects.values()].map(object=>[object.state.id,object]));
+    for(const object of physicalObjects.values()){
       if(!object.mesh.visible)continue;
       const archetype=worldObjectRigidBody(object.state);
       if(!archetype)continue;

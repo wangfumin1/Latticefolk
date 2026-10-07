@@ -8,8 +8,8 @@ import {registerHomeTerrain} from '../src/world/fineTerrain.js';
 import {characterHeadEnvelope,playerHeadConstraint,playerHeadClearance,NPC_BODY_RADIUS} from '../src/world/characterContact.js';
 
 type Actor={id:string;asset:string;position:PhysicsPoint;headYaw:number};
-type Fixture={name:string;start:PhysicsPoint;target:PhysicsPoint;actors:Actor[];tolerance?:number;timeoutMs?:number;statics?:StaticCollider[];diagnosticStatics?:StaticCollider[]};
-type Result={reached:boolean;x:number;z:number;distance:number;detours:number};
+type Fixture={name:string;start:PhysicsPoint;target:PhysicsPoint;actors:Actor[];tolerance?:number;timeoutMs?:number;maxInputSeconds?:number;statics?:StaticCollider[];diagnosticStatics?:StaticCollider[]};
+type Result={reached:boolean;x:number;z:number;distance:number;detours:number;inputSeconds?:number;elapsedMs?:number;stopReason?:string};
 // Run the actual self-contained browser callback with keyboard events and read-only
 // diagnostics, integrating unchanged production physics. This is not browser E2E.
 const source=fs.readFileSync(new URL('../e2e/helpers/native-waypoint.ts',import.meta.url),'utf8');
@@ -19,8 +19,8 @@ const saved=JSON.parse(fs.readFileSync(new URL('./fixtures/native-waypoint-ci.js
 const actual:Fixture={...saved,name:'CI frozen actor poses'};
 const actor=(id:string,asset:string,x:number,z:number,headYaw:number):Actor=>({id,asset,position:{x,z},headYaw});
 
-async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;moveActor?:boolean;intrudeAt?:number;badActors?:boolean;badPosition?:boolean;coverGoalAt?:number;uncoverGoalAt?:number;badTrees?:boolean}={}){
-  let p={...fixture.start},elapsed=0,frames=0,simulation=0;
+async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;moveActor?:boolean;intrudeAt?:number;badActors?:boolean;badPosition?:boolean;coverGoalAt?:number;uncoverGoalAt?:number;badTrees?:boolean;badCounter?:'missing'|'NaN'|'rollback'|'frozen';simulationStart?:number;rafThrows?:boolean;lateFreeze?:boolean}={}){
+  let p={...fixture.start},elapsed=0,frames=0,simulation=options.simulationStart??0;
   const actors=structuredClone(fixture.actors),held=new Set<string>(),events:Array<{type:string;code:string}>=[];
   const physics=new FinePhysicsAuthority();registerHomeTerrain(physics,72);
   for(const collider of fixture.statics??[])physics.registerStatic(collider);
@@ -28,19 +28,24 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
   const dataset=new Proxy({},{get:(_target,key)=>{
     if(key==='playerX')return options.badPosition&&frames>0?'NaN':p.x.toFixed(4);
     if(key==='playerZ')return p.z.toFixed(4);
-    if(key==='playerInputSeconds')return String(simulation);
+    if(key==='playerInputSeconds')return options.lateFreeze?String(Math.min(simulation,.1)):
+      frames>0&&options.badCounter?({missing:'',NaN:'NaN',rollback:'-1',frozen:'0'}[options.badCounter]):String(simulation);
     if(key==='treePresentation')return options.badTrees?'{invalid':JSON.stringify((fixture.diagnosticStatics??[]).map(collider=>({collider})));
     if(key==='characterSoles'&&options.badActors)return '{invalid';
     if(key==='characterSoles')return JSON.stringify(actors.map(a=>({...a,headEnvelope:characterHeadEnvelope(a.asset)})));
     return undefined;
   },set:()=>{throw new Error('diagnostic mutation is forbidden');}});
   const document={pointerLockElement:canvas as object|null,querySelector:(selector:string)=>selector==='#game canvas'?canvas:{dataset}};
-  const context={document,performance:{now:()=>elapsed},KeyboardEvent:class{
+  const timers=new Set<ReturnType<typeof setTimeout>>();
+  const context={document,performance:{now:()=>elapsed},setTimeout:(next:()=>void,ms:number)=>{
+    const timer=setTimeout(next,ms);timers.add(timer);return timer;
+  },clearTimeout:(timer:ReturnType<typeof setTimeout>)=>{clearTimeout(timer);timers.delete(timer);},cancelAnimationFrame:()=>{},KeyboardEvent:class{
     type:string;code:string;constructor(type:string,options:{code:string}){this.type=type;this.code=options.code;}
   },window:{dispatchEvent:(event:{type:string;code:string})=>{
     assert.ok(['KeyW','KeyA','KeyS','KeyD','ShiftLeft'].includes(event.code));
     events.push(event);if(event.type==='keydown')held.add(event.code);else held.delete(event.code);return true;
   }},requestAnimationFrame:(next:()=>void)=>{
+    if(options.rafThrows)throw new Error('RAF registration failed');
     elapsed+=frameMs;frames++;
     if(options.moveActor&&frames===10)actors[0].position.z+=2;
     if(options.intrudeAt===frames)actors[1].position.z=1.44;
@@ -57,12 +62,13 @@ async function replay(fixture:Fixture,frameMs:number,options:{loseLock?:boolean;
     if(options.loseLock)document.pointerLockElement=null;
     Promise.resolve().then(next);return frames;
   }};
-  const fn=vm.runInNewContext(callback,context) as (args:{target:PhysicsPoint;timeoutMs:number;tolerance:number})=>Promise<Result>;
+  const fn=vm.runInNewContext(callback,context) as (args:{target:PhysicsPoint;timeoutMs:number;tolerance:number;maxInputSeconds?:number})=>Promise<Result>;
   try{
-    const result=await fn({target:fixture.target,timeoutMs:fixture.timeoutMs??45_000,tolerance:fixture.tolerance??.55});
-    return {result,frames,elapsed,events,finalClearances:actors.map(a=>playerHeadClearance(a.asset,a.position,a.headYaw,p))};
+    const result=await fn({target:fixture.target,timeoutMs:fixture.timeoutMs??45_000,tolerance:fixture.tolerance??.55,maxInputSeconds:fixture.maxInputSeconds});
+    return {result,frames,elapsed,events,simulation,finalClearances:actors.map(a=>playerHeadClearance(a.asset,a.position,a.headYaw,p))};
   }finally{
     assert.equal(held.size,0,'success, timeout and exceptions must release every key');
+    assert.equal(timers.size,0,'every completed frame must clear its watchdog');
   }
 }
 
@@ -177,4 +183,73 @@ for(const frameMs of [800,1200,1400])test(`God-return overlap from CI exits thro
   const {result,elapsed}=await replay(restoredOverlap,frameMs);
   assert.equal(result.reached,true,JSON.stringify(result));
   assert.ok(result.distance<=restoredOverlap.tolerance!);assert.ok(elapsed<=restoredOverlap.timeoutMs!);
+});
+
+const crossing:Fixture={name:'layout crossing',start:{x:0,z:0},target:{x:6,z:0},actors:[],tolerance:.3,timeoutMs:45_000,maxInputSeconds:2};
+test('layout input budget crosses six metres at one rendered frame per second',async()=>{
+  const {result,elapsed,simulation}=await replay(crossing,1000,{simulationStart:9});
+  assert.equal(result.reached,true);assert.ok(result.distance<=.3);assert.equal(elapsed,19_000);assert.ok(simulation-9<2);
+  assert.equal(result.elapsedMs,elapsed);assert.equal(result.inputSeconds,simulation-9);assert.equal(result.stopReason,'reached');
+  const original=await replay({...crossing,timeoutMs:10_000,maxInputSeconds:undefined},1000);
+  assert.equal(original.result.reached,false);assert.equal(original.elapsed,10_000);assert.ok(Math.abs(original.simulation-.5)<1e-9);
+});
+test('input budget ends an unreached route after two attempted seconds',async()=>{
+  const {result,simulation,elapsed}=await replay({...crossing,target:{x:100,z:0}},50);
+  assert.equal(result.reached,false);assert.ok(Math.abs(simulation-2)<1e-9);assert.equal(elapsed,2000);
+  assert.equal(result.stopReason,'input-budget');
+});
+test('unchanged collision consumes the same input budget with zero displacement',async()=>{
+  const statics=[{id:'e',minX:.3,maxX:1,minZ:-1,maxZ:1},{id:'w',minX:-1,maxX:-.3,minZ:-1,maxZ:1},
+    {id:'n',minX:-1,maxX:1,minZ:-1,maxZ:-.3},{id:'s',minX:-1,maxX:1,minZ:.3,maxZ:1}];
+  const {result,simulation}=await replay({...crossing,statics},50);
+  assert.equal(result.reached,false);assert.equal(result.x,0);assert.equal(result.z,0);assert.ok(Math.abs(simulation-2)<1e-9);
+});
+test('arrival observed after the input budget cannot pass',async()=>{
+  const {result,simulation}=await replay({...crossing,target:{x:.225,z:0},tolerance:.001,maxInputSeconds:.04},50);
+  assert.ok(result.distance<=.001);assert.equal(simulation,.05);assert.equal(result.reached,false);
+});
+test('arrival observed after the wall deadline cannot pass',async()=>{
+  const {result,elapsed}=await replay({...crossing,target:{x:.225,z:0},tolerance:.001,timeoutMs:45_000},45_001);
+  assert.ok(result.distance<=.001);assert.equal(elapsed,45_001);assert.equal(result.reached,false);
+});
+test('arrival exactly at both budgets is permitted',async()=>{
+  const {result}=await replay({...crossing,target:{x:.225,z:0},tolerance:.001,maxInputSeconds:.05,timeoutMs:50},50);
+  assert.equal(result.reached,true);
+});
+for(const badCounter of ['missing','NaN','rollback'] as const)test(`input budget rejects ${badCounter} counter and releases input`,async()=>{
+  await assert.rejects(replay(crossing,50,{badCounter}),/observation reset or became unavailable/);
+});
+test('input budget rejects pointer-lock loss and releases input',async()=>{
+  await assert.rejects(replay(crossing,50,{loseLock:true}),/lost pointer lock/);
+});
+test('changed position cannot pass with a frozen direction-input counter',async()=>{
+  await assert.rejects(replay({...crossing,target:{x:.225,z:0},tolerance:.001},50,{badCounter:'frozen'}),/without observed direction input/);
+});
+test('direction-input counter freezing after initial progress also fails',async()=>{
+  await assert.rejects(replay(crossing,50,{lateFreeze:true}),/without observed direction input/);
+});
+test('failed RAF registration clears the wall watchdog and held keys',async()=>{
+  await assert.rejects(replay(crossing,50,{rafThrows:true}),/RAF registration failed/);
+});
+for(const maxInputSeconds of [0,-1,NaN,Infinity])test(`input budget rejects invalid maximum ${maxInputSeconds}`,async()=>{
+  await assert.rejects(replay({...crossing,maxInputSeconds},50),/budgets must be positive and finite/);
+});
+test('wall watchdog releases keys without RAF and late callbacks cannot issue input',async()=>{
+  let elapsed=0,nextId=10;const held=new Set<string>(),events:string[]=[],timers=new Map<number,()=>void>(),frames=new Map<number,()=>void>(),cancelled:number[]=[];
+  const canvas={},dataset={playerX:'0',playerZ:'0',playerInputSeconds:'3',characterSoles:'[]',treePresentation:'[]'};
+  const document={pointerLockElement:canvas,querySelector:(selector:string)=>selector==='#game canvas'?canvas:{dataset}};
+  const context={document,performance:{now:()=>elapsed},KeyboardEvent:class{
+    type:string;code:string;constructor(type:string,options:{code:string}){this.type=type;this.code=options.code;}
+  },window:{dispatchEvent:(event:{type:string;code:string})=>{
+    events.push(event.type+':'+event.code);if(event.type==='keydown')held.add(event.code);else held.delete(event.code);return true;
+  }},setTimeout:(next:()=>void,ms:number)=>{assert.equal(ms,45_000);const id=++nextId;timers.set(id,next);return id;},
+  clearTimeout:(id:number)=>{timers.delete(id);},requestAnimationFrame:(next:()=>void)=>{const id=++nextId;frames.set(id,next);return id;},
+  cancelAnimationFrame:(id:number)=>{cancelled.push(id);frames.delete(id);}};
+  const fn=vm.runInNewContext(callback,context) as (args:object)=>Promise<Result>;
+  const pending=fn({target:crossing.target,timeoutMs:45_000,tolerance:.3,maxInputSeconds:2});
+  assert.ok(held.size>0);assert.equal(frames.size,1);const [frameId,lateFrame]=[...frames][0];
+  elapsed=45_000;[...timers.values()][0]();
+  const result=await pending;assert.equal(result.reached,false);assert.equal(held.size,0);assert.deepEqual(cancelled,[frameId]);assert.equal(timers.size,0);
+  assert.equal(result.elapsedMs,45_000);assert.equal(result.inputSeconds,0);assert.equal(result.stopReason,'wall-budget');
+  const finishedEvents=[...events];lateFrame();await Promise.resolve();assert.deepEqual(events,finishedEvents);assert.equal(held.size,0);
 });

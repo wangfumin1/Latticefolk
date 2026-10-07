@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CoarseWorldRuntime } from '../src/world/coarseWorld.js';
+import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from '../src/world/streamedUnits.js';
 
-test('coarse world streams a fixed active window while retaining discovered chunks',()=>{
+test('coarse world completes 72m units around its active window while retaining discovered chunks',()=>{
   const scene=new THREE.Scene();
   const world=new CoarseWorldRuntime(scene,'stream-test');
   const initial=world.status();
@@ -13,7 +14,12 @@ test('coarse world streams a fixed active window while retaining discovered chun
   const changed=world.ensureWindowAround(20*world.chunkSize,0);
   assert.equal(changed,true);
   const moved=world.status();
-  assert.equal(moved.activeChunks,81);
+  assert.equal(moved.activeChunks,108);
+  for(const id of world.activeChunkIds){
+    const cell=world.chunks.get(id)!;const unit=streamedUnitForCoarseCell(cell.cx,cell.cz);
+    assert.ok(streamedUnitOwnerCells(unit.ux,unit.uz).every(owner=>world.activeChunkIds.has(owner.id)));
+  }
+  assert.deepEqual(world.activeBounds(),{minX:324,maxX:612,minZ:-108,maxZ:108});
   assert.ok(moved.chunks>initial.chunks);
   assert.equal(moved.activeCenter,'20,0');
   assert.ok(world.chunkAtWorld(20*world.chunkSize,0));

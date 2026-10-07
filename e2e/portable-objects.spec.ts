@@ -139,7 +139,7 @@ test('fine NPC parcel belongs to its source chunk and survives native unload/rev
   const {donor,start,exitX} = fixture;
   await info.attach('fine-parcel-source-route-preconditions', {body:Buffer.from(JSON.stringify(fixture,null,2)),contentType:'application/json'});
   await seed(request, {version:1,meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:start,playerInventory:emptyInventory()},
-    coarseChunks:[fine],fineChunks:[],homeNpcs:[],homeObjects:[]});
+    coarseChunks:fixture.coarseChunks,fineChunks:[],homeNpcs:[],homeObjects:[]});
   let proposed = false;
   await page.route('**/api/decision', async route => {
     const input = route.request().postDataJSON();
@@ -252,9 +252,9 @@ test('unacknowledged fine pickup cannot save a reward-only final beacon', async 
 
 test('bounded fine NPC pickup reclaims a dropped parcel once and remains consumed after reload', async ({page,request}, info) => {
   test.setTimeout(240_000);
-  const {donor,start} = await fineParcelFixture(fine);
+  const {donor,start,coarseChunks} = await fineParcelFixture(fine);
   await seed(request,{version:1,meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:start,playerInventory:emptyInventory()},
-    coarseChunks:[fine],fineChunks:[],homeNpcs:[],homeObjects:[]});
+    coarseChunks,fineChunks:[],homeNpcs:[],homeObjects:[]});
   let dropped=false, pickupEnabled=false, picked=false;
   let targetId: string | undefined;
   const proposals: unknown[]=[];

@@ -11,6 +11,7 @@ import { boundedDecisionIdWindow, captureChunkDecisionSignal, nextChunkDecisionD
 import { CoarseChunkSpatialIndex } from './coarseSpatialIndex';
 import { coarseMarkerVisualSpec, type CoarseMarkerVisualSpec } from '../scene/coarsePresentation';
 import { fineTerrainSurfaceForChunk } from './fineTerrain';
+import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './streamedUnits.js';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -170,6 +171,8 @@ export class CoarseWorldRuntime {
     this.generate();
   }
 
+  get seed(){return this.worldSeed;}
+
   private hash(cx:number,cz:number,salt=0) {
     const s=`${this.worldSeed}:${cx}:${cz}:${salt}`;
     let h=2166136261;
@@ -245,11 +248,14 @@ export class CoarseWorldRuntime {
     if(!force&&cx===this.activeCenterCx&&cz===this.activeCenterCz)return false;
     this.activeCenterCx=cx;this.activeCenterCz=cz;
 
-    const desired=new Set<string>();
+    const desired=new Set<string>(),units=new Map<string,{ux:number;uz:number}>();
     for(let dz=-this.radius;dz<=this.radius;dz++) for(let dx=-this.radius;dx<=this.radius;dx++){
       const tx=cx+dx,tz=cz+dz;
       if(this.isHomeChunk(tx,tz))continue;
-      const chunk=this.ensureChunk(tx,tz);
+      const unit=streamedUnitForCoarseCell(tx,tz);units.set(unit.id,unit);
+    }
+    for(const unit of units.values())for(const owner of streamedUnitOwnerCells(unit.ux,unit.uz)){
+      const chunk=this.ensureChunk(owner.cx,owner.cz);
       if(!chunk)continue;
       desired.add(chunk.id);
       if(!this.tiles.has(chunk.id))this.createTile(chunk);
@@ -285,6 +291,9 @@ export class CoarseWorldRuntime {
   }
 
   activeBounds() {
+    const active=[...this.activeChunkIds].map(id=>this.chunks.get(id)).filter((c):c is CoarseChunkState=>Boolean(c));
+    if(active.length)return {minX:Math.min(...active.map(c=>(c.cx-.5)*this.chunkSize)),maxX:Math.max(...active.map(c=>(c.cx+.5)*this.chunkSize)),
+      minZ:Math.min(...active.map(c=>(c.cz-.5)*this.chunkSize)),maxZ:Math.max(...active.map(c=>(c.cz+.5)*this.chunkSize))};
     const span=(this.radius+.5)*this.chunkSize;
     const centerX=(Number.isFinite(this.activeCenterCx)?this.activeCenterCx:0)*this.chunkSize;
     const centerZ=(Number.isFinite(this.activeCenterCz)?this.activeCenterCz:0)*this.chunkSize;

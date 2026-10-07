@@ -20,7 +20,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     launchOptions: {
-      args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist']
+      args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist']
     }
   },
   webServer: {

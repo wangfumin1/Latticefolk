@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { CoarseChunkState } from '../../src/types.js';
 import { planFineChunk } from '../../src/world/materialization.js';
+import {createStreamedLayout} from '../../src/world/streamedLayouts.js';
+import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from '../../src/world/streamedUnits.js';
 import { ensureWildlifePopulations } from '../../src/world/ecology.js';
 import { FinePhysicsAuthority } from '../../src/world/finePhysics.js';
 import { PLAYER_BODY_RADIUS, NPC_BODY_RADIUS, playerHeadConstraint } from '../../src/world/characterContact.js';
@@ -9,19 +11,25 @@ import { sourceGltf } from '../../tests/helpers/source-gltf.js';
 
 /**
  * Choose an existing donor with a physically valid setup for the same A/D route.
- * Never move/remove generated NPCs, trees or fixtures to make a test pass. The
- * first donor's old (+.7,+1.8) start intersects the resolved tree_11 trunk; a
- * fixed resident index is not a valid collision precondition for this scenario.
+ * The whole 72m static layout supplies sourced geometry; residents and wildlife
+ * retain their 24m authority. Selection never moves or removes scene entities.
  */
 export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24) {
   const chunk = structuredClone(input);
   // This is the same normalization used by restoreKnownChunks before planning.
   ensureWildlifePopulations(chunk);
   const plan = planFineChunk(chunk, chunkSize);
+  const unit=streamedUnitForCoarseCell(chunk.cx,chunk.cz);
+  const coarseChunks=streamedUnitOwnerCells(unit.ux,unit.uz).map(owner=>{
+    const state={...structuredClone(input),...owner};ensureWildlifePopulations(state);return state;
+  });
+  const generated=createStreamedLayout(unit.ux,unit.uz,coarseChunks,[]);
+  if(generated.layout.buildings.length)throw new Error('Parcel fixture requires a wilderness unit');
+  const staticObjects=generated.objectStates.map(state=>({state,...generated.layout.objects.find(object=>object.id===state.id)!}));
   if (plan.buildings.length || chunk.settlementLevel !== 0) throw new Error('Parcel fixture requires the existing wilderness plan');
   const physics = new FinePhysicsAuthority();
   const treeColliders = [];
-  for (const object of plan.objects) {
+  for (const object of staticObjects) {
     const state = object.state;
     if (state.kind === 'tree') {
       const asset = object.asset!;
@@ -42,6 +50,7 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
       throw new Error(`Fixture must explicitly account for ${state.kind} collision`);
     }
   }
+  if(plan.residents.some(n=>physics.isBlocked(n.x,n.z,.3)))throw new Error('Parcel fixture requires unchanged, collision-free resident anchors');
   const constraints = plan.residents.map(n => playerHeadConstraint(`npc:${n.id}`, n.characterAsset, n, 0));
   // Include the generated wildlife bodies used by Game.physicsDynamicColliders.
   // This checks the initial route only; live animals may subsequently cross it.
@@ -57,7 +66,7 @@ export async function fineParcelFixture(input: CoarseChunkState, chunkSize = 24)
     const returned = physics.moveKinematic({id:'player',position:{x:exitX,z:start.z},
       displacement:{x:start.x-exitX,z:0},radius:PLAYER_BODY_RADIUS,dynamic,constraints,maxSubstep:.05});
     if (Math.abs(outbound.position.x-exitX) < 1e-8 && Math.abs(returned.position.x-start.x) < 1e-8) {
-      return {chunk,donor,start,exitX,treeColliders,wildlifeColliders,rejected};
+      return {chunk,coarseChunks,donor,start,exitX,treeColliders,wildlifeColliders,rejected};
     }
     rejected.push({id:donor.id,start,staticHits:outbound.staticHits,dynamicHits:outbound.dynamicHits,
       outbound:outbound.position,returned:returned.position});

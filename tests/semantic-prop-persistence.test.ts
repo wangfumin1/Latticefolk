@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 import * as THREE from 'three';
+import * as crops from '../src/scene/farmCrops.js';
+import {prepareWellGeometry} from '../src/scene/wellPresentation.js';
+import {StreamedPresentation} from '../src/scene/streamedPresentation.js';
+import {StreamedLayoutRegistry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates} from '../src/world/streamedLayouts.js';
 import * as portable from '../src/world/portableObjects.js';
 import * as movable from '../src/world/movablePhysics.js';
 import {PortableObjectRuntime} from '../src/world/portableObjectRuntime.js';
@@ -31,15 +35,16 @@ function fixture(snapshot:WorldPersistenceSnapshot|null=null){
   const io={snapshot,epoch:Date.now(),gets:0,setups:0,restores:0,loads:0,failed:false,gate:undefined as Promise<void>|undefined};
   class CoarseWorldRuntime {chunks=new Map();setPresentationBridge(){}restoreKnownChunks(){}ensureWindowAround(){}chunkAtWorld(){return undefined;}}
   const load=async()=>{io.loads++;if(io.gate)await io.gate;if(io.failed)throw Error('asset unavailable');return{scene:model(),animations:[]};};
-  const deps={...portable,...movable,THREE,CoarseWorldRuntime,registerHomeTerrain,restoreBuildingForLayout,WORLD_SIZE:72,WATER_PATCH_ASSET:'water',BAKING_OVEN_ASSET:'oven',
+  const deps={...portable,...movable,...crops,THREE,prepareWellGeometry,StreamedLayoutValidationError,readStreamedLayout,assertStreamedLayoutStates,CoarseWorldRuntime,registerHomeTerrain,restoreBuildingForLayout,WORLD_SIZE:72,WATER_PATCH_ASSET:'water',BAKING_OVEN_ASSET:'oven',
     now:()=>1000,Date:{now:()=>io.epoch},i18n:{t:(key:string)=>key},fetch:async()=>{io.gets++;return{ok:true,json:async()=>({snapshot:io.snapshot,revision:4})};}};
   const Runtime=new Function(...Object.keys(deps),code)(...Object.values(deps)),r=new Runtime();
-  Object.assign(r,{coarseWorld:new CoarseWorldRuntime(),day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,
+  Object.assign(r,{streamedLayouts:new StreamedLayoutRegistry('latticefolk-default'),coarseWorld:new CoarseWorldRuntime(),day:1,minuteOfDay:495,weather:'clear',weatherEpoch:1,
     playerInventory:{apple:0,bread:0,wood:2,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0},playerPosition:{x:23,z:-2},cameraMode:'firstPerson',camera:{position:new THREE.Vector3()},scene:new THREE.Scene(),
     assets:new Map(),assetRoot:'/assets/quaternius',gltfLoader:{loadAsync:load},fbxLoader:{loadAsync:async()=>{const asset=await load();return Object.assign(asset.scene,{animations:[]});}},assetLoadFailures:[],assetsReady:false,
     objects:new Map(),npcs:new Map(),wildlife:new Map(),materializedChunks:new Map(),fineChunkCache:new Map(),wildlifeLineage:new Map(),wildlifeTransfers:new Map(),lineageEpoch:0,visualTargets:[],physics:new FinePhysicsAuthority(),
     movableDirty:false,scheduleMovablePersistence(){},groundHeightAt:()=>0,reconcileLineageOffspring(){},updateFineChunkMaterialization(){},worldSeason:()=> 'spring',
     addBuilding(){},addObject(){},addAssetObject(){},addTreeDecoration(){},setupNpcs(){io.setups++;},log(){},toast(){},event(){},itemName:(kind:string)=>kind,parcelLabel:(kind:string,count:number)=>`${kind} ${count}`});
+  r.streamedPresentation=new StreamedPresentation({objects:r.objects,create(){throw Error('No streamed layout in decoration fixture');},release(){}});
   r.playerOverlapsObjectTrigger=(id:string)=>r.physics.overlappingTriggers(r.objects.get(id).state.position).some((t:any)=>t.id===`object-trigger:${id}`);
   r.portables=new PortableObjectRuntime(r);
   const restore=r.restoreWorldState.bind(r);r.restoreWorldState=(saved:WorldPersistenceSnapshot)=>{io.restores++;restore(saved);};
