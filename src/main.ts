@@ -2605,8 +2605,9 @@ class TownGame {
     ).ordinaryWeight;
     const requestedWeight=fixedWeight>0?fixedWeight:ordinaryWeight;
     const freeCapacity=Math.max(0,targetPopulation.carryingCapacity-targetPopulation.count);
-    if(freeCapacity<=.05)return false;
+    if(!(freeCapacity>.05)||!(sourcePopulation.count>0))return false;
 
+    this.portables.checkpoint.markFineChange();
     state.position={x:animal.mesh.position.x,z:animal.mesh.position.z};
     this.endWildlifeHabitatObservation(state);
     const representedPopulation=applyFineWildlifePopulationTransfer(

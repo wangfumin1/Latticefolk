@@ -1,4 +1,4 @@
-import {WorldPersistence} from '../server/worldPersistence.js';
+import {WorldPersistence,WorldPersistenceConflictError} from '../server/worldPersistence.js';
 import os from 'node:os';
 import path from 'node:path';
 import * as units from '../src/world/streamedUnits.js';
@@ -102,6 +102,136 @@ function pendingCheckpointFixture(legacy=false){
   if(legacy){r.spawnFineNpc(structuredClone(resident),'male1');live.npcIds.push(resident.id);}
   return {...f,chunk,transfer,live,initial};
 }
+
+function departureCheckpointFixture(twoActors=false){
+  const f=pendingCheckpointFixture(),r=f.runtime,target=f.chunk;
+  target.wildlife[0].count=1;r.wildlifeTransfers.clear();r.materializedChunks.delete(target.id);
+  const source={...structuredClone(target),id:'chunk_2_0',cx:2,wildlife:[{species:'sheep',count:4,carryingCapacity:10,health:80}]};
+  r.coarseWorld.chunks.set(source.id,source);
+  const live=chunkRuntime(source.id);r.materializedChunks.set(source.id,live);
+  const states=[{...structuredClone(f.transfer.state),chunkId:source.id,position:{x:58,z:0}}];
+  if(twoActors)states.push({...structuredClone(states[0]),id:'second-sheep',randomEventCursor:29,position:{x:58,z:3}});
+  for(const state of states){
+    r.wildlifeLineage.set(state.id,{...structuredClone(r.wildlifeLineage.get(f.transfer.entityId)),entityId:state.id});
+    r.spawnWildlife(state);live.wildlifeIds.push(state.id);live.initialWildlifeIds.add(state.id);live.fixedWildlifeWeights.set(state.id,1);
+  }
+  return {...f,source,target,actors:states.map(state=>r.wildlife.get(state.id)),sourceRuntime:live};
+}
+
+for(const full of [false,true])test(`successful departure ${full?'full-ACK then unload':'unload before full-ACK'} keeps one durable identity after SQLite reopen`,async()=>{
+  const f=departureCheckpointFixture(),r=f.runtime,dir=fs.mkdtempSync(path.join(os.tmpdir(),'lattice-departure-')),file=path.join(dir,'world.sqlite');
+  let store=new WorldPersistence(file);
+  try{
+    store.save(stableState(r.buildWorldSnapshot()),0);r.persistenceRevision=1;
+    assert.equal(r.completeFineWildlifeMigration(f.actors[0],f.target.id),true);assert.equal(r.portables.checkpoint.pending,true);
+    assert.deepEqual([f.source.wildlife[0].count,f.target.wildlife[0].count],[3,2]);
+    assert.equal(r.completeFineWildlifeMigration(f.actors[0],f.target.id),false);assert.equal(r.portables.checkpoint.capture(),1);
+    assert.equal(r.wildlifeTransfers.get(f.actors[0].state.id).state.randomEventCursor,17);
+    if(full){
+      f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+      await r.saveWorldState();assert.equal(r.portables.checkpoint.pending,false);
+    }
+    r.flushWorldBeacon();assert.equal(f.io.beacons.length,full?1:0);
+    for(const body of f.io.beacons){const envelope=JSON.parse(await body.text());store.save(envelope.snapshot,envelope.expectedRevision);}
+    store.close();store=new WorldPersistence(file);const saved=store.load()!;
+    const source=saved.fineChunks.find(c=>c.chunkId===f.source.id)!,queued=saved.wildlifeTransfers!;
+    assert.equal(source.wildlifeStates!.length,full?0:1);assert.equal(queued.length,full?1:0);
+    assert.equal((full?queued[0].state:source.wildlifeStates![0]).randomEventCursor,17);
+    assert.deepEqual([f.source.id,f.target.id].map(id=>saved.coarseChunks.find(c=>c.id===id)!.wildlife!.find(w=>w.species==='sheep')!.count),full?[3,2]:[4,1]);
+    const restored=fixture();restored.runtime.initializeWorld();restored.runtime.restoreWorldState(saved);
+    restored.runtime.materializeFineChunk(restored.runtime.coarseWorld.chunks.get(f.source.id));
+    assert.equal(restored.runtime.wildlife.has(f.actors[0].state.id),!full);assert.equal(restored.runtime.wildlifeTransfers.size,full?1:0);
+    store.save(stableState(restored.runtime.buildWorldSnapshot()),store.revision());
+  }finally{store.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const reason of ['removed','queued','missing-target','distant-target','missing-runtime','missing-population','capacity','empty-source'])test(`rejected departure ${reason} does not mark or change migration state`,()=>{
+  const f=departureCheckpointFixture(),r=f.runtime,actor=f.actors[0];
+  if(reason==='removed')actor.removed=true;
+  if(reason==='queued')r.wildlifeTransfers.set(actor.state.id,{...f.transfer,entityId:actor.state.id});
+  if(reason==='missing-target')r.coarseWorld.chunks.delete(f.target.id);
+  if(reason==='distant-target')f.target.cx=20;
+  if(reason==='missing-runtime')r.materializedChunks.delete(f.source.id);
+  if(reason==='missing-population')f.target.wildlife=[];
+  if(reason==='capacity')f.target.wildlife[0].carryingCapacity=f.target.wildlife[0].count;
+  if(reason==='empty-source')f.source.wildlife[0].count=0;
+  const before=stableState({state:actor.state,source:f.source,target:f.target,lineage:[...r.wildlifeLineage],transfers:[...r.wildlifeTransfers]});
+  assert.equal(r.completeFineWildlifeMigration(actor,f.target.id),false);assert.equal(r.portables.checkpoint.capture(),0);
+  assert.deepEqual(stableState({state:actor.state,source:f.source,target:f.target,lineage:[...r.wildlifeLineage],transfers:[...r.wildlifeTransfers]}),before);
+});
+
+for(const failure of ['network','http','unknown-ack','conflict'])test(`departure ${failure} leaves compact unload blocked`,async()=>{
+  const f=departureCheckpointFixture(),r=f.runtime,store=new WorldPersistence(':memory:');
+  try{
+    store.save(stableState(r.buildWorldSnapshot()),0);r.persistenceRevision=1;r.completeFineWildlifeMigration(f.actors[0],f.target.id);
+    if(failure==='conflict')store.save(store.load()!,store.revision());
+    f.io.save=async envelope=>{
+      if(failure==='network')throw Error('offline');
+      if(failure==='conflict'){
+        assert.throws(()=>store.save(envelope.snapshot,envelope.expectedRevision),WorldPersistenceConflictError);
+        return {ok:false,status:409,json:async()=>({currentRevision:store.revision()})};
+      }
+      if(failure==='unknown-ack')store.save(envelope.snapshot,envelope.expectedRevision);
+      return {ok:failure!=='http',status:failure==='http'?503:200,json:async()=>({})};
+    };
+    await r.saveWorldState();assert.equal(r.portables.checkpoint.pending,true);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+    assert.equal(r.persistenceConflict,failure==='conflict');
+    const saved=store.load()!,source=saved.fineChunks.find(c=>c.chunkId===f.source.id)!;
+    assert.equal(source.wildlifeStates!.length+saved.wildlifeTransfers!.length,1);
+  }finally{store.close();}
+});
+
+test('migration into an active destination protects both fine rows without changing its entry semantics',async()=>{
+  const f=departureCheckpointFixture(),r=f.runtime,store=new WorldPersistence(':memory:');
+  try{
+    const destination=chunkRuntime(f.target.id);r.materializedChunks.set(f.target.id,destination);
+    store.save(stableState(r.buildWorldSnapshot()),0);r.persistenceRevision=1;
+    assert.equal(r.completeFineWildlifeMigration(f.actors[0],f.target.id),true);
+    assert.equal(r.wildlifeTransfers.size,0);assert.equal(r.wildlife.get(f.actors[0].state.id).state.randomEventCursor,17);
+    assert.equal(r.portables.checkpoint.capture(),1);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+    await r.saveWorldState();const saved=store.load()!;
+    assert.equal(saved.fineChunks.find(c=>c.chunkId===f.source.id)!.wildlifeStates!.length,0);
+    assert.equal(saved.fineChunks.find(c=>c.chunkId===f.target.id)!.wildlifeStates![0].randomEventCursor,17);
+    assert.equal(r.portables.checkpoint.pending,false);
+  }finally{store.close();}
+});
+
+test('departure ACK cannot release a later deferred entry in the same migration',async()=>{
+  const f=departureCheckpointFixture(),r=f.runtime,store=new WorldPersistence(':memory:');
+  try{
+    store.save(stableState(r.buildWorldSnapshot()),0);r.persistenceRevision=1;r.completeFineWildlifeMigration(f.actors[0],f.target.id);
+    let release!:(value:unknown)=>void;const gate=new Promise(resolve=>{release=resolve;});
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:()=>gate};};
+    const saving=r.saveWorldState();await Promise.resolve();
+    const destination=chunkRuntime(f.target.id);r.materializedChunks.set(f.target.id,destination);
+    r.materializePendingWildlifeTransfers(f.target,destination,[...r.wildlifeTransfers.values()]);
+    release({revision:2});await saving;assert.equal(r.portables.checkpoint.capture(),2);assert.equal(r.portables.checkpoint.pending,true);
+    r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);assert.equal(store.load()!.wildlifeTransfers![0].state.randomEventCursor,17);
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+    await r.saveWorldState();const saved=store.load()!;assert.deepEqual(saved.wildlifeTransfers,[]);
+    assert.equal(saved.fineChunks.find(c=>c.chunkId===f.source.id)!.wildlifeStates!.length,0);
+    assert.equal(saved.fineChunks.find(c=>c.chunkId===f.target.id)!.wildlifeStates![0].randomEventCursor,18);
+    assert.equal(r.portables.checkpoint.pending,false);assert.deepEqual([f.source.wildlife[0].count,f.target.wildlife[0].count],[3,2]);
+  }finally{store.close();}
+});
+
+test('a late departure acknowledgement cannot release another accepted migration',async()=>{
+  const f=departureCheckpointFixture(true),r=f.runtime,store=new WorldPersistence(':memory:');
+  try{
+    store.save(stableState(r.buildWorldSnapshot()),0);r.persistenceRevision=1;
+    r.completeFineWildlifeMigration(f.actors[0],f.target.id);
+    let release!:(value:unknown)=>void;const gate=new Promise(resolve=>{release=resolve;});
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:()=>gate};};
+    const saving=r.saveWorldState();await Promise.resolve();r.completeFineWildlifeMigration(f.actors[1],f.target.id);
+    release({revision:2});await saving;assert.equal(r.portables.checkpoint.pending,true);r.flushWorldBeacon();assert.equal(f.io.beacons.length,0);
+    assert.equal(store.load()!.wildlifeTransfers!.length,1);
+    f.io.save=async envelope=>{store.save(envelope.snapshot,envelope.expectedRevision);return {ok:true,status:200,json:async()=>({revision:store.revision()})};};
+    await r.saveWorldState();assert.equal(r.portables.checkpoint.pending,false);assert.equal(store.load()!.wildlifeTransfers!.length,2);
+    assert.deepEqual(store.load()!.wildlifeTransfers!.map(t=>t.state.randomEventCursor),[17,29]);
+    assert.deepEqual([f.source.wildlife[0].count,f.target.wildlife[0].count],[2,3]);
+  }finally{store.close();}
+});
 
 for(const legacy of [false,true])test(`${legacy?'legacy':'static-only'} pending acceptance protects compact saves until a matching full SQLite checkpoint`,async()=>{
   const f=pendingCheckpointFixture(legacy),r=f.runtime,dir=fs.mkdtempSync(path.join(os.tmpdir(),'lattice-pending-')),file=path.join(dir,'world.sqlite');
