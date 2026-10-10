@@ -29,17 +29,43 @@ actual attempted physical steps, including collision-blocked attempts.
   God-camera input retains its separate observer timeline. Existing wall-clock
   decision, network, autosave and respawn deadlines are unchanged.
 
+## Validation controls
+
+Waypoint and parcel routes issue finite keyboard pulses using elapsed browser
+time, then observe the rendered position after pending simulation time reaches
+zero. Pulse duration uses the remaining distance and unchanged movement speed.
+Release delays count as actual input. Catch-up time stays inside the original
+route deadline; failures retain input-duration and pending-time diagnostics.
+The controlled route tests run the production clock and collision solver.
+
+Wildlife resource selection, accepted proposals and completed actions share one
+resource-compatibility predicate. Water and stone are not food targets; drinking
+still accepts water. Completion rechecks targets that changed or disappeared.
+
 ## Verification
 
-Local validation on 2026-10-10 passed 1,251 deterministic tests, TypeScript checks,
-production build, strict E2E typechecking and discovery of all 30 browser cases.
-The 39 new controlled tests cover actual TownGame construction, DOM input,
-PointerLockControls, animate and collision; 1 FPS versus 20 FPS; an 800 ms
-between-frame press; 5-second foreground gaps and debt draining; interruption and
-queue-overflow recovery. Rendering and pre-boot world consumers are test doubles.
+The initial draft head `8a152303da32747d8db0c122b14b3d4f14d77b53` passed all
+1,251 deterministic tests and the build in [run 38028059045](https://github.com/wangfumin1/Latticefolk/actions/runs/38028059045).
+Its native-input browser case recorded a trusted 456.7 ms key hold, 456.7 ms of
+attempted movement and 2.0552 m displacement at 4.5 m/s, with no remaining debt,
+input overflow or page errors. The three sampled frames had intervals of 447 ms
+and 238.3 ms. This small sample establishes input response in that run, not a
+scene-wide performance result.
 
-The native-input browser case records real key receipt, physical response,
-natural RAF intervals, clock debt and a scene screenshot. Its execution and the
-full exact-head Chromium/WebGL suite remain unverified locally: Chromium startup
-is blocked by socket permissions. Real-browser response, frame cost and artifact
-review remain outstanding acceptance requirements.
+That run executed all 30 browser cases: group A passed 9/11 and group B passed
+15/19. Four failures exposed frame-count-based navigation, one exposed an
+incompatible food target, and one mixed a stale-response check with a subsequent
+valid response. The revised controls preserve their original targets, deadlines,
+input budgets and resource assertions.
+
+Local validation of the revised candidate passes 1,273 deterministic cases,
+TypeScript checks, the production build, strict E2E typechecking and discovery
+of all 30 browser cases. The test command is
+`node --import tsx --test tests/*.test.ts`.
+
+The 39 original clock/runtime cases cover actual TownGame construction, DOM
+input, PointerLockControls, animate and collision; 1 FPS versus 20 FPS; an 800 ms
+between-frame press; 5-second foreground gaps; interruption and overflow recovery.
+Rendering and pre-boot world consumers are controlled test doubles. Local browser
+startup is blocked by socket permissions. The revised head still requires its
+natural full Chromium/WebGL run and exact-head artifact review.

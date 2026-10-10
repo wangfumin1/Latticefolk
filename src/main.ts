@@ -38,7 +38,7 @@ import { BAKING_OVEN_ASSET, bakingOvenVisualSpec, bakingOvenPhysics, isBakingOve
 import { applyFineWildlifePopulationTransfer, areAdjacentChunks, fineMigrationEntryPoint, foldFineWildlifePopulationCount } from './world/fineWildlifeMigration';
 import { accumulateWildlifeHabitatExposure, computeEvolutionStatistics, computeWildlifeCoevolutionEvidence, computeWildlifeInteractionSelectionEvidence, dominantWildlifeExposureBiome, lineageAncestors } from './world/evolution';
 import { wildlifeLifeHistory as getWildlifeLifeHistory } from './world/wildlifeLifeHistory';
-import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile } from './world/wildlifeSpecies';
+import { canWildlifePredate, isWildlifePredator, WILDLIFE_SPECIES, wildlifeHungerRelief, wildlifePredationDamage, wildlifeSpeciesProfile, wildlifeResourceSupportsAction } from './world/wildlifeSpecies';
 import { effectiveWildlifeMorphology, inheritWildlifePhenotype, normalizeWildlifePhenotype, wildlifeFunctionalPhenotype } from './world/wildlifePhenotype';
 import { inheritWildlifeOrganismGenome, normalizeWildlifeOrganismGenome, wildlifeGenomePlantConsumptionWeights, wildlifeOrganismLocomotion, wildlifeResourceNicheScore } from './world/organismFamilies';
 import { recordWildlifeAttackReceived, recordWildlifeFleeOutcome, recordWildlifeHuntOutcome } from './world/predationOutcomes';
@@ -2436,7 +2436,7 @@ class TownGame {
 
     if(decision.action==='drink'||decision.action==='graze'||decision.action==='forage'){
       const chosen=decision.targetObjectId?this.objects.get(decision.targetObjectId):undefined;
-      const object=chosen&&chosen.state.kind!=='dropped_item'&&chosen.mesh.visible
+      const object=chosen&&chosen.mesh.visible&&wildlifeResourceSupportsAction(s.species,decision.action,chosen.state)
         ?chosen:this.findWildlifeResource(animal,decision.action);
       s.targetObjectId=object?.state.id;
       if(object)target=object.state.position;
@@ -2474,18 +2474,8 @@ class TownGame {
 
   findWildlifeResource(animal:WildlifeRuntime,action:WildlifeAction) {
     const candidates=[...this.objects.values()].filter(o=>o.state.kind!=='dropped_item'&&o.mesh.visible&&dist(animal.state.position,o.state.position)<=14);
-    const forageTags=wildlifeSpeciesProfile(animal.state.species).forageTags;
     const genome=normalizeWildlifeOrganismGenome(animal.state.species,animal.state.organismGenome,animal.state.id);
-    const wanted=(o:RuntimeObject)=>{
-      if(action==='drink')return o.state.tags.includes('water')||o.state.kind==='well';
-      if(action==='graze'||action==='forage'){
-        return o.state.tags.some(tag=>forageTags.includes(tag))
-          ||o.state.kind==='bush'||o.state.kind==='flower'
-          ||(o.state.kind==='tree'&&o.state.tags.includes('apple'));
-      }
-      return false;
-    };
-    const eligible=candidates.filter(wanted);
+    const eligible=candidates.filter(o=>wildlifeResourceSupportsAction(animal.state.species,action,o.state));
     if(action==='graze'||action==='forage'){
       return eligible.sort((a,b)=>{
         const aScore=wildlifeResourceNicheScore(animal.state.species,genome,a.state.tags,dist(animal.state.position,a.state.position));
@@ -2508,9 +2498,9 @@ class TownGame {
     const s=animal.state;
     const functional=wildlifeFunctionalPhenotype(normalizeWildlifePhenotype(s.phenotype,s.id));
     const object=s.targetObjectId?this.objects.get(s.targetObjectId):undefined;
-    // Sealed inventory parcels are not exposed plants or water. A stale provider
-    // target must not consume fractional parcel stock or grant a free need outcome.
-    if(object?.state.kind==='dropped_item'&&['drink','graze','forage'].includes(s.currentAction)){
+    if(['drink','graze','forage'].includes(s.currentAction)
+      &&((s.targetObjectId&&(!object||!wildlifeResourceSupportsAction(s.species,s.currentAction,object.state)))
+        ||(s.currentAction==='drink'&&!object))){
       s.targetObjectId=undefined;s.currentAction='rest';animal.actionResolved=true;return;
     }
     const random=beginRandomEvent(this.randomness,s,'wildlife-completion',s.currentAction,s.targetObjectId,s.targetWildlifeId,s.targetChunkId);
