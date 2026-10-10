@@ -1,10 +1,12 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import type { CoarseChunkState, WorldPersistenceSnapshot } from '../src/types.js';
+import type { CoarseChunkState, NpcState, WorldPersistenceSnapshot } from '../src/types.js';
 import type { StaticCollider, PhysicsTrigger } from '../src/world/finePhysics.js';
-import { planFineChunk } from '../src/world/materialization.js';
+import {createStreamedLayout} from '../src/world/streamedLayouts.js';
+import {streamedUnitOwnerCells} from '../src/world/streamedUnits.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { lookForObject } from './helpers/relative-look.js';
 import { waitForPlayerZBelow } from './helpers/frame-position.js';
+import { readOvenInspection, readOvenMenu } from './helpers/oven-observation.js';
 
 interface OvenEvidence {id:string;asset:string;resolved:boolean;meshes:number;primitives:number;collider:StaticCollider;trigger:PhysicsTrigger}
 async function ovens(page:Page):Promise<OvenEvidence[]> {
@@ -28,10 +30,14 @@ async function position(page:Page) {
 
 const generated:CoarseChunkState={id:'chunk_2_-1',cx:2,cz:-1,biome:'plains',settlementLevel:2,population:23,
   food:68,wood:57,water:71,ecology:73,danger:18,prosperity:66,strategy:'trade_route',migrationPolicy:'attract',ecologyPolicy:'balance',lastDecisionAt:0,decisionVersion:3};
-const bakery=planFineChunk(generated,24).objects.find(o=>o.state.id===`${generated.id}_bakery`)!.state;
+const generatedOwners=streamedUnitOwnerCells(1,0).map(owner=>({...structuredClone(generated),...owner}));
+const bakery=createStreamedLayout(1,0,generatedOwners,[]).objectStates.find(o=>o.tags.includes('oven'))!;
+const homeOvenBaker:NpcState={id:'ren',name:'莲',role:'baker',position:{x:-6,z:-10},home:{x:-12,z:-17},workAt:'oven',
+  mood:'happy',hunger:25+Math.random()*25,energy:65+Math.random()*25,social:45+Math.random()*30,money:8+Math.floor(Math.random()*12),inventory:[{kind:'bread',count:2},{kind:'flour',count:1},{kind:'water',count:1}],
+  relationships:{...Object.fromEntries(['mina','sora','kai','yui','nao','haru','mei','toma','aki'].map(id=>[id,{affinity:45+Math.round(Math.random()*20),trust:45+Math.round(Math.random()*20),familiarity:25+Math.round(Math.random()*35)}])),player:{affinity:50,trust:50,familiarity:5}},memories:[],currentAction:'idle',goal:'过好今天并照顾自己的需要',lastDecisionAt:0};
 const cases=[
   {name:'home-oven',id:'oven',title:'面包炉',anchor:{x:-10,z:-13},chunks:[] as CoarseChunkState[]},
-  {name:'generated-bakery',id:bakery.id,title:bakery.name,anchor:bakery.position,chunks:[generated]}
+  {name:'generated-bakery',id:bakery.id,title:bakery.name,anchor:bakery.position,chunks:generatedOwners}
 ];
 
 // Keep fixture teardown in Playwright's separate afterEach phase. The 240s
@@ -52,7 +58,7 @@ for(const scenario of cases){
     const seed:WorldPersistenceSnapshot={version:1,
       meta:{day:1,minuteOfDay:495,weather:'clear',playerPosition:{x:scenario.anchor.x,z:scenario.anchor.z+3.2},
         playerInventory:{apple:0,bread:0,wood:0,coin:10,flower:0,grain:0,flour:2,water:1,stone:0,plank:0,tool:0}},
-      coarseChunks:scenario.chunks,fineChunks:[],homeNpcs:[],homeObjects:[]};
+      coarseChunks:scenario.chunks,fineChunks:[],homeNpcs:scenario.id==='oven'?[structuredClone(homeOvenBaker)]:[],homeObjects:[]};
     const seeded=await request.post('/api/world/state',{data:{expectedRevision:resetAck.revision,snapshot:seed}});
     expect(seeded.ok()).toBe(true);const seedAck=await seeded.json() as {revision:number};
     try {
@@ -61,12 +67,14 @@ for(const scenario of cases){
       const status=page.locator('#worldStatus');
       await expect(page.locator('#game canvas')).toBeVisible();
       await expect.poll(async()=>(await ovens(page)).some(o=>o.id===scenario.id&&o.resolved&&o.meshes>0&&o.primitives===0&&!!o.collider),{timeout:45_000}).toBe(true);
-      await expect(status).toHaveAttribute('data-asset-failures','0');
-      await expect(status).toHaveAttribute('data-persistence-conflict','false');
-      const oven=(await ovens(page)).find(o=>o.id===scenario.id)!;
+      let inspection:ReturnType<typeof readOvenInspection>;
+      await expect.poll(async()=>inspection=await page.evaluate(readOvenInspection)).toMatchObject({
+        assetFailures:'0',persistenceConflict:'false'
+      });
+      const oven=(inspection!.ovens as OvenEvidence[]).find(o=>o.id===scenario.id)!;
       expect(oven.asset).toBe('bakingOvenAsset');expect(oven.collider.id).toBe(`object:${scenario.id}`);
       expect(oven.trigger.maxZ-oven.collider.maxZ).toBeCloseTo(.5,4);
-      const before=await position(page);expect(before.x).toBeCloseTo(scenario.anchor.x,3);
+      const before=inspection!.position;expect(before.x).toBeCloseTo(scenario.anchor.x,3);
       await startFirstPerson(page);
       await testInfo.attach(`${scenario.name}-approach-overview`,{body:await page.screenshot(),contentType:'image/png'});
       // Real forward input must reach the oven's calibrated collision face and must not
@@ -84,8 +92,8 @@ for(const scenario of cases){
       await lookForObject(page,scenario.title,0,1.15);
       await testInfo.attach(`${scenario.name}-visible-collision-closeup`,{body:await page.screenshot(),contentType:'image/png'});
       await page.keyboard.press('KeyE');
-      await expect(page.locator('#interactionTitle')).toHaveText(scenario.title);
-      const actions=page.locator('#interactionActions button');await expect(actions).toHaveCount(3);
+      await expect.poll(()=>page.evaluate(readOvenMenu)).toEqual({title:scenario.title,actions:3});
+      const actions=page.locator('#interactionActions button');
       await actions.nth(2).press('Enter');
       await expect(page.locator('#toast')).toContainText('制作：烘烤面包');
       await expect.poll(async()=>{

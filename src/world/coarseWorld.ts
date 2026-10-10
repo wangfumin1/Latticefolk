@@ -1,3 +1,4 @@
+import {DEFAULT_WORLD_SEED,hashText} from './worldRandom.js';
 import * as THREE from 'three';
 import type {
   ChunkBiome, ChunkDecisionRequest, ChunkDecisionResponse, ChunkStrategy,
@@ -11,6 +12,7 @@ import { boundedDecisionIdWindow, captureChunkDecisionSignal, nextChunkDecisionD
 import { CoarseChunkSpatialIndex } from './coarseSpatialIndex';
 import { coarseMarkerVisualSpec, type CoarseMarkerVisualSpec } from '../scene/coarsePresentation';
 import { fineTerrainSurfaceForChunk } from './fineTerrain';
+import {streamedUnitForCoarseCell,streamedUnitOwnerCells} from './streamedUnits.js';
 
 const clamp=(v:number,min=0,max=100)=>Math.max(min,Math.min(max,v));
 
@@ -157,11 +159,12 @@ export class CoarseWorldRuntime {
   private readonly maxDecisionScanPerWake=256;
   private requestTimeouts=0;
   private decisionContextGeneration=0;
+  private decisionContextController=new AbortController();
   private presentationBridge?:CoarsePresentationBridge;
 
   constructor(
     private scene:THREE.Scene,
-    private worldSeed='latticefolk-default',
+    private worldSeed=DEFAULT_WORLD_SEED,
     private readonly requestDeadlineMs=8_000
   ) {
     this.root.name='coarse-world';
@@ -169,11 +172,11 @@ export class CoarseWorldRuntime {
     this.generate();
   }
 
+  get seed(){return this.worldSeed;}
+
   private hash(cx:number,cz:number,salt=0) {
     const s=`${this.worldSeed}:${cx}:${cz}:${salt}`;
-    let h=2166136261;
-    for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
-    return (h>>>0)/4294967295;
+    return hashText(s)/4294967295;
   }
 
   private biomeFor(cx:number,cz:number):ChunkBiome {
@@ -244,11 +247,14 @@ export class CoarseWorldRuntime {
     if(!force&&cx===this.activeCenterCx&&cz===this.activeCenterCz)return false;
     this.activeCenterCx=cx;this.activeCenterCz=cz;
 
-    const desired=new Set<string>();
+    const desired=new Set<string>(),units=new Map<string,{ux:number;uz:number}>();
     for(let dz=-this.radius;dz<=this.radius;dz++) for(let dx=-this.radius;dx<=this.radius;dx++){
       const tx=cx+dx,tz=cz+dz;
       if(this.isHomeChunk(tx,tz))continue;
-      const chunk=this.ensureChunk(tx,tz);
+      const unit=streamedUnitForCoarseCell(tx,tz);units.set(unit.id,unit);
+    }
+    for(const unit of units.values())for(const owner of streamedUnitOwnerCells(unit.ux,unit.uz)){
+      const chunk=this.ensureChunk(owner.cx,owner.cz);
       if(!chunk)continue;
       desired.add(chunk.id);
       if(!this.tiles.has(chunk.id))this.createTile(chunk);
@@ -274,7 +280,7 @@ export class CoarseWorldRuntime {
       this.decisionBaselines.delete(state.id);
       restoredAny=true;
     }
-    if(restoredAny)this.decisionContextGeneration++;
+    if(restoredAny)this.invalidateDecisionContext();
     for(const id of this.activeChunkIds){
       const chunk=this.chunks.get(id);
       if(!chunk)continue;
@@ -284,6 +290,9 @@ export class CoarseWorldRuntime {
   }
 
   activeBounds() {
+    const active=[...this.activeChunkIds].map(id=>this.chunks.get(id)).filter((c):c is CoarseChunkState=>Boolean(c));
+    if(active.length)return {minX:Math.min(...active.map(c=>(c.cx-.5)*this.chunkSize)),maxX:Math.max(...active.map(c=>(c.cx+.5)*this.chunkSize)),
+      minZ:Math.min(...active.map(c=>(c.cz-.5)*this.chunkSize)),maxZ:Math.max(...active.map(c=>(c.cz+.5)*this.chunkSize))};
     const span=(this.radius+.5)*this.chunkSize;
     const centerX=(Number.isFinite(this.activeCenterCx)?this.activeCenterCx:0)*this.chunkSize;
     const centerZ=(Number.isFinite(this.activeCenterCz)?this.activeCenterCz:0)*this.chunkSize;
@@ -509,25 +518,50 @@ export class CoarseWorldRuntime {
     };
   }
 
+  private invalidateDecisionContext() {
+    this.decisionContextGeneration++;
+    const previous=this.decisionContextController;
+    this.decisionContextController=new AbortController();
+    previous.abort();
+  }
+
   private async postDecision(url:string,body:unknown):Promise<unknown> {
     const controller=new AbortController();
+    const contextSignal=this.decisionContextController.signal;
     let timeout:ReturnType<typeof setTimeout>|undefined;
-    let timedOut=false;
+    let settled=false;
     const deadline=new Promise<never>((_,reject)=>{
       timeout=setTimeout(()=>{
-        timedOut=true;
+        if(settled)return;
+        settled=true;
+        this.requestTimeouts++;
         controller.abort();
         reject(new Error(`decision request timed out: ${url}`));
       },this.requestDeadlineMs);
     });
+    let cancel=()=>{};
+    const cancelled=new Promise<never>((_,reject)=>{
+      cancel=()=>{
+        if(settled)return;
+        settled=true;
+        if(timeout!==undefined)clearTimeout(timeout);
+        controller.abort();
+        reject(new Error(`decision context invalidated: ${url}`));
+      };
+      contextSignal.addEventListener('abort',cancel,{once:true});
+    });
     const request=(async()=>{
       const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      if(controller.signal.aborted)throw new Error(`decision request aborted: ${url}`);
       if(!response.ok)throw new Error(`decision request failed: ${url}`);
       return await response.json() as unknown;
     })();
-    try{return await Promise.race([request,deadline]);}
-    catch(error){if(timedOut)this.requestTimeouts++;throw error;}
-    finally{if(timeout!==undefined)clearTimeout(timeout);}
+    try{return await Promise.race([request,deadline,cancelled]);}
+    finally{
+      settled=true;
+      if(timeout!==undefined)clearTimeout(timeout);
+      contextSignal.removeEventListener('abort',cancel);
+    }
   }
 
   private async requestRegions(ctx:UpdateContext) {
@@ -622,8 +656,10 @@ export class CoarseWorldRuntime {
       if(accepted>0){this.lastSource=raw.source;this.lastBatchSize=accepted;completed=true;}
       else{this.lastSource='offline';this.lastBatchSize=0;}
     }catch{
-      this.lastSource='offline';
-      this.lastBatchSize=0;
+      if(requestGeneration===this.decisionContextGeneration){
+        this.lastSource='offline';
+        this.lastBatchSize=0;
+      }
     }finally{
       this.pending=false;
       const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates):15_000;
@@ -644,7 +680,7 @@ export class CoarseWorldRuntime {
     const wasMaterialized=this.materialized.has(chunkId);
     if(wasMaterialized===value)return;
     if(value)this.materialized.add(chunkId);else this.materialized.delete(chunkId);
-    this.decisionContextGeneration++;
+    this.invalidateDecisionContext();
     const marker=this.markers.get(chunkId);
     if(marker)marker.visible=!value;
     if(!value)this.wakeChunkDecisionDeadline();

@@ -4,6 +4,8 @@ import type {
   WildlifeDeathReason, WildlifeDomesticationCommand, WildlifeOrganismFamily, WildlifePhenotypeProvenance,
   WildlifeSpecies, WildlifeState, WorldPersistenceSnapshot
 } from '../src/types.js';
+import {DEFAULT_WORLD_SEED} from '../src/world/worldRandom.js';
+import {readStreamedLayout,StreamedLayoutValidationError} from '../src/world/streamedLayouts.js';
 
 type RecordLike=Record<string,unknown>;
 
@@ -194,6 +196,7 @@ const validateDomestication=(v:Validator,value:unknown,path:string)=>{
 const validateNpc=(v:Validator,value:unknown,path:string,expectedChunk:string|undefined)=>{
   const obj=v.record(value,path);if(!obj)return;
   v.string(obj.id,`${path}.id`,{max:256});
+  v.optionalNumber(obj,'randomEventCursor',path,{min:0,max:Number.MAX_SAFE_INTEGER,integer:true});
   if(obj.chunkId!==undefined){
     const chunk=v.string(obj.chunkId,`${path}.chunkId`,{max:256});
     if(expectedChunk!==undefined&&chunk!==expectedChunk)v.issue(`${path}.chunkId`,`must match parent chunk ${expectedChunk}`);
@@ -261,6 +264,7 @@ const validateObject=(v:Validator,value:unknown,path:string,expectedChunk:string
 const validateWildlife=(v:Validator,value:unknown,path:string,expectedChunk?:string):WildlifeState|undefined=>{
   const obj=v.record(value,path);if(!obj)return undefined;
   v.string(obj.id,`${path}.id`,{max:256});
+  v.optionalNumber(obj,'randomEventCursor',path,{min:0,max:Number.MAX_SAFE_INTEGER,integer:true});
   const chunk=v.string(obj.chunkId,`${path}.chunkId`,{max:256});
   if(expectedChunk!==undefined&&chunk!==expectedChunk)v.issue(`${path}.chunkId`,`must match parent/destination chunk ${expectedChunk}`);
   v.enum(obj.species,`${path}.species`,SPECIES);
@@ -398,9 +402,17 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   if(root.version!==1)v.issue('snapshot.version','expected version 1');
   const meta=v.record(root.meta,'snapshot.meta');
   if(meta){
+    if(meta.randomness!==undefined){
+      const randomness=v.record(meta.randomness,'snapshot.meta.randomness');
+      if(randomness){
+        if(randomness.version!==1)v.issue('snapshot.meta.randomness.version','unsupported version');
+        v.string(randomness.seed,'snapshot.meta.randomness.seed',{max:256});
+      }
+    }
     v.number(meta.day,'snapshot.meta.day',{min:0});
     v.number(meta.minuteOfDay,'snapshot.meta.minuteOfDay',{min:0,max:1439.999999});
     v.enum(meta.weather,'snapshot.meta.weather',WEATHER);
+    v.optionalNumber(meta,'weatherEpoch','snapshot.meta',{min:-1,max:3,integer:true});
     validateVec2(v,meta.playerPosition,'snapshot.meta.playerPosition');
     validateInventory(v,meta.playerInventory,'snapshot.meta.playerInventory');
   }
@@ -457,6 +469,26 @@ export function validateWorldPersistenceSnapshot(input:unknown):WorldPersistence
   });
 
   if(root.savedAt!==undefined)v.number(root.savedAt,'snapshot.savedAt',{min:0});
+  if(isRecord(root.meta)&&root.meta.streamedLayoutVersion!==undefined&&root.meta.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','unsupported version');
+  if(root.streamedLayouts!==undefined){
+    const layouts=v.array(root.streamedLayouts,'snapshot.streamedLayouts',WORLD_SNAPSHOT_LIMITS.fineChunks),seen=new Set<string>();
+    if(layouts?.length&&meta?.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','required for streamed layouts');
+    for(const [index,layout] of (layouts||[]).entries()){
+      try{
+        const value=readStreamedLayout(layout);
+        const worldSeed=isRecord(meta?.randomness)&&typeof meta.randomness.seed==='string'?meta.randomness.seed:DEFAULT_WORLD_SEED;
+        if(value.seed!==worldSeed)v.issue(`snapshot.streamedLayouts[${index}].seed`,'must match the world random seed');
+        if(seen.has(value.unit.id))v.issue(`snapshot.streamedLayouts[${index}]`,'duplicate unit');seen.add(value.unit.id);
+      }catch(error){if(error instanceof StreamedLayoutValidationError)v.issue(`snapshot.streamedLayouts[${index}]`,error.message);else throw error;}
+    }
+  }
+  for(const [index,chunk] of (Array.isArray(root.fineChunks)?root.fineChunks:[]).entries()){
+    if(isRecord(chunk)&&chunk.dynamicActivated!==undefined){
+      v.bool(chunk.dynamicActivated,`snapshot.fineChunks[${index}].dynamicActivated`);
+      if(meta?.streamedLayoutVersion!==1)v.issue('snapshot.meta.streamedLayoutVersion','required for owner activation state');
+      if(chunk.dynamicActivated===false&&((Array.isArray(chunk.npcStates)&&chunk.npcStates.length)||(Array.isArray(chunk.wildlifeStates)&&chunk.wildlifeStates.length)))v.issue(`snapshot.fineChunks[${index}]`,'static-only owner cannot contain activated actors');
+    }
+  }
 
   if(v.issues.length)throw new WorldSnapshotValidationError(v.issues);
   return input as WorldPersistenceSnapshot;

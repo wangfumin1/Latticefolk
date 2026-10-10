@@ -6,6 +6,10 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 import Database from 'better-sqlite3';
+import * as THREE from 'three';
+import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
+import {createStreamedLayout,layoutIdentity} from '../src/world/streamedLayouts.js';
+import {streamedUnitOwnerCells} from '../src/world/streamedUnits.js';
 import express from 'express';
 import { WorldPersistence, WorldPersistenceConflictError } from '../server/worldPersistence.js';
 import { registerWorldStateRoutes } from '../server/worldStateRoutes.js';
@@ -85,6 +89,7 @@ function logicalTables(file:string){
       coarse_chunks:db.prepare('SELECT * FROM coarse_chunks ORDER BY id').all(),
       fine_chunks:db.prepare('SELECT * FROM fine_chunks ORDER BY chunk_id').all(),
       home_state:db.prepare('SELECT * FROM home_state ORDER BY slot').all(),
+      streamed_layouts:db.prepare('SELECT * FROM streamed_layouts ORDER BY unit_id').all(),
       wildlife_lineage:db.prepare('SELECT * FROM wildlife_lineage ORDER BY entity_id').all(),
       wildlife_transfers:db.prepare('SELECT * FROM wildlife_transfers ORDER BY entity_id').all()
     };
@@ -380,4 +385,86 @@ test('additive NPC heading persists for home/fine characters and rejects nonfini
       assert.equal(store.revision(),revision);assert.equal(store.load()!.homeNpcs![0].heading,-1.83);
     }
   } finally {store.close();}
+});
+
+for(const value of [null,{},[],{version:2,seed:'s'},{version:'1',seed:'s'},{version:1,seed:17},{version:1,seed:''},{version:1,seed:' '},{version:1,seed:'x'.repeat(257)}])test(`reject invalid randomness metadata ${JSON.stringify(value)}`,()=>{
+  const snapshot=validSnapshot();Object.assign(snapshot.meta,{randomness:value});
+  assert.throws(()=>validateWorldPersistenceSnapshot(snapshot),WorldSnapshotValidationError);
+});
+for(const where of ['home','fine-npc','fine-wildlife','transfer'])for(const value of [null,'0',-1,.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1])test(`${where} rejects invalid random cursor ${String(value)}`,()=>{
+  const snapshot=validSnapshot();const state=where==='home'?snapshot.homeNpcs[0]:where==='fine-npc'?snapshot.fineChunks[0].npcStates[0]:where==='fine-wildlife'?snapshot.fineChunks[0].wildlifeStates![0]:snapshot.wildlifeTransfers![0].state;
+  Object.assign(state,{randomEventCursor:value});assert.throws(()=>validateWorldPersistenceSnapshot(snapshot),WorldSnapshotValidationError);
+});
+test('legacy fields and safe integer cursor bounds remain valid',()=>{
+  const snapshot=validSnapshot();validateWorldPersistenceSnapshot(snapshot);
+  snapshot.meta.randomness={version:1,seed:'saved-seed'};
+  snapshot.homeNpcs[0].randomEventCursor=Number.MAX_SAFE_INTEGER;snapshot.fineChunks[0].npcStates[0].randomEventCursor=0;
+  snapshot.fineChunks[0].wildlifeStates![0].randomEventCursor=13;snapshot.wildlifeTransfers![0].state.randomEventCursor=28;
+  assert.equal(validateWorldPersistenceSnapshot(snapshot),snapshot);
+});
+test('seeded SQLite rows preserve random authority, CAS priority and rejected-write atomicity',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-random-authority-')),file=path.join(dir,'world.sqlite');let store:WorldPersistence|undefined;
+  try{
+    store=new WorldPersistence(file);const snapshot=validSnapshot();
+    snapshot.meta.randomness={version:1,seed:'saved-seed'};
+    snapshot.homeNpcs[0].randomEventCursor=7;snapshot.fineChunks[0].npcStates[0].randomEventCursor=13;
+    snapshot.fineChunks[0].wildlifeStates![0].randomEventCursor=17;snapshot.wildlifeTransfers![0].state.randomEventCursor=29;
+    saveCurrent(store,snapshot);const revision=store.revision();const before=logicalTables(file);
+    for(const mutation of [(s:WorldPersistenceSnapshot)=>{delete s.meta.randomness;},(s:WorldPersistenceSnapshot)=>{s.meta.randomness!.seed='other';}]){
+      const bad=structuredClone(snapshot);mutation(bad);
+      assert.throws(()=>store!.save(bad,revision-1),WorldPersistenceConflictError);
+      assert.deepEqual(logicalTables(file),before);
+      assert.throws(()=>store!.save(bad,revision),WorldSnapshotValidationError);
+      assert.deepEqual(logicalTables(file),before);
+    }
+    for(const mutation of [(s:WorldPersistenceSnapshot)=>Object.assign(s.meta.randomness!,{version:2}),(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;}]){
+      const bad=structuredClone(snapshot);mutation(bad);assert.throws(()=>saveCurrent(store!,bad),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);
+    }
+    const final=structuredClone(snapshot);final.coarseChunks=[];final.fineChunks=[];final.homeNpcs[0].randomEventCursor=11;
+    saveCurrent(store,final);store.close();store=new WorldPersistence(file);const loaded=store.load()!;
+    assert.deepEqual(loaded.meta.randomness,snapshot.meta.randomness);assert.equal(loaded.homeNpcs[0].randomEventCursor,11);
+    assert.equal(loaded.fineChunks[0].npcStates[0].randomEventCursor,13);assert.equal(loaded.fineChunks[0].wildlifeStates![0].randomEventCursor,17);
+    assert.equal(loaded.wildlifeTransfers![0].state.randomEventCursor,29);assert.deepEqual(loaded.fineChunks,snapshot.fineChunks);
+    store.clear();const legacy=validSnapshot();saveCurrent(store,legacy);legacy.meta.randomness={version:1,seed:'different'};
+    assert.throws(()=>saveCurrent(store!,legacy),WorldSnapshotValidationError);
+    legacy.meta.randomness.seed='latticefolk-default';saveCurrent(store,legacy);assert.deepEqual(store.load()!.meta.randomness,legacy.meta.randomness);
+  }finally{store?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('custom seed, 72m layouts and all actor cursors survive reopen and compact checkpoints atomically',()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lattice-random-layout-')),file=path.join(directory,'world.sqlite');
+ let store=new WorldPersistence(file);
+ try{
+  const snapshot=validSnapshot(),seed='world-2',world=new CoarseWorldRuntime(new THREE.Scene(),seed);
+  const cells=streamedUnitOwnerCells(1,0).map(c=>world.ensureChunk(c.cx,c.cz)!);
+  const generated=createStreamedLayout(1,0,cells,[],seed),initialActors=snapshot.fineChunks[0];
+  for(const b of generated.layout.buildings)generated.objectStates.push({id:b.id,chunkId:b.ownerCellId,kind:'building',name:b.name,position:b.frontage,tags:['building'],usable:true,pickupable:false});
+  for(const road of generated.layout.roads)generated.objectStates.push({id:road.id,chunkId:road.ownerCellId,kind:'road',name:road.name,position:{x:road.x,z:road.z},tags:road.tags,usable:true,pickupable:false});
+  initialActors.npcStates[0].randomEventCursor=17;initialActors.wildlifeStates![0].randomEventCursor=23;
+  snapshot.homeNpcs[0].randomEventCursor=19;snapshot.wildlifeTransfers![0].state.randomEventCursor=29;
+  snapshot.meta.randomness={version:1,seed};snapshot.meta.streamedLayoutVersion=1;snapshot.streamedLayouts=[generated.layout];snapshot.coarseChunks=cells;
+  snapshot.fineChunks=cells.map(cell=>({chunkId:cell.id,dynamicActivated:cell.id===initialActors.chunkId,
+   npcStates:cell.id===initialActors.chunkId?initialActors.npcStates:[],wildlifeStates:cell.id===initialActors.chunkId?initialActors.wildlifeStates:[],
+   objectStates:generated.objectStates.filter(state=>state.chunkId===cell.id)}));
+  store.save(snapshot,0);store.close();store=new WorldPersistence(file);const loaded=store.load()!;
+  assert.deepEqual(loaded.meta.randomness,{version:1,seed});assert.equal(layoutIdentity(loaded.streamedLayouts),layoutIdentity(snapshot.streamedLayouts));
+  const compact=structuredClone(loaded);delete compact.streamedLayouts;compact.fineChunks=[];compact.coarseChunks=[];delete compact.wildlifeLineage;
+  compact.homeNpcs[0].randomEventCursor=20;compact.wildlifeTransfers![0].state.randomEventCursor=30;store.save(compact,store.revision());
+  store.close();store=new WorldPersistence(file);const durable=store.load()!,revision=store.revision(),before=logicalTables(file);
+  assert.deepEqual(durable.fineChunks,loaded.fineChunks);assert.equal(layoutIdentity(durable.streamedLayouts),layoutIdentity(loaded.streamedLayouts));
+  const row=durable.fineChunks.find(row=>row.chunkId===initialActors.chunkId)!;assert.equal(row.dynamicActivated,true);
+  assert.equal(row.npcStates[0].randomEventCursor,17);assert.equal(row.wildlifeStates![0].randomEventCursor,23);
+  assert.equal(durable.homeNpcs[0].randomEventCursor,20);assert.equal(durable.wildlifeTransfers![0].state.randomEventCursor,30);
+  const reject=(bad:WorldPersistenceSnapshot)=>{assert.throws(()=>store.save(bad,revision-1),WorldPersistenceConflictError);assert.throws(()=>store.save(bad,revision),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);};
+  for(const field of ['randomness','streamedLayoutVersion'] as const){const bad=structuredClone(compact);delete bad.meta[field];reject(bad);}
+  const changedSeed=structuredClone(compact);changedSeed.meta.randomness!.seed='another';reject(changedSeed);
+  const geometry=structuredClone(durable);geometry.streamedLayouts![0].roads[0].w-=.1;reject(geometry);
+  const lostState=structuredClone(durable);const staticId=lostState.streamedLayouts![0].objects[0].id;
+  for(const row of lostState.fineChunks)row.objectStates=row.objectStates.filter(s=>s.id!==staticId);reject(lostState);
+  const deactivated=structuredClone(durable),changed=deactivated.fineChunks.find(row=>row.chunkId===initialActors.chunkId)!;changed.dynamicActivated=false;changed.npcStates=[];changed.wildlifeStates=[];reject(deactivated);
+  const inserted=structuredClone(durable),other=streamedUnitOwnerCells(2,0).map(c=>world.ensureChunk(c.cx,c.cz)!);inserted.streamedLayouts!.push(createStreamedLayout(2,0,other,[],seed).layout);reject(inserted);
+  for(const mutate of [(s:WorldPersistenceSnapshot)=>{s.streamedLayouts![0].seed='mismatch';},(s:WorldPersistenceSnapshot)=>{s.homeNpcs[0].randomEventCursor=-1;}]){
+   const invalid=structuredClone(durable);mutate(invalid);assert.throws(()=>store.save(invalid,revision),WorldSnapshotValidationError);assert.deepEqual(logicalTables(file),before);
+  }
+ }finally{store.close();fs.rmSync(directory,{recursive:true,force:true});}
 });

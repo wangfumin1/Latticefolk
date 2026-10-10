@@ -1,3 +1,4 @@
+import {DEFAULT_WORLD_SEED,fineLayoutKey,hashText,randomFromKey} from './worldRandom.js';
 import type { CoarseChunkState, InteractionCapability, InventoryItem, Mood, NpcRole, WildlifeSpecies, WildlifeTraits, WorldObjectState } from '../types';
 import { wildlifeSpeciesProfile } from './wildlifeSpecies.js';
 
@@ -73,23 +74,6 @@ export interface FineChunkPlan {
   wildlife: FineWildlifePlan[];
 }
 
-function hash(text:string) {
-  let h=2166136261;
-  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
-  return h>>>0;
-}
-
-function rng(seed:string) {
-  let s=hash(seed)||1;
-  return ()=>{
-    s+=0x6D2B79F5;
-    let t=s;
-    t=Math.imul(t^(t>>>15),t|1);
-    t^=t+Math.imul(t^(t>>>7),t|61);
-    return ((t^(t>>>14))>>>0)/4294967296;
-  };
-}
-
 const givenNames=['澪','岚','葵','凛','悠','茜','晴','陆','纱','枫','朔','琴','灯','遥','真','铃','森','夏','冬','千'];
 const familyNames=['森','川','谷','原','石','藤','山','井','高','月','白','水'];
 
@@ -128,9 +112,9 @@ function inventoryFor(role:NpcRole):InventoryItem[] {
   return [{kind:'water',count:1}];
 }
 
-type BuildingDef=readonly [name:string,asset:string,w:number,d:number,height:number,color:number];
+export type BuildingDef=readonly [name:string,asset:string,w:number,d:number,height:number,color:number];
 
-const BUILDINGS:Record<SettlementArchetype,BuildingDef[]>={
+export const BUILDINGS:Readonly<Record<SettlementArchetype,readonly BuildingDef[]>>={
   wilderness:[],
   farmstead:[
     ['农舍','farmBuilding',8.4,7.5,7.4,0x96704f],
@@ -170,8 +154,9 @@ const BUILDINGS:Record<SettlementArchetype,BuildingDef[]>={
   ]
 };
 
-export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan {
-  const random=rng(chunk.id);
+export function planFineChunk(chunk:CoarseChunkState,chunkSize=24,worldSeed=DEFAULT_WORLD_SEED):FineChunkPlan {
+  const random=randomFromKey(fineLayoutKey(worldSeed,chunk.id));
+  const layoutScale=chunkSize/24;
   const centerX=chunk.cx*chunkSize,centerZ=chunk.cz*chunkSize;
   const archetype=archetypeFor(chunk);
   const roads:FineRoadPlan[]=[];
@@ -184,8 +169,11 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
     roads.push({id:`${chunk.id}_road_${suffix}`,name,x,z,w,d,tags:['road','travel',archetype,...tags]});
   };
 
-  if(chunk.settlementLevel>0){
-    const horizontal=hash(`${chunk.id}:road-axis`)%2===0;
+  if(layoutScale===3){
+    addRoad('main_ew','区域东西路',centerX,centerZ,chunkSize,4,['main']);
+    addRoad('main_ns','区域南北路',centerX,centerZ,4,chunkSize,['main']);
+  }else if(chunk.settlementLevel>0){
+    const horizontal=hashText(`${chunk.id}:road-axis`)%2===0;
     if(horizontal)addRoad('main_ew','聚落主路',centerX,centerZ,chunkSize-1.0,1.7,['settlement','main']);
     else addRoad('main_ns','聚落主路',centerX,centerZ,1.7,chunkSize-1.0,['settlement','main']);
     if(chunk.settlementLevel>=2||archetype==='market_hamlet'){
@@ -201,7 +189,8 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   const lotOffsets:[number,number][]=[[-6.0,-6.0],[6.0,-6.0],[-6.0,6.0],[6.0,6.0]];
   for(let i=0;i<settlementCount;i++){
     const [baseName,asset,w,d,height,color]=defs[i]!;
-    const [ox,oz]=lotOffsets[i]!;
+    const [lotX,lotZ]=lotOffsets[i]!;
+    const ox=lotX*layoutScale,oz=lotZ*layoutScale;
     const jitterX=(random()-.5)*.7,jitterZ=(random()-.5)*.7;
     const x=centerX+ox+jitterX;
     // Reserve the existing utility cross-street before placing full-size buildings.
@@ -260,6 +249,12 @@ export function planFineChunk(chunk:CoarseChunkState,chunkSize=24):FineChunkPlan
   }
   if(archetype==='timber_camp'){
     add('tool','tool_prop','伐木工具',centerX+7.0,centerZ+6.4,['tool','wood'],['inspect','pickup'],{item:'tool',pickupable:true},'axe',.9,-.4);
+  }
+
+  // Place utility sites across the larger footprint without enlarging authored assets.
+  if(layoutScale!==1)for(const object of objects){
+    object.state.position.x=centerX+(object.state.position.x-centerX)*layoutScale;
+    object.state.position.z=centerZ+(object.state.position.z-centerZ)*layoutScale;
   }
 
   const reserved=(x:number,z:number)=>{

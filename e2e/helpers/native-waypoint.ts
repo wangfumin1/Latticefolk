@@ -1,9 +1,11 @@
 /** Self-contained because Playwright serializes this function into Chromium.
  * Only ordinary keyboard listeners are driven; positions and calibrated NPC head
  * envelopes are read from the existing diagnostic DOM, never written. */
-export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
-  target:{x:number;z:number};timeoutMs:number;tolerance:number;
+export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSeconds}: {
+  target:{x:number;z:number};timeoutMs:number;tolerance:number;maxInputSeconds?:number;
 }) {
+  if(maxInputSeconds!==undefined&&(!Number.isFinite(maxInputSeconds)||maxInputSeconds<=0||!Number.isFinite(timeoutMs)||timeoutMs<=0))
+    throw new Error('Waypoint input and wall budgets must be positive and finite');
   type Point={x:number;z:number};
   type Bounds={minX:number;maxX:number;minZ:number;maxZ:number};
   const canvas=document.querySelector('#game canvas');
@@ -18,22 +20,25 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   };
   type Actor={position:Point;headYaw:number;headEnvelope:Bounds};
   const actors=()=>JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.characterSoles??'[]') as Actor[];
-  const clearance=(p:Point,a:Actor)=>{
+  const headClearance=(p:Point,a:Actor)=>{
     const e=a.headEnvelope,c=Math.cos(a.headYaw),s=Math.sin(a.headYaw);
     const dx=p.x-a.position.x,dz=p.z-a.position.z;
     const x=c*dx-s*dz,z=s*dx+c*dz;
     const qx=Math.abs(x-(e.minX+e.maxX)/2)-(e.maxX-e.minX)/2;
     const qz=Math.abs(z-(e.minZ+e.maxZ)/2)-(e.maxZ-e.minZ)/2;
-    return Math.min(Math.hypot(dx,dz)-.62,
-      Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-.30);
+    return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-.30;
   };
+  const bodyClearance=(p:Point,a:Actor)=>Math.hypot(p.x-a.position.x,p.z-a.position.z)-.62;
+  const clearance=(p:Point,a:Actor)=>Math.min(bodyClearance(p,a),headClearance(p,a));
   const route=(start:Point):Point[]=>{
     const obstacles=actors();
     const trees=JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.treePresentation??'[]') as Array<{collider:Bounds}>;
     const staticClearance=(p:Point,b:Bounds)=>Math.hypot(
       Math.max(b.minX-p.x,0,p.x-b.maxX),Math.max(b.minZ-p.z,0,p.z-b.maxZ))-.30;
-    const constraints=[...obstacles.map(a=>(p:Point)=>clearance(p,a)),
-      ...trees.map(t=>(p:Point)=>staticClearance(p,t.collider))];
+    const constraints=[...obstacles.flatMap(a=>[
+      {clear:(p:Point)=>bodyClearance(p,a),recoverOverlap:true},
+      {clear:(p:Point)=>headClearance(p,a),recoverOverlap:true}
+    ]),...trees.map(t=>({clear:(p:Point)=>staticClearance(p,t.collider),recoverOverlap:false}))];
     if(!obstacles.some(a=>Math.hypot(a.position.x-start.x,a.position.z-start.z)<3)&&
       !trees.some(t=>staticClearance(start,t.collider)<3))return [];
     // Plan only input waypoints around observed collision envelopes. No world state is written.
@@ -43,12 +48,16 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
     const minZ=Math.floor(Math.min(0,target.z-start.z)/step)-padding/step;
     const maxZ=Math.ceil(Math.max(0,target.z-start.z)/step)+padding/step;
     const point=(x:number,z:number)=>({x:start.x+x*step,z:start.z+z*step});
-    const edgeClear=(from:Point,to:Point,margin=.16)=>constraints.every(clear=>{
-      const initial=clear(from);
+    const edgeClear=(from:Point,to:Point,margin=.16)=>constraints.every(({clear,recoverOverlap})=>{
+      const initial=clear(from);let previous=initial;
+      if(!Number.isFinite(initial))return false;
       for(let t=.1;t<=1.001;t+=.1){
         const d=clear({x:from.x+(to.x-from.x)*t,z:from.z+(to.z-from.z)*t});
         // Escape a close starting edge, then keep a small walking margin.
-        if(d<Math.min(initial,margin)-1e-8||d<0)return false;
+        if(!Number.isFinite(d))return false;
+        if(recoverOverlap&&previous<0){if(d<=previous+1e-9)return false;}
+        else if(d<Math.min(Math.max(initial,0),margin)-1e-8||d<0)return false;
+        previous=d;
       }
       return true;
     });
@@ -63,7 +72,8 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       // same original tolerance. Check a near-boundary approach point as well.
       const radius=Math.max(0,tolerance-Math.min(.01,tolerance*.02));
       const approach=distance>0?{x:target.x+(p.x-target.x)*radius/distance,z:target.z+(p.z-target.z)*radius/distance}:target;
-      const endpoint=distance<=step+tolerance?[target,approach].find(goal=>{
+      const endpoint=distance<=step+tolerance?[target,{x:target.x,z:p.z},{x:p.x,z:target.z},approach].find(goal=>{
+        if(Math.hypot(goal.x-target.x,goal.z-target.z)>tolerance)return false;
         const corner={x:goal.x,z:p.z};
         return edgeClear(p,goal,0)&&edgeClear(p,corner,0)&&edgeClear(corner,goal,0);
       }):undefined;
@@ -106,8 +116,25 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   const begin=performance.now(),deadline=begin+timeoutMs;
   const maximumStep=7.2*.05; // Existing sprint speed and production dt cap.
   let last=read(),unchanged=0,detours=0;
+  let observedPosition={...last};
   let simulatedAt=simulation();
   if(!Number.isFinite(simulatedAt)||simulatedAt<0)throw new Error('Waypoint simulation observation is unavailable');
+  const simulationBegin=simulatedAt;
+  let stopReason='wall-budget';
+  const budgetEvidence=(reason:string)=>maxInputSeconds===undefined?{}:{
+    inputSeconds:simulatedAt-simulationBegin,elapsedMs:performance.now()-begin,stopReason:reason
+  };
+  // A collision still consumes accepted direction-input time. The wall timer
+  // also releases input when RAF stops, provided the page event loop can run.
+  const nextFrame=()=>maxInputSeconds===undefined
+    ?new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))
+    :new Promise<void>((resolve,reject)=>{
+      let settled=false;
+      let frame:number|undefined;
+      const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);if(frame!==undefined)cancelAnimationFrame(frame);resolve();};
+      const timer=setTimeout(finish,Math.max(0,deadline-performance.now()));
+      try{frame=requestAnimationFrame(finish);}catch(error){settled=true;clearTimeout(timer);reject(error);}
+    });
   let progress:{goal:Point;distance:number;requested:number;speed:number;arrival:number}|undefined;
   let waypoints:Point[]=[];
   let plannerBlocked=false,avoidSign=1;
@@ -129,7 +156,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
   };
   const axisKey=(axis:'x'|'z',delta:number)=>axis==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW');
   try {
-    while(performance.now()<deadline){
+    while(maxInputSeconds!==undefined||performance.now()<deadline){
       if(document.pointerLockElement!==canvas)throw new Error('Waypoint lost pointer lock');
       const p=read();
       if(!Number.isFinite(p.x)||!Number.isFinite(p.z))throw new Error('Waypoint position is unavailable');
@@ -137,8 +164,20 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(!Number.isFinite(simulatedNow)||simulatedNow<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
       const stepSeconds=simulatedNow-simulatedAt;
       simulatedAt=simulatedNow;
+      const inputSeconds=simulatedNow-simulationBegin;
+      if(maxInputSeconds!==undefined){
+        if(stepSeconds===0&&Math.hypot(p.x-observedPosition.x,p.z-observedPosition.z)>1e-6)
+          throw new Error('Waypoint position changed without observed direction input');
+        if(performance.now()>deadline)break;
+        if(inputSeconds>maxInputSeconds+1e-9){stopReason='input-budget';break;}
+      }
+      observedPosition=p;
       const distance=Math.hypot(target.x-p.x,target.z-p.z);
-      if(distance<=tolerance){record(p,'reached');return {reached:true,...p,distance,detours,history};}
+      if(distance<=tolerance){record(p,'reached');return {reached:true,...p,distance,detours,history,...budgetEvidence('reached')};}
+      if(maxInputSeconds!==undefined){
+        if(performance.now()>=deadline)break;
+        if(inputSeconds>=maxInputSeconds-1e-9){stopReason='input-budget';break;}
+      }
       if(stepSeconds>0){
         const movedThreshold=Math.min(.035,(progress?.speed??0)*stepSeconds*.2);
         if(Math.hypot(p.x-last.x,p.z-last.z)>movedThreshold){last=p;unchanged=0;}else unchanged++;
@@ -175,7 +214,9 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
       if(fallback&&Math.hypot(p.x-fallback.origin.x,p.z-fallback.origin.z)>=fallbackDistance){
         fallback=undefined;unchanged=0;record(p,'fallback-complete');
       }
-      while(waypoints.length&&Math.hypot(waypoints[0].x-p.x,waypoints[0].z-p.z)<.19){
+      // Retain short corners that still require an axis input. A radial .19 m
+      // shortcut can discard both approach points while outside the goal circle.
+      while(waypoints.length&&Math.max(Math.abs(waypoints[0].x-p.x),Math.abs(waypoints[0].z-p.z))<=.12){
         waypoints.shift();record(p,'waypoint');
       }
       const aim=waypoints[0]??target,dx=aim.x-p.x,dz=aim.z-p.z;
@@ -191,6 +232,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         if(Math.abs(dx)>tolerance*.6)next.add(axisKey('x',dx));
         if(Math.abs(dz)>tolerance*.6)next.add(axisKey('z',dz));
       }
+      if(maxInputSeconds!==undefined&&performance.now()>=deadline)break;
       setHeld(next);
       const goal=fallback?{
         x:fallback.origin.x+(fallback.code==='KeyD'?fallbackDistance:fallback.code==='KeyA'?-fallbackDistance:0),
@@ -201,11 +243,11 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance}: {
         progress={goal:{...goal},distance:Math.hypot(goal.x-p.x,goal.z-p.z),requested:0,speed:0,arrival};
       }
       progress.speed=[...next].some(code=>code!=='ShiftLeft')?(next.has('ShiftLeft')?7.2:4.5):0;
-      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      await nextFrame();
     }
     const finalSimulation=simulation();
     if(!Number.isFinite(finalSimulation)||finalSimulation<simulatedAt)throw new Error('Waypoint simulation observation reset or became unavailable');
     const p=read(),distance=Math.hypot(target.x-p.x,target.z-p.z);record(p,'deadline');
-    return {reached:distance<=tolerance,...p,distance,detours,history};
+    return {reached:maxInputSeconds===undefined&&distance<=tolerance,...p,distance,detours,history,...budgetEvidence(stopReason)};
   }finally {setHeld(new Set());}
 }

@@ -6,6 +6,7 @@ import ts from 'typescript';
 import * as THREE from 'three';
 import {I18n,SUPPORTED_LOCALES} from '../src/i18n.js';
 import {CoarseWorldRuntime} from '../src/world/coarseWorld.js';
+import {GodCameraInput} from '../src/scene/godCameraInput.js';
 import {visibleHudLogs} from '../src/ui/hudDiagnostics.js';
 import {worldObjectRigidBody} from '../src/world/movablePhysics.js';
 import {isBakingOven,BAKING_OVEN_ASSET} from '../src/scene/bakingOven.js';
@@ -25,7 +26,7 @@ function visit(n:ts.Node){
  ts.forEachChild(n,visit);
 }visit(ast);
 const transpile=(s:string)=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
-const wanted=['bindInput','changeLocale','refreshInteractionLabels','openInteractionMenu','openWildlifeInteractionMenu','closeInteractionMenu','updatePrompt','interactionLabel','objectDisplayName','parcelLabel','itemName','wildlifeName','playerTalk','npcTalkPlayerAuto','npcConversation','actor','applyRelation','importDialogue','updateUi','renderEvolutionPanel','renderInteractionNetworkEvidence','escape','updateLocalizedUi','renderBudget','applyBudgetFromUi','applyBudgetPreset','refreshHealth'];
+const wanted=['resetGodCameraInput','godCameraInputAllowed','bindInput','changeLocale','refreshInteractionLabels','openInteractionMenu','openWildlifeInteractionMenu','closeInteractionMenu','updatePrompt','interactionLabel','objectDisplayName','parcelLabel','itemName','wildlifeName','playerTalk','npcTalkPlayerAuto','npcConversation','actor','applyRelation','importDialogue','updateUi','renderEvolutionPanel','renderInteractionNetworkEvidence','escape','updateLocalizedUi','renderBudget','applyBudgetFromUi','applyBudgetPreset','refreshHealth'];
 const code=transpile(`return class Runtime {${wanted.map(k=>{assert.ok(methods.has(k),k);return methods.get(k);}).join('\n')}}`);
 function fixture(initial='en',fullUi=false,actualBudget=false){
  const i18n=new I18n(initial),html=new Function('i18n','SUPPORTED_LOCALES',`return ${template}`)(i18n,SUPPORTED_LOCALES);
@@ -38,7 +39,7 @@ function fixture(initial='en',fullUi=false,actualBudget=false){
  const canvas=document.createElement('canvas');document.querySelector('#game')!.append(canvas);
  const clockFragment=methods.get('updateLocalizedUi')!.split('    ui.clock.textContent=')[1].split('    const entity=')[0];
  const renderClock=new Function('ui','i18n',transpile(`return function(){ui.clock.textContent=${clockFragment}}`))(ui,i18n);
- Object.assign(r,{locale:i18n.locale,cameraMode:'firstPerson',aiPaused:false,perceptionEpoch:17,keys:new Set(),interactionOpen:false,
+ Object.assign(r,{locale:i18n.locale,cameraMode:'firstPerson',aiPaused:false,perceptionEpoch:17,keys:new Set(),godCameraInput:new GodCameraInput(),interactionOpen:false,
   playerPosition:{x:5,z:4},playerInventory:{coin:12,bread:2},day:3,weather:'clear',selectedEntity:{type:'object',id:'well'},hoverEntity:undefined,
   npcs:new Map(),wildlife:new Map(),objects:new Map(),renderer:{domElement:canvas},camera:{position:new THREE.Vector3(5,1.7,4)},orbit:{enabled:false},
   controls:{isLocked:false,addEventListener(){},lock(){locks++;this.isLocked=true;},unlock(){unlocks++;this.isLocked=false;}},
@@ -51,7 +52,7 @@ function fixture(initial='en',fullUi=false,actualBudget=false){
  if(fullUi){
   delete r.updateLocalizedUi;r.selectedEntity=undefined;r.logs=[{text:'existing warning',audience:'player'}];
   r.camera=new THREE.PerspectiveCamera();r.camera.position.set(5,1.7,4);
-  Object.assign(r,{coarseWorld:new CoarseWorldRuntime(new THREE.Scene()),physics:{stats:()=>({terrainSurfaces:1,staticColliders:0,triggers:0})},visualTargets:[],assetLoadFailures:[],groundHeightAt:()=>0,playerInputSeconds:0,
+  Object.assign(r,{streamedPresentation:{diagnostics:()=>[]},coarseWorld:new CoarseWorldRuntime(new THREE.Scene()),physics:{stats:()=>({terrainSurfaces:1,staticColliders:0,triggers:0})},visualTargets:[],assetLoadFailures:[],groundHeightAt:()=>0,playerInputSeconds:0,
    wildlifePresentation:{getDiagnosticsSummary:()=>({pending:0,ready:0,failed:0,count:0})},portables:{diagnostics:()=>({parcels:[]})},sunShadow:{diagnostics:()=>({mapSize:2048})},physicsDynamicColliders:()=>r.cameraMode==='firstPerson'?[{id:'player'}]:[],
    wildlifeLineage:new Map(),evolutionStatistics:()=>[],coevolutionStatistics:()=>[],interactionSelectionStatistics:()=>[],activeInteractionNetwork:()=>({chunks:0,edges:[],nodes:[],coverage:{predation:0,competition:0,disease:0}})});
  }
@@ -113,7 +114,7 @@ for(const mode of ['firstPerson','god'])test(`${mode}: current object and animal
 test('object details use the current parcel display label without renaming saved state',()=>{
  const f=fixture(),state={id:'parcel',name:'old label',kind:'dropped_item',pickupable:true,item:'bread',resourceAmount:3,capabilities:['inspect','pickup'],position:{x:1,z:2},tags:['dropped']};f.r.objects.set('parcel',{state});f.r.escape=(s:string)=>s;
  const branch=methods.get('updateLocalizedUi')!.split("} else if(entity?.type==='object'){",2)[1].split('} else ui.npc.classList',1)[0];
- const render=new Function('ui','entity',transpile(`return function(){${branch}}`))(f.ui,{id:'parcel'});const before=JSON.stringify(state);
+ const render=new Function('ui','entity','i18n',transpile(`return function(){${branch}}`))(f.ui,{id:'parcel'},f.i18n);const before=JSON.stringify(state);
  for(const {code:locale} of SUPPORTED_LOCALES){f.select(locale);render.call(f.r);assert.ok(f.ui.npc.textContent.includes(f.r.parcelLabel('bread',3)));assert.ok(f.ui.npc.textContent.includes(f.i18n.t('interaction.pickup')));assert.equal(JSON.stringify(state),before);}f.close();
 });
 
@@ -150,4 +151,62 @@ test('superseded failed apply cannot replace the newer success feedback',async()
 });
 test('explicit preset protects its pending values from pre-preset health',async()=>{
  const f=fixture('en',false,true),health=f.r.refreshHealth();f.r.applyBudgetPreset('economy');const input=f.document.querySelector<HTMLInputElement>('#budgetCallsMin')!,expected=input.value;assert.ok(f.r.budgetInputVersion>f.r.budgetSavedVersion);f.select('es');f.requests[0].resolve(healthReply(60));await health;assert.equal(input.value,expected);f.requests[1].resolve(applyReply(Number(expected)));await new Promise(resolve=>setImmediate(resolve));assert.equal(input.value,expected);assert.equal(f.r.budgetInputVersion,f.r.budgetSavedVersion);f.close();
+});
+
+for(const mode of ['firstPerson','god'])test(`${mode}: HUD labels hot-switch while authored data, menu focus and raw state stay intact`,()=>{
+ const f=fixture('en',true),r=f.r;r.cameraMode=mode;
+ const object={id:'custom',kind:'workstation',name:'自定义 <炉子>',position:{x:1.25,z:2.5},tags:['用户标签','work'],capabilities:['inspect','craft'],storage:[{kind:'flour',count:2},{kind:'bread',count:1}],item:'grain'};
+ const npc={id:'person',name:'张三 <原名>',role:'baker',mood:'calm',hunger:30,energy:80,social:65,money:10,currentAction:'work',goal:'自己的 <目标>',inventory:[{kind:'flour',count:2},{kind:'bread',count:1}],memories:[{summary:'原始 <记忆>'}]};
+ const decision={action:'work',targetObjectId:'custom',source:'fallback',confidence:.6,stateShift:'focused',socialIntent:'greet',reasonCode:'原始 <原因>'};
+ r.objects.set(object.id,{state:object});r.npcs.set(npc.id,{state:npc,lastDecision:decision});
+ r.playerInventory={apple:0,bread:2,wood:0,grain:0,flour:1,water:0,plank:0,stone:0,tool:0,coin:10};
+ const freeze=(value:any)=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);Object.values(value).forEach(freeze);}};
+ [object,npc,decision,r.playerInventory,r.logs].forEach(freeze);
+ const data=()=>JSON.stringify({object,npc,decision,inventory:r.playerInventory,logs:r.logs});const original=data();
+ r.openInteractionMenu({state:object},['inspect','craft']);
+ const buttons=[...f.ui.interactionActions.children] as HTMLButtonElement[];buttons[1].focus();const counts=f.counts();
+ const labels={en:['Inventory','Position','Tags','Interactions','Storage','Resource','Mood','Current action','Latest decision','Confidence','Short-term memory'],
+  ja:['所持品','位置','タグ','操作','保管','資源','気分','現在の行動','直近の判断','信頼度','短期記憶'],
+  es:['Inventario','Posición','Etiquetas','Interacciones','Almacenamiento','Recurso','Ánimo','Acción actual','Última decisión','Confianza','Memoria a corto plazo'],
+  'zh-CN':['背包','位置','标签','交互','存储','资源','心情','当前行为','最近决策','置信度','短期记忆']};
+ for(const locale of ['en','ja','es','zh-CN','en'] as const){
+  const expected=labels[locale];
+  for(const target of [{type:'object',id:object.id},{type:'npc',id:npc.id}]){
+   r.hoverEntity=target;r.selectedEntity=mode==='god'?target:undefined;const before=unchanged(r);
+   f.select(locale);
+   assert.equal(unchanged(r),before);assert.equal(data(),original);assert.equal(f.document.activeElement,buttons[1]);
+   assert.deepEqual([...f.ui.interactionActions.children],buttons);assert.equal(buttons[1].textContent,f.i18n.t('interaction.craft'));
+   assert.equal(f.ui.interactionTitle.textContent,object.name);assert.equal(f.ui.log.textContent,'existing warning');
+   assert.ok(f.ui.clock.textContent.startsWith(f.i18n.t('hud.day',{day:3})));
+   assert.ok(f.ui.inv.textContent.startsWith(mode==='god'?f.i18n.t('observer'):expected[0]+' 🍎0 🍞2'));
+   const text=f.ui.npc.textContent;
+   for(const label of target.type==='object'?expected.slice(1,6):[expected[0],...expected.slice(6)])assert.ok(text.includes(label),`${locale}: missing ${label}`);
+   assert.equal(f.ui.npc.querySelector('b')!.textContent,target.type==='object'?object.name:npc.name);
+   if(target.type==='object'){
+    assert.ok(text.includes('用户标签 / work'));assert.ok(text.includes('1.3, 2.5'));
+    assert.ok(text.includes(`${f.i18n.t('item.flour')}×2${f.i18n.t('hud.listSeparator')}${f.i18n.t('item.bread')}×1`));
+   }else for(const value of [npc.role,npc.mood,npc.currentAction,npc.goal,npc.memories[0].summary,decision.stateShift,decision.socialIntent,decision.reasonCode,object.name])assert.ok(text.includes(value));
+   assert.equal(f.ui.npc.querySelector('炉子,原名,目标,记忆,原因'),null);
+   const detail=f.ui.npc.firstChild;r.updateLocalizedUi();assert.equal(f.ui.npc.firstChild,detail,'unchanged localized details retain their DOM');
+  }
+ }
+ assert.equal(f.counts().locks,counts.locks);assert.equal(f.counts().unlocks,counts.unlocks);assert.equal(f.requests.length,0);
+ buttons[1].click();assert.equal(f.counts().actions,1);assert.equal(r.interactionOpen,false);assert.equal(data(),original);f.close();
+});
+
+test('HUD empty inventory, absent decision/memory and no-capability fallback translate in all four locales',()=>{
+ const f=fixture('en',true),r=f.r;
+ const npc={id:'person',name:'原名',role:'baker',mood:'calm',hunger:30,energy:80,social:65,money:10,currentAction:'work',goal:'原目标',inventory:[],memories:[]};
+ const object={id:'object',kind:'workstation',name:'原对象',position:{x:1,z:2},tags:[],capabilities:[]};
+ r.npcs.set(npc.id,{state:npc});r.objects.set(object.id,{state:object});
+ for(const locale of ['en','ja','es','zh-CN','en']){
+  r.hoverEntity={type:'npc',id:npc.id};f.select(locale);
+  for(const key of ['empty','waitingDecision','noMemories']){
+   const label=f.i18n.t(`hud.${key}`);assert.notEqual(label,`hud.${key}`);assert.ok(f.ui.npc.textContent.includes(label));
+  }
+  r.hoverEntity={type:'object',id:object.id};f.select(locale);
+  assert.ok(f.ui.npc.textContent.includes(`${f.i18n.t('hud.interactions')} ${f.i18n.t('interaction.inspect')}`));
+  assert.equal(f.ui.npc.querySelector('b')!.textContent,object.name);
+ }
+ assert.deepEqual(npc.inventory,[]);assert.deepEqual(npc.memories,[]);assert.deepEqual(object.capabilities,[]);f.close();
 });
