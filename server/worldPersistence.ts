@@ -18,6 +18,22 @@ const parse = <T>(value: unknown, fallback:T):T => {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
 
+export class WorldPersistenceIntegrityError extends Error {
+  constructor(readonly table:string,readonly row:string,readonly field:string){
+    super(`Invalid persisted JSON: ${table}[${row.replace(/[^a-zA-Z0-9_.:-]/g,'?').slice(0,96)}].${field}`);
+    this.name='WorldPersistenceIntegrityError';
+  }
+}
+
+const parseStored = <T>(value:unknown,table:string,row:string,field:string,kind:'array'|'object'):T => {
+  try{
+    if(typeof value!=='string')throw new Error();
+    const decoded:unknown=JSON.parse(value);
+    if(kind==='array'?!Array.isArray(decoded):decoded===null||typeof decoded!=='object'||Array.isArray(decoded))throw new Error();
+    return decoded as T;
+  }catch{throw new WorldPersistenceIntegrityError(table,row,field);}
+};
+
 export class WorldPersistenceConflictError extends Error {
   constructor(readonly expectedRevision:number,readonly currentRevision:number){
     super(`World persistence revision conflict: expected ${expectedRevision}, current ${currentRevision}`);
@@ -241,6 +257,7 @@ export class WorldPersistence {
     const tx=this.db.transaction((data:WorldPersistenceSnapshot)=>{
       const currentRevision=this.revision();
       if(currentRevision!==expectedRevision)throw new WorldPersistenceConflictError(expectedRevision,currentRevision);
+      this.load();
       const nextRevision=currentRevision+1;
       if(!Number.isSafeInteger(nextRevision))throw new Error('World persistence revision exhausted');
 
@@ -330,7 +347,7 @@ export class WorldPersistence {
     const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
     const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json,dynamic_activated FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string;dynamic_activated:number|null}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
-    const transferRows=this.db.prepare('SELECT transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{transfer_json:string}>;
+    const transferRows=this.db.prepare('SELECT entity_id,transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{entity_id:string;transfer_json:string}>;
     const lineageRows=this.db.prepare(`
       SELECT entity_id,species,mother_id,father_id,birth_day,death_day,death_reason,generation,
              birth_chunk,death_chunk,traits_at_birth_json,traits_at_death_json,phenotype_at_birth_json,phenotype_at_death_json,phenotype_provenance,organism_genome_at_birth_json,organism_genome_at_death_json,organism_genome_provenance,domestication_at_birth_json,domestication_at_death_json,birth_habitat_json,death_habitat_json,habitat_exposure_json,migration_history_json,predation_outcomes_json,origin,offspring_count,reproductive_success
@@ -351,13 +368,12 @@ export class WorldPersistence {
     const fineChunks:PersistedFineChunk[]=fineRows.map(row=>({
       chunkId:row.chunk_id,
       ...(row.dynamic_activated===null?{}:{dynamicActivated:Boolean(row.dynamic_activated)}),
-      npcStates:parse<NpcState[]>(row.npc_json,[]),
-      objectStates:parse<WorldObjectState[]>(row.object_json,[]),
-      wildlifeStates:parse<WildlifeState[]>(row.wildlife_json,[])
+      npcStates:parseStored<NpcState[]>(row.npc_json,'fine_chunks',row.chunk_id,'npc_json','array'),
+      objectStates:parseStored<WorldObjectState[]>(row.object_json,'fine_chunks',row.chunk_id,'object_json','array'),
+      wildlifeStates:parseStored<WildlifeState[]>(row.wildlife_json,'fine_chunks',row.chunk_id,'wildlife_json','array')
     }));
-    const wildlifeTransfers=transferRows
-      .map(row=>parse<PersistedWildlifeTransfer|null>(row.transfer_json,null))
-      .filter((value):value is PersistedWildlifeTransfer=>Boolean(value));
+    const wildlifeTransfers=transferRows.map(row=>parseStored<PersistedWildlifeTransfer>(
+      row.transfer_json,'wildlife_transfers',row.entity_id,'transfer_json','object'));
     const wildlifeLineage:WildlifeLineageRecord[]=lineageRows.map(row=>({
       entityId:row.entity_id,
       species:row.species,

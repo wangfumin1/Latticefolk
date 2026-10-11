@@ -468,3 +468,67 @@ test('custom seed, 72m layouts and all actor cursors survive reopen and compact 
   }
  }finally{store.close();fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+for(const field of ['npc_json','object_json','wildlife_json'])for(const payload of ['{broken','null','{}']){
+  test(`corrupt fine ${field} ${payload} blocks load and later save`,()=>{
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-corrupt-fine-'));
+    const file=path.join(dir,'world.sqlite'),store=new WorldPersistence(file),db=new Database(file);
+    try{
+      const snapshot=validSnapshot();store.save(snapshot,0);
+      db.prepare(`UPDATE fine_chunks SET ${field}=? WHERE chunk_id=?`).run(payload,'chunk_2_0');
+      const before=logicalTables(file);
+      assert.throws(()=>store.load(),error=>error instanceof Error&&error.message.includes('fine_chunks')&&error.message.includes(field));
+      assert.throws(()=>store.save({...snapshot,wildlifeTransfers:[]},1));
+      assert.deepEqual(logicalTables(file),before);
+    }finally{db.close();store.close();fs.rmSync(dir,{recursive:true,force:true});}
+  });
+}
+for(const payload of ['{broken','null','[]'])test(`corrupt transfer ${payload} cannot be pruned by later save`,()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-corrupt-transfer-'));
+  const file=path.join(dir,'world.sqlite'),store=new WorldPersistence(file),db=new Database(file);
+  try{
+    const snapshot=validSnapshot();store.save(snapshot,0);
+    db.prepare('UPDATE wildlife_transfers SET transfer_json=? WHERE entity_id=?').run(payload,'migrant_rabbit');
+    const before=logicalTables(file);
+    assert.throws(()=>store.load(),error=>error instanceof Error&&error.message.includes('wildlife_transfers')&&error.message.includes('transfer_json'));
+    assert.throws(()=>store.save({...snapshot,wildlifeTransfers:[]},1));
+    assert.deepEqual(logicalTables(file),before);
+  }finally{db.close();store.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('repaired persisted JSON permits a fresh load and the unchanged CAS save',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-corrupt-repair-'));
+  const file=path.join(dir,'world.sqlite'),store=new WorldPersistence(file),db=new Database(file);
+  try{
+    const snapshot=validSnapshot();store.save(snapshot,0);
+    db.prepare('UPDATE fine_chunks SET npc_json=? WHERE chunk_id=?').run('{broken','chunk_2_0');
+    assert.throws(()=>store.save(snapshot,1));
+    assert.equal(store.revision(),1);
+    db.prepare('UPDATE fine_chunks SET npc_json=? WHERE chunk_id=?').run(JSON.stringify(snapshot.fineChunks[0].npcStates),'chunk_2_0');
+    assert.equal(store.load()!.fineChunks[0].npcStates[0].id,'npc_fine');
+    assert.equal(store.save(snapshot,1).revision,2);
+  }finally{db.close();store.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('world-state handlers return bounded corruption failures for load and write',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'latticefolk-corrupt-route-'));
+  const file=path.join(dir,'world.sqlite'),store=new WorldPersistence(file),db=new Database(file);
+  const handlers=new Map<string,Function>();
+  const app={get:(_path:string,fn:Function)=>handlers.set('get',fn),post:(_path:string,fn:Function)=>handlers.set('post',fn),delete:()=>{}};
+  registerWorldStateRoutes(app as unknown as express.Express,store);
+  try{
+    const snapshot=validSnapshot();store.save(snapshot,0);
+    const privateValue='{private-row-content';
+    db.prepare('UPDATE wildlife_transfers SET transfer_json=?').run(privateValue);
+    const before=logicalTables(file);
+    for(const method of ['get','post']){
+      let status=200,body:any;
+      const res={status:(value:number)=>{status=value;return res;},json:(value:unknown)=>{body=value;return res;}};
+      handlers.get(method)!({body:{snapshot:{...snapshot,wildlifeTransfers:[]},expectedRevision:1}},res);
+      assert.equal(status,500);assert.equal(body.snapshot,undefined);
+      assert.match(body.error,/wildlife_transfers\[migrant_rabbit\]\.transfer_json/);
+      assert.equal(body.error.includes(privateValue),false);
+      assert.deepEqual(logicalTables(file),before);
+    }
+  }finally{db.close();store.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
