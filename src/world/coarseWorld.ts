@@ -139,6 +139,7 @@ export class CoarseWorldRuntime {
   private lastSource='seeded';
   private lastBatchSize=0;
   private nextDecisionAt=performance.now()+3500;
+  private chunkRetryNotBefore=0;
   private simulationAccumulator=0;
   private flowAccumulator=0;
   private recentFlowLog:WorldFlowRecord[]=[];
@@ -618,7 +619,7 @@ export class CoarseWorldRuntime {
   private wakeChunkDecisionDeadline() {
     if(this.pending)return;
     const delay=nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates);
-    const wakeAt=performance.now()+delay;
+    const wakeAt=Math.max(this.chunkRetryNotBefore,performance.now()+delay);
     if(wakeAt<this.nextDecisionAt)this.nextDecisionAt=wakeAt;
   }
 
@@ -664,6 +665,7 @@ export class CoarseWorldRuntime {
       this.pending=false;
       const delay=completed?nextChunkDecisionDelay(this.scheduledChunkDecisions(1).candidates):15_000;
       this.nextDecisionAt=performance.now()+delay;
+      this.chunkRetryNotBefore=completed?0:this.nextDecisionAt;
     }
   }
 

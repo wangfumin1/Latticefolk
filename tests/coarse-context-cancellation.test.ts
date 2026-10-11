@@ -277,6 +277,12 @@ for(const failure of ['network','http','json'] as const){
     assert.deepEqual(after.world,before.world);
     assert.deepEqual(retryAt(state),[15_000,45_000,120_000]);
     assert.equal(timer.active.size,0);
+    const retries=holdRequests(t,'fetch');
+    runtime.applyFineSummary([...runtime.chunks.keys()][0]!,{food:0});
+    runtime.update({...context,dt:1});
+    await flush();
+    assert.equal(state.nextDecisionAt,15_000);
+    assert.equal(retries.held.length,0);
   });
 }
 
@@ -310,5 +316,42 @@ for(const stage of ['fetch','json'] as const){
     assert.deepEqual(retryAt(state),nextBefore);
     assert.deepEqual(pendingOf(state),[false,false,false]);
     assert.equal(timer.active.size,0);
+  });
+}
+
+for (const wake of ['unload','fine-summary','simulation'] as const) {
+  test(`cancelled chunk request keeps its retry floor across ${wake} wakeups`,async t=>{
+    const timer=clock(t);
+    const runtime=new CoarseWorldRuntime(new THREE.Scene(),`retry-floor-${wake}`);
+    const state=stateOf(runtime);
+    await seed(t,runtime);
+    const old=holdRequests(t,'fetch');
+    const pending=state.requestBatch(context);
+    await flush();
+    const chunk=[...runtime.chunks.values()][0]!;
+    runtime.setMaterialized(chunk.id,true);
+    await pending;
+    const retryAt=state.nextDecisionAt;
+    assert.equal(retryAt,timer.now()+15_000);
+    if(wake==='unload')runtime.setMaterialized(chunk.id,false);
+    if(wake==='fine-summary')runtime.applyFineSummary(chunk.id,{food:0});
+    runtime.update({...context,dt:wake==='simulation'?1:0});
+    await flush();
+    assert.equal(state.nextDecisionAt,retryAt);
+    assert.equal(old.held.length,1,'no replacement before the cancellation backoff');
+    timer.advance(14_999);
+    runtime.update(context);
+    await flush();
+    assert.equal(old.held.length,1);
+    timer.advance(1);
+    runtime.update(context);
+    await flush();
+    assert.equal(old.held.filter(entry=>entry.channel==='chunks').length,2);
+    old.resolve('fresh-provider');
+    await flush();
+    assert.equal(runtime.status().lastSource,'fresh-provider');
+    state.nextDecisionAt=timer.now()+30_000;
+    runtime.applyFineSummary(chunk.id,{food:0});
+    assert.ok(state.nextDecisionAt<timer.now()+15_000,'success restores ordinary demand-driven wakeups');
   });
 }
