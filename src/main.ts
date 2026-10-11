@@ -2348,6 +2348,25 @@ class TownGame {
     };
   }
 
+  private async postFineDecision(url:string,body:unknown):Promise<unknown> {
+    const controller=new AbortController();
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const deadline=new Promise<never>((_,reject)=>{
+      timer=setTimeout(()=>{
+        controller.abort();
+        reject(new Error('decision request timed out'));
+      },8000);
+    });
+    const request=(async()=>{
+      const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      if(controller.signal.aborted)throw new Error('decision request aborted');
+      if(!response.ok)throw new Error('decision request failed');
+      return await response.json() as unknown;
+    })();
+    try{return await Promise.race([request,deadline]);}
+    finally{if(timer!==undefined)clearTimeout(timer);}
+  }
+
   async requestWildlifeBatch() {
     if(this.wildlifeDecisionPending)return;
     const due=[...this.wildlife.values()].filter(x=>!x.removed&&!wildlifeHasActiveOwnerCommand(x.state)&&now()>=x.nextDecisionAt)
@@ -2369,9 +2388,7 @@ class TownGame {
     }));
     const req:WildlifeDecisionBatchRequest={requests:due.map(x=>this.wildlifeSnapshot(x))};
     try{
-      const response=await fetch('/api/wildlife/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});
-      const out=await response.json() as WildlifeDecisionBatchResponse;
-      if(!response.ok)throw new Error('wildlife decision failed');
+      const out=await this.postFineDecision('/api/wildlife/decide',req) as WildlifeDecisionBatchResponse;
       for(const decision of out.decisions){
         const request=pending.get(decision.wildlifeId);
         if(!request)continue;
@@ -3183,8 +3200,7 @@ class TownGame {
     const world=this.snapshot(agent); const allowed=this.allowedActions(agent,world);
     const req:DecisionRequest={npc:agent.state,world,allowedActions:allowed};
     try{
-      const r=await fetch('/api/decision',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(req)});
-      const d=await r.json() as DecisionResponse; if(!r.ok) throw new Error('decision failed');
+      const d=await this.postFineDecision('/api/decision',req) as DecisionResponse;
       // Camera-mode transitions change whether the player exists in the NPC world.
       // Never apply a result generated from an obsolete perception snapshot.
       if(agent.removed)return;
