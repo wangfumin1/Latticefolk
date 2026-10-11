@@ -27,8 +27,20 @@ async function autosave(page:Page,request:APIRequestContext){
   return{snapshot:submitted.snapshot,stored:stored.snapshot,revision};
 }
 async function nativeCrossing(page:Page,key:'KeyA'|'KeyD',crossed:(x:number)=>boolean){
-  try{await page.keyboard.down(key);await expect.poll(async()=>crossed(Number(await status(page).getAttribute('data-player-x'))),{timeout:8000,intervals:[50]}).toBe(true);}
-  finally{await page.keyboard.up(key);}
+  const started=Date.now();
+  const read=()=>status(page).evaluate(el=>{
+    const data=(el as HTMLElement).dataset;
+    return {x:Number(data.playerX),z:Number(data.playerZ),yaw:Number(data.cameraYaw),inputSeconds:Number(data.playerInputSeconds),
+      materializedChunks:Number(data.materializedChunks),locked:document.pointerLockElement?.tagName==='CANVAS'};
+  });
+  const before=await read();let after=before;
+  try{
+    await page.keyboard.down(key);
+    await expect.poll(async()=>{after=await read();return crossed(after.x);},{timeout:8000,intervals:[50]}).toBe(true);
+  }finally{
+    await page.keyboard.up(key);
+    console.info('native-crossing',JSON.stringify({key,elapsedMs:Date.now()-started,before,after,crossed:crossed(after.x)}));
+  }
 }
 
 test.beforeEach(async({page})=>{await page.addInitScript(()=>localStorage.setItem('latticefolk.locale','en'));});
