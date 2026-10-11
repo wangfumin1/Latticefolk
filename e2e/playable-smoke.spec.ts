@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './helpers/native-input-probe.js';
 import type { WorldPersistenceSnapshot } from '../src/types.js';
 import { startFirstPerson } from './helpers/native-start.js';
 import { driveNativeWaypoint } from './helpers/native-waypoint.js';

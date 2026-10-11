@@ -10,6 +10,9 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSe
   type Bounds={minX:number;maxX:number;minZ:number;maxZ:number};
   const canvas=document.querySelector('#game canvas');
   if(!canvas||document.pointerLockElement!==canvas)throw new Error('Waypoint requires the locked game canvas');
+  const probe=(window as unknown as {nativeInputProbe?:{
+    start:(route:unknown)=>void;pulse:(request:{codes:string[];durationMs:number;deadlineEpochMs:number})=>Promise<unknown>;finish:()=>Promise<void>
+  }}).nativeInputProbe;
   const read=()=>{
     const data=document.querySelector<HTMLElement>('#worldStatus')?.dataset;
     return {x:Number(data?.playerX??'NaN'),z:Number(data?.playerZ??'NaN')};
@@ -156,6 +159,7 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSe
   };
   const axisKey=(axis:'x'|'z',delta:number)=>axis==='x'?(delta>0?'KeyD':'KeyA'):(delta>0?'KeyS':'KeyW');
   try {
+    probe?.start({target,timeoutMs,tolerance,maxInputSeconds,begin,deadline});
     while(true){
       if(document.pointerLockElement!==canvas)throw new Error('Waypoint lost pointer lock');
       const p=read();
@@ -253,8 +257,11 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSe
         deadline-performance.now(),(maxInputSeconds===undefined?Infinity:maxInputSeconds-inputSeconds)*1000);
       if(!(pulseMs>0)||!Number.isFinite(pulseMs))throw new Error('Waypoint cannot issue a finite direction pulse');
       lastInput=next;
-      setHeld(next);
-      await new Promise<void>(resolve=>setTimeout(()=>{setHeld(new Set());resolve();},pulseMs));
+      if(probe)await probe.pulse({codes:[...next],durationMs:pulseMs,deadlineEpochMs:performance.timeOrigin+deadline});
+      else {
+        setHeld(next);
+        await new Promise<void>(resolve=>setTimeout(()=>{setHeld(new Set());resolve();},pulseMs));
+      }
       do {
         await nextFrame();
         const clock=JSON.parse(document.querySelector<HTMLElement>('#worldStatus')?.dataset.simulationClock??'null') as {pendingSeconds:number}|null;
@@ -267,6 +274,6 @@ export async function driveNativeWaypoint({target,timeoutMs,tolerance,maxInputSe
     simulatedAt=finalSimulation;
     const p=read(),distance=Math.hypot(target.x-p.x,target.z-p.z);record(p,'deadline');
     return {reached:false,...p,distance,detours,history,...budgetEvidence(stopReason)};
-  }finally {setHeld(new Set());}
+  }finally {setHeld(new Set());await probe?.finish();}
 }
 
