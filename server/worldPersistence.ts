@@ -13,11 +13,6 @@ import { readWorldRandomness } from '../src/world/worldRandom.js';
 
 type Row = Record<string, unknown>;
 
-const parse = <T>(value: unknown, fallback:T):T => {
-  if (typeof value !== 'string') return fallback;
-  try { return JSON.parse(value) as T; } catch { return fallback; }
-};
-
 export class WorldPersistenceIntegrityError extends Error {
   constructor(readonly table:string,readonly row:string,readonly field:string){
     super(`Invalid persisted JSON: ${table}[${row.replace(/[^a-zA-Z0-9_.:-]/g,'?').slice(0,96)}].${field}`);
@@ -281,7 +276,7 @@ export class WorldPersistence {
         if(!stored){newLayouts.push(layout);this.db.prepare('INSERT INTO streamed_layouts(unit_id,layout_json) VALUES(?,?)').run(layout.unit.id,JSON.stringify(layout));}
       }
 
-      const layouts=(this.db.prepare('SELECT layout_json FROM streamed_layouts').all() as {layout_json:string}[]).map(row=>readStreamedLayout(JSON.parse(row.layout_json)));
+      const layouts=(this.db.prepare('SELECT unit_id,layout_json FROM streamed_layouts').all() as {unit_id:string;layout_json:string}[]).map(row=>readStreamedLayout(parseStored(row.layout_json,'streamed_layouts',row.unit_id,'layout_json','object')));
       try{assertStreamedLayoutStates(newLayouts,data.fineChunks);assertStreamedLayoutStates(layouts,data.fineChunks,true);}catch(error){
         throw new WorldSnapshotValidationError([error instanceof Error?error.message:String(error)]);
       }
@@ -344,7 +339,7 @@ export class WorldPersistence {
     const metaRow=this.db.prepare('SELECT version,meta_json,saved_at FROM world_meta WHERE slot = ?').get('default') as Row|undefined;
     if(!metaRow)return null;
 
-    const coarseRows=this.db.prepare('SELECT state_json FROM coarse_chunks ORDER BY id').all() as Array<{state_json:string}>;
+    const coarseRows=this.db.prepare('SELECT id,state_json FROM coarse_chunks ORDER BY id').all() as Array<{id:string;state_json:string}>;
     const fineRows=this.db.prepare('SELECT chunk_id,npc_json,object_json,wildlife_json,dynamic_activated FROM fine_chunks ORDER BY chunk_id').all() as Array<{chunk_id:string;npc_json:string;object_json:string;wildlife_json:string;dynamic_activated:number|null}>;
     const homeRow=this.db.prepare('SELECT npc_json,object_json FROM home_state WHERE slot = ?').get('default') as {npc_json:string;object_json:string}|undefined;
     const transferRows=this.db.prepare('SELECT entity_id,transfer_json FROM wildlife_transfers ORDER BY entity_id').all() as Array<{entity_id:string;transfer_json:string}>;
@@ -363,7 +358,7 @@ export class WorldPersistence {
       offspring_count:number;reproductive_success:number;
     }>;
 
-    const coarseChunks=coarseRows.map(row=>parse<CoarseChunkState|null>(row.state_json,null)).filter((x):x is CoarseChunkState=>Boolean(x));
+    const coarseChunks=coarseRows.map(row=>parseStored<CoarseChunkState>(row.state_json,'coarse_chunks',row.id,'state_json','object'));
     if(fineRows.some(row=>row.dynamic_activated!==null&&row.dynamic_activated!==0&&row.dynamic_activated!==1))throw new Error('Invalid persisted owner activation state');
     const fineChunks:PersistedFineChunk[]=fineRows.map(row=>({
       chunkId:row.chunk_id,
@@ -385,40 +380,37 @@ export class WorldPersistence {
       generation:Number(row.generation),
       birthChunk:row.birth_chunk,
       deathChunk:row.death_chunk??undefined,
-      traitsAtBirth:parse<WildlifeTraits>(row.traits_at_birth_json,{speed:1,size:1,fertility:.5,wariness:.5}),
-      traitsAtDeath:row.traits_at_death_json?parse<WildlifeTraits|undefined>(row.traits_at_death_json,undefined):undefined,
-      phenotypeAtBirth:row.phenotype_at_birth_json?parse<WildlifePhenotype|undefined>(row.phenotype_at_birth_json,undefined):undefined,
-      phenotypeAtDeath:row.phenotype_at_death_json?parse<WildlifePhenotype|undefined>(row.phenotype_at_death_json,undefined):undefined,
+      traitsAtBirth:parseStored<WildlifeTraits>(row.traits_at_birth_json,'wildlife_lineage',row.entity_id,'traits_at_birth_json','object'),
+      traitsAtDeath:row.traits_at_death_json!==null?parseStored<WildlifeTraits|undefined>(row.traits_at_death_json,'wildlife_lineage',row.entity_id,'traits_at_death_json','object'):undefined,
+      phenotypeAtBirth:row.phenotype_at_birth_json!==null?parseStored<WildlifePhenotype|undefined>(row.phenotype_at_birth_json,'wildlife_lineage',row.entity_id,'phenotype_at_birth_json','object'):undefined,
+      phenotypeAtDeath:row.phenotype_at_death_json!==null?parseStored<WildlifePhenotype|undefined>(row.phenotype_at_death_json,'wildlife_lineage',row.entity_id,'phenotype_at_death_json','object'):undefined,
       phenotypeProvenance:row.phenotype_provenance??undefined,
-      organismGenomeAtBirth:row.organism_genome_at_birth_json?parse<WildlifeOrganismGenome|undefined>(row.organism_genome_at_birth_json,undefined):undefined,
-      organismGenomeAtDeath:row.organism_genome_at_death_json?parse<WildlifeOrganismGenome|undefined>(row.organism_genome_at_death_json,undefined):undefined,
+      organismGenomeAtBirth:row.organism_genome_at_birth_json!==null?parseStored<WildlifeOrganismGenome|undefined>(row.organism_genome_at_birth_json,'wildlife_lineage',row.entity_id,'organism_genome_at_birth_json','object'):undefined,
+      organismGenomeAtDeath:row.organism_genome_at_death_json!==null?parseStored<WildlifeOrganismGenome|undefined>(row.organism_genome_at_death_json,'wildlife_lineage',row.entity_id,'organism_genome_at_death_json','object'):undefined,
       organismGenomeProvenance:row.organism_genome_provenance??undefined,
-      domesticationAtBirth:row.domestication_at_birth_json?parse<WildlifeDomesticationState|undefined>(row.domestication_at_birth_json,undefined):undefined,
-      domesticationAtDeath:row.domestication_at_death_json?parse<WildlifeDomesticationState|undefined>(row.domestication_at_death_json,undefined):undefined,
-      birthHabitat:row.birth_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.birth_habitat_json,undefined):undefined,
-      deathHabitat:row.death_habitat_json?parse<WildlifeHabitatSnapshot|undefined>(row.death_habitat_json,undefined):undefined,
-      habitatExposure:row.habitat_exposure_json?parse<WildlifeHabitatExposure|undefined>(row.habitat_exposure_json,undefined):undefined,
-      migrationHistory:row.migration_history_json?parse<WildlifeMigrationEvent[]>(row.migration_history_json,[]):undefined,
-      predationOutcomes:row.predation_outcomes_json?parse<NonNullable<WildlifeLineageRecord['predationOutcomes']>|undefined>(row.predation_outcomes_json,undefined):undefined,
+      domesticationAtBirth:row.domestication_at_birth_json!==null?parseStored<WildlifeDomesticationState|undefined>(row.domestication_at_birth_json,'wildlife_lineage',row.entity_id,'domestication_at_birth_json','object'):undefined,
+      domesticationAtDeath:row.domestication_at_death_json!==null?parseStored<WildlifeDomesticationState|undefined>(row.domestication_at_death_json,'wildlife_lineage',row.entity_id,'domestication_at_death_json','object'):undefined,
+      birthHabitat:row.birth_habitat_json!==null?parseStored<WildlifeHabitatSnapshot|undefined>(row.birth_habitat_json,'wildlife_lineage',row.entity_id,'birth_habitat_json','object'):undefined,
+      deathHabitat:row.death_habitat_json!==null?parseStored<WildlifeHabitatSnapshot|undefined>(row.death_habitat_json,'wildlife_lineage',row.entity_id,'death_habitat_json','object'):undefined,
+      habitatExposure:row.habitat_exposure_json!==null?parseStored<WildlifeHabitatExposure|undefined>(row.habitat_exposure_json,'wildlife_lineage',row.entity_id,'habitat_exposure_json','object'):undefined,
+      migrationHistory:row.migration_history_json!==null?parseStored<WildlifeMigrationEvent[]>(row.migration_history_json,'wildlife_lineage',row.entity_id,'migration_history_json','array'):undefined,
+      predationOutcomes:row.predation_outcomes_json!==null?parseStored<NonNullable<WildlifeLineageRecord['predationOutcomes']>|undefined>(row.predation_outcomes_json,'wildlife_lineage',row.entity_id,'predation_outcomes_json','object'):undefined,
       origin:row.origin==='reproduction'?'reproduction':'founder',
       offspringCount:Number(row.offspring_count)||0,
       reproductiveSuccess:Boolean(row.reproductive_success)
     }));
 
-    const streamedLayouts=(this.db.prepare('SELECT layout_json FROM streamed_layouts ORDER BY unit_id').all() as {layout_json:string}[])
-      .map(row=>readStreamedLayout(JSON.parse(row.layout_json)));
+    const streamedLayouts=(this.db.prepare('SELECT unit_id,layout_json FROM streamed_layouts ORDER BY unit_id').all() as {unit_id:string;layout_json:string}[])
+      .map(row=>readStreamedLayout(parseStored(row.layout_json,'streamed_layouts',row.unit_id,'layout_json','object')));
     assertStreamedLayoutStates(streamedLayouts,fineChunks);
     return {
       version:Number(metaRow.version)===1?1:1,
       ...(streamedLayouts.length?{streamedLayouts}:{}),
-      meta:parse<WorldPersistenceMeta>(metaRow.meta_json,{
-        day:1,minuteOfDay:8*60+15,weather:'clear',playerPosition:{x:0,z:7},
-        playerInventory:{apple:0,bread:1,wood:0,coin:10,flower:0,grain:0,flour:0,water:0,stone:0,plank:0,tool:0}
-      }),
+      meta:parseStored<WorldPersistenceMeta>(metaRow.meta_json,'world_meta','default','meta_json','object'),
       coarseChunks,
       fineChunks,
-      homeNpcs:homeRow?parse<NpcState[]>(homeRow.npc_json,[]):[],
-      homeObjects:homeRow?parse<WorldObjectState[]>(homeRow.object_json,[]):[],
+      homeNpcs:homeRow?parseStored<NpcState[]>(homeRow.npc_json,'home_state','default','npc_json','array'):[],
+      homeObjects:homeRow?parseStored<WorldObjectState[]>(homeRow.object_json,'home_state','default','object_json','array'):[],
       wildlifeLineage,
       wildlifeTransfers,
       savedAt:Number(metaRow.saved_at)||undefined
